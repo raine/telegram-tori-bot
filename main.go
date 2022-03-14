@@ -29,7 +29,12 @@ func main() {
 	updateConfig.Timeout = 60
 	updates := tg.GetUpdatesChan(updateConfig)
 
-	bot := NewBot(tg, tori.ApiBaseUrl)
+	authMap, err := readAuthMap()
+	if err != nil {
+		log.Fatal().Err(err).Send()
+	}
+
+	bot := NewBot(tg, authMap, tori.ApiBaseUrl)
 
 	for update := range updates {
 		go bot.HandleUpdate(update)

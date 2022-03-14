@@ -52,28 +52,37 @@ type BotState struct {
 	sessions map[int64]*UserSession
 }
 
-func (bs *BotState) NewUserSession(userId int64) *UserSession {
+func (bs *BotState) newUserSession(userId int64) (*UserSession, error) {
+	token, ok := bs.bot.authMap[userId]
+	if !ok {
+		return nil, fmt.Errorf("user %d has no auth token set", userId)
+	}
+
 	session := UserSession{
 		userId: userId,
 		client: tori.NewClient(tori.ClientOpts{
-			Auth:    "",
+			Auth:    token,
 			BaseURL: bs.bot.toriApiBaseUrl,
 		}),
 		bot: bs.bot,
 	}
 	log.Info().Int64("userId", userId).Msg("new user session created")
-	return &session
+	return &session, nil
 }
 
-func (bs *BotState) getUserSession(userId int64) *UserSession {
+func (bs *BotState) getUserSession(userId int64) (*UserSession, error) {
 	bs.mu.Lock()
 	defer bs.mu.Unlock()
 	if session, ok := bs.sessions[userId]; !ok {
-		session := bs.NewUserSession(userId)
-		bs.sessions[userId] = session
-		return session
+		session, err := bs.newUserSession(userId)
+		if err != nil {
+			return nil, err
+		} else {
+			bs.sessions[userId] = session
+			return session, nil
+		}
 	} else {
-		return session
+		return session, nil
 	}
 }
 
@@ -93,11 +102,13 @@ type Bot struct {
 	tg             BotAPI
 	state          BotState
 	toriApiBaseUrl string
+	authMap        map[int64]string
 }
 
-func NewBot(tg BotAPI, toriApiBaseUrl string) *Bot {
+func NewBot(tg BotAPI, authMap map[int64]string, toriApiBaseUrl string) *Bot {
 	bot := &Bot{
 		tg:             tg,
+		authMap:        authMap,
 		toriApiBaseUrl: toriApiBaseUrl,
 	}
 
@@ -106,8 +117,11 @@ func NewBot(tg BotAPI, toriApiBaseUrl string) *Bot {
 }
 
 func (b *Bot) HandlePhoto(message *tgbotapi.Message) {
-	userId := message.From.ID
-	session := b.state.getUserSession(userId)
+	session, err := b.state.getUserSession(message.From.ID)
+	if err != nil {
+		log.Error().Err(err).Send()
+		return
+	}
 
 	// When photos are sent as a "media group" that appear like a single message
 	// with multiple photos, the photos are in fact sent one by one in separate
@@ -131,7 +145,12 @@ func (b *Bot) HandlePhoto(message *tgbotapi.Message) {
 func (b *Bot) HandleCallback(update tgbotapi.Update) {
 	log.Info().Msg("got callback")
 
-	session := b.state.getUserSession(update.CallbackQuery.From.ID)
+	session, err := b.state.getUserSession(update.CallbackQuery.From.ID)
+	if err != nil {
+		log.Error().Err(err).Send()
+		return
+	}
+
 	session.mu.Lock()
 	defer session.mu.Unlock()
 
@@ -152,7 +171,7 @@ func (b *Bot) HandleCallback(update tgbotapi.Update) {
 		msgReplyMarkup,
 	)
 	editMsg.ParseMode = tgbotapi.ModeMarkdown
-	_, err := b.tg.Send(editMsg)
+	_, err = b.tg.Send(editMsg)
 	if err != nil {
 		log.Error().Err(err).Send()
 	}
@@ -174,7 +193,12 @@ func (b *Bot) HandleUpdate(update tgbotapi.Update) {
 	}
 
 	userId := update.Message.From.ID
-	session := b.state.getUserSession(userId)
+	session, err := b.state.getUserSession(userId)
+	if err != nil {
+		log.Error().Err(err).Send()
+		return
+	}
+
 	session.mu.Lock()
 	defer session.mu.Unlock()
 	log.Info().Str("text", update.Message.Text).Msg("got message")
@@ -207,6 +231,7 @@ func (b *Bot) HandleUpdate(update tgbotapi.Update) {
 				return
 			}
 			session.categories = categories
+			// TODO: Handle no categories case
 			session.listing.Category = categories[0].Code
 			msg := makeCategoryMessage(categories, session.listing.Category)
 			session.replyWithMessage(msg)

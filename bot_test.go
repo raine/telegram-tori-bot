@@ -74,12 +74,16 @@ func strPtr(v string) *string {
 	return &v
 }
 
+var authMap = map[int64]string{
+	1: "foo",
+}
+
 func TestHandleUpdate_ListingStart(t *testing.T) {
 	ts := makeTestServer(t)
 	defer ts.Close()
 	userId := int64(1)
 	tg := new(botApiMock)
-	bot := NewBot(tg, ts.URL)
+	bot := NewBot(tg, authMap, ts.URL)
 	update := tgbotapi.Update{
 		Message: &tgbotapi.Message{
 			From: &tgbotapi.User{
@@ -108,7 +112,10 @@ func TestHandleUpdate_ListingStart(t *testing.T) {
 
 	bot.HandleUpdate(update)
 	tg.AssertExpectations(t)
-	session := bot.state.getUserSession(userId)
+	session, err := bot.state.getUserSession(userId)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// Skip these fields as they are difficult and not very fruitful to assert
 	session.client = nil
 	session.bot = nil
@@ -137,7 +144,7 @@ func TestHandleUpdate_EnterPrice(t *testing.T) {
 
 	userId := int64(1)
 	tg := new(botApiMock)
-	bot := NewBot(tg, ts.URL)
+	bot := NewBot(tg, authMap, ts.URL)
 	update := tgbotapi.Update{
 		Message: &tgbotapi.Message{
 			From: &tgbotapi.User{
@@ -147,7 +154,10 @@ func TestHandleUpdate_EnterPrice(t *testing.T) {
 		},
 	}
 
-	session := bot.state.getUserSession(userId)
+	session, err := bot.state.getUserSession(userId)
+	if err != nil {
+		t.Fatal(err)
+	}
 	session.listing = &tori.Listing{
 		Subject:  "iPhone 12",
 		Category: "5012",
@@ -174,13 +184,12 @@ func TestHandleUpdate_EnterPrice(t *testing.T) {
 	bot.HandleUpdate(update)
 	tg.AssertExpectations(t)
 
-	listing := bot.state.getUserSession(userId).listing
 	assert.Equal(t, &tori.Listing{
 		Subject:  "iPhone 12",
 		Category: "5012",
 		Type:     tori.ListingTypeSell,
 		Price:    50,
-	}, listing)
+	}, session.listing)
 }
 
 func TestHandleUpdate_EnterCondition(t *testing.T) {
@@ -189,7 +198,7 @@ func TestHandleUpdate_EnterCondition(t *testing.T) {
 
 	userId := int64(1)
 	tg := new(botApiMock)
-	bot := NewBot(tg, ts.URL)
+	bot := NewBot(tg, authMap, ts.URL)
 	update := tgbotapi.Update{
 		Message: &tgbotapi.Message{
 			From: &tgbotapi.User{
@@ -199,7 +208,10 @@ func TestHandleUpdate_EnterCondition(t *testing.T) {
 		},
 	}
 
-	session := bot.state.getUserSession(userId)
+	session, err := bot.state.getUserSession(userId)
+	if err != nil {
+		t.Fatal(err)
+	}
 	session.listing = &tori.Listing{
 		Subject:  "iPhone 12",
 		Category: "5012",
@@ -223,7 +235,6 @@ func TestHandleUpdate_EnterCondition(t *testing.T) {
 
 	bot.HandleUpdate(update)
 
-	listing := bot.state.getUserSession(userId).listing
 	assert.Equal(t, &tori.Listing{
 		Subject:  "iPhone 12",
 		Category: "5012",
@@ -232,7 +243,7 @@ func TestHandleUpdate_EnterCondition(t *testing.T) {
 		AdDetails: tori.AdDetails{
 			"general_condition": "new",
 		},
-	}, listing)
+	}, session.listing)
 }
 
 func TestHandleUpdate_EnterManufacturer(t *testing.T) {
@@ -241,7 +252,7 @@ func TestHandleUpdate_EnterManufacturer(t *testing.T) {
 
 	userId := int64(1)
 	tg := new(botApiMock)
-	bot := NewBot(tg, ts.URL)
+	bot := NewBot(tg, authMap, ts.URL)
 	update := tgbotapi.Update{
 		Message: &tgbotapi.Message{
 			From: &tgbotapi.User{
@@ -251,7 +262,10 @@ func TestHandleUpdate_EnterManufacturer(t *testing.T) {
 		},
 	}
 
-	session := bot.state.getUserSession(userId)
+	session, err := bot.state.getUserSession(userId)
+	if err != nil {
+		t.Fatal(err)
+	}
 	session.listing = &tori.Listing{
 		Subject:  "iPhone 12",
 		Category: "5012",
@@ -279,7 +293,6 @@ func TestHandleUpdate_EnterManufacturer(t *testing.T) {
 	bot.HandleUpdate(update)
 	tg.AssertExpectations(t)
 
-	listing := bot.state.getUserSession(userId).listing
 	assert.Equal(t, &tori.Listing{
 		Subject:  "iPhone 12",
 		Category: "5012",
@@ -289,7 +302,7 @@ func TestHandleUpdate_EnterManufacturer(t *testing.T) {
 			"general_condition": "new",
 			"cell_phone":        "apple",
 		},
-	}, listing)
+	}, session.listing)
 }
 
 func TestHandleUpdate_EnterDeliveryOptions(t *testing.T) {
@@ -298,7 +311,7 @@ func TestHandleUpdate_EnterDeliveryOptions(t *testing.T) {
 
 	userId := int64(1)
 	tg := new(botApiMock)
-	bot := NewBot(tg, ts.URL)
+	bot := NewBot(tg, authMap, ts.URL)
 	update := tgbotapi.Update{
 		Message: &tgbotapi.Message{
 			From: &tgbotapi.User{
@@ -308,7 +321,10 @@ func TestHandleUpdate_EnterDeliveryOptions(t *testing.T) {
 		},
 	}
 
-	session := bot.state.getUserSession(userId)
+	session, err := bot.state.getUserSession(userId)
+	if err != nil {
+		t.Fatal(err)
+	}
 	session.listing = &tori.Listing{
 		Subject:  "iPhone 12",
 		Category: "5012",
@@ -323,7 +339,6 @@ func TestHandleUpdate_EnterDeliveryOptions(t *testing.T) {
 	bot.HandleUpdate(update)
 	tg.AssertExpectations(t)
 
-	listing := bot.state.getUserSession(userId).listing
 	assert.Equal(t, &tori.Listing{
 		Subject:  "iPhone 12",
 		Category: "5012",
@@ -334,5 +349,5 @@ func TestHandleUpdate_EnterDeliveryOptions(t *testing.T) {
 			"cell_phone":        "apple",
 			"delivery_options":  []string{},
 		},
-	}, listing)
+	}, session.listing)
 }
