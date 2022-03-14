@@ -40,6 +40,26 @@ func (s *UserSession) replyWithMessage(msg tgbotapi.MessageConfig) {
 	}
 }
 
+func (s *UserSession) handlePhoto(message *tgbotapi.Message) {
+	// When photos are sent as a "media group" that appear like a single message
+	// with multiple photos, the photos are in fact sent one by one in separate
+	// messages. To give feedback like "n photos added", we have to wait a bit
+	// after the first photo is sent and keep track of photos since then
+	if s.pendingPhotos == nil {
+		s.pendingPhotos = new([]tgbotapi.PhotoSize)
+
+		go func() {
+			time.Sleep(1 * time.Second)
+			s.photos = append(s.photos, *s.pendingPhotos...)
+			s.reply("%s lisätty", pluralize("kuva", "kuvaa", len(*s.pendingPhotos)))
+			s.pendingPhotos = nil
+		}()
+	}
+
+	pendingPhotos := append(*s.pendingPhotos, message.Photo[len(message.Photo)-1])
+	s.pendingPhotos = &pendingPhotos
+}
+
 func (s *UserSession) reply(text string, a ...interface{}) {
 	msg := tgbotapi.NewMessage(0, fmt.Sprintf(text, a...))
 	msg.ParseMode = tgbotapi.ModeMarkdown
@@ -116,32 +136,6 @@ func NewBot(tg BotAPI, authMap map[int64]string, toriApiBaseUrl string) *Bot {
 	return bot
 }
 
-func (b *Bot) HandlePhoto(message *tgbotapi.Message) {
-	session, err := b.state.getUserSession(message.From.ID)
-	if err != nil {
-		log.Error().Err(err).Send()
-		return
-	}
-
-	// When photos are sent as a "media group" that appear like a single message
-	// with multiple photos, the photos are in fact sent one by one in separate
-	// messages. To give feedback like "n photos added", we have to wait a bit
-	// after the first photo is sent and keep track of photos since then
-	if session.pendingPhotos == nil {
-		session.pendingPhotos = new([]tgbotapi.PhotoSize)
-
-		go func() {
-			time.Sleep(1 * time.Second)
-			session.photos = append(session.photos, *session.pendingPhotos...)
-			session.reply("%s lisätty", pluralize("kuva", "kuvaa", len(*session.pendingPhotos)))
-			session.pendingPhotos = nil
-		}()
-	}
-
-	pendingPhotos := append(*session.pendingPhotos, message.Photo[len(message.Photo)-1])
-	session.pendingPhotos = &pendingPhotos
-}
-
 func (b *Bot) HandleCallback(update tgbotapi.Update) {
 	log.Info().Msg("got callback")
 
@@ -210,7 +204,7 @@ func (b *Bot) HandleUpdate(update tgbotapi.Update) {
 	default:
 		// Message has a photo
 		if len(update.Message.Photo) > 0 {
-			b.HandlePhoto(update.Message)
+			session.handlePhoto(update.Message)
 		}
 
 		if text == "" {
