@@ -143,8 +143,8 @@ func (c *Client) GetCategories() (Categories, error) {
 	return *result, err
 }
 
-func (c *Client) GetFiltersSectionNewad() (FiltersNewad, error) {
-	result := &FiltersNewad{}
+func (c *Client) GetFiltersSectionNewad() (NewadFilters, error) {
+	result := &NewadFilters{}
 	_, err := c.req(result).
 		SetQueryParam("section", "newad").
 		Get("/v1.2/public/filters")

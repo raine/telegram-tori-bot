@@ -231,12 +231,12 @@ func (b *Bot) HandleUpdate(update tgbotapi.Update) {
 				session.replyWithError(err)
 				return
 			}
-			settingsParams := newadFilters.Newad.SettingsParam
+			settingsParams := newadFilters.Newad.SettingsParams
 			paramMap := newadFilters.Newad.ParamMap
 
 			// User is replying to bot's question, and we can determine what, by
 			// getting the next missing field from Listing
-			repliedField := getMissingListingField(settingsParams, *session.listing)
+			repliedField := getMissingListingField(paramMap, settingsParams, *session.listing)
 			log.Info().Str("field", repliedField).Msg("user is replying to field")
 			newListing, err := setListingFieldFromMessage(paramMap, *session.listing, repliedField, text)
 			if err != nil {
@@ -246,7 +246,7 @@ func (b *Bot) HandleUpdate(update tgbotapi.Update) {
 			session.listing = &newListing
 			log.Info().Interface("listing", newListing).Msg("updated listing")
 
-			nextMissingField := getMissingListingField(settingsParams, *session.listing)
+			nextMissingField := getMissingListingField(paramMap, settingsParams, *session.listing)
 			if nextMissingField != "" {
 				msg, err := makeMissingFieldPromptMessage(paramMap, nextMissingField)
 				if err != nil {
@@ -259,8 +259,12 @@ func (b *Bot) HandleUpdate(update tgbotapi.Update) {
 	}
 }
 
-func makeNextFieldPrompt(newadFilters tori.FiltersNewad, listing tori.Listing) (tgbotapi.MessageConfig, error) {
-	missingField := getMissingListingField(newadFilters.Newad.SettingsParam, listing)
+func makeNextFieldPrompt(newadFilters tori.NewadFilters, listing tori.Listing) (tgbotapi.MessageConfig, error) {
+	missingField := getMissingListingField(
+		newadFilters.Newad.ParamMap,
+		newadFilters.Newad.SettingsParams,
+		listing,
+	)
 	log.Info().Str("field", missingField).Msg("next missing field")
 	msg, err := makeMissingFieldPromptMessage(newadFilters.Newad.ParamMap, missingField)
 	if err != nil {
@@ -269,7 +273,7 @@ func makeNextFieldPrompt(newadFilters tori.FiltersNewad, listing tori.Listing) (
 	return msg, nil
 }
 
-func fetchNewadFilters(get func() (tori.FiltersNewad, error)) (tori.FiltersNewad, error) {
+func fetchNewadFilters(get func() (tori.NewadFilters, error)) (tori.NewadFilters, error) {
 	cachedNewadFilters, ok := getCachedNewadFilters()
 	if !ok {
 		newadFilters, err := get()

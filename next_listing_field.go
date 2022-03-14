@@ -1,7 +1,7 @@
 package main
 
 import (
-	"regexp"
+	"fmt"
 	"strings"
 
 	"github.com/raine/go-telegram-bot/tori"
@@ -49,7 +49,7 @@ func doesListingMatchAllValues(listing tori.Listing, keys []string, values []str
 	return true
 }
 
-func getMissingFieldFromSettingsResult(listing tori.Listing, settingsResult []string) string {
+func getMissingFieldFromSettingsResult(paramMap tori.ParamMap, listing tori.Listing, settingsResult []string) string {
 	for _, sr := range settingsResult {
 		// Type and zipcode are always set so skip them
 		if strings.HasPrefix(sr, "type") || sr == "zipcode" {
@@ -65,14 +65,22 @@ func getMissingFieldFromSettingsResult(listing tori.Listing, settingsResult []st
 			}
 		}
 
-		// Check against AdDetails without the _<number> suffix, e.g.
-		// settings_result might have clothing_sex_0 but Listing already has
-		// clothing_sex
-		re := regexp.MustCompile(`_\d+$`)
-		srNoSuffix := re.ReplaceAllLiteralString(sr, "")
+		param, ok := paramMap[sr]
+		if !ok {
+			panic(fmt.Sprintf("%s not found in param_map (should not happen)", sr))
+		}
+		var paramKey string
+		switch {
+		case param.SingleSelection != nil:
+			paramKey = param.SingleSelection.ParamKey
+		case param.MultiSelection != nil:
+			paramKey = param.MultiSelection.ParamKey
+		case param.Text != nil:
+			paramKey = param.Text.ParamKey
+		}
 
 		// Otherwise, check if key is defined in listing.AdDetails
-		if _, ok := listing.AdDetails[srNoSuffix]; !ok {
+		if _, ok := listing.AdDetails[paramKey]; !ok {
 			return sr
 		}
 	}
@@ -80,18 +88,22 @@ func getMissingFieldFromSettingsResult(listing tori.Listing, settingsResult []st
 	return ""
 }
 
-func getMissingListingFieldWithSettingsParam(settingsParam tori.SettingsParam, listing tori.Listing) string {
+func getMissingListingFieldWithSettingsParam(
+	paramMap tori.ParamMap,
+	settingsParam tori.SettingsParam,
+	listing tori.Listing,
+) string {
 	for _, setting := range settingsParam.Settings {
 		if doesListingMatchAllValues(listing, settingsParam.Keys, setting.Values) {
-			return getMissingFieldFromSettingsResult(listing, setting.SettingsResult)
+			return getMissingFieldFromSettingsResult(paramMap, listing, setting.SettingsResult)
 		}
 	}
 	return ""
 }
 
-func getMissingListingField(settingsParams []tori.SettingsParam, listing tori.Listing) string {
+func getMissingListingField(paramMap tori.ParamMap, settingsParams []tori.SettingsParam, listing tori.Listing) string {
 	for _, settingsParam := range settingsParams {
-		if next := getMissingListingFieldWithSettingsParam(settingsParam, listing); next != "" {
+		if next := getMissingListingFieldWithSettingsParam(paramMap, settingsParam, listing); next != "" {
 			return next
 		}
 	}

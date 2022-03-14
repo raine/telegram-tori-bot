@@ -24,5 +24,5 @@ func TestCachedNewadFilters(t *testing.T) {
 	setCachedNewadFilters(newadFilters)
 	result, ok := getCachedNewadFilters()
 	assert.True(t, ok)
-	assert.NotEqual(t, tori.FiltersNewad{}, result)
+	assert.NotEqual(t, tori.NewadFilters{}, result)
 }

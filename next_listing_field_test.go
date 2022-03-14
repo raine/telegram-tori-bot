@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"testing"
 
 	"github.com/raine/go-telegram-bot/tori"
@@ -8,6 +9,16 @@ import (
 )
 
 func TestGetMissingUnsetListingFieldWithSettingsParamBasic(t *testing.T) {
+	filtersSectionNewadJson, err := os.ReadFile("tori/testdata/v1_2_public_filters_section_newad.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newadFilters, err := tori.ParseNewadFilters(filtersSectionNewadJson)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paramMap := newadFilters.Newad.ParamMap
+
 	json := []byte(`
 {
   "keys": ["category", "type"],
@@ -68,13 +79,23 @@ func TestGetMissingUnsetListingFieldWithSettingsParamBasic(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			got := getMissingListingFieldWithSettingsParam(settingsParam, tc.listing)
+			got := getMissingListingFieldWithSettingsParam(paramMap, settingsParam, tc.listing)
 			assert.Equal(t, tc.want, got)
 		})
 	}
 }
 
 func TestGetMissingUnsetListingFieldWithSettingsParamPeripheral(t *testing.T) {
+	filtersSectionNewadJson, err := os.ReadFile("tori/testdata/v1_2_public_filters_section_newad.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newadFilters, err := tori.ParseNewadFilters(filtersSectionNewadJson)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paramMap := newadFilters.Newad.ParamMap
+
 	tests := map[string]struct {
 		listing tori.Listing
 		json    []byte
@@ -129,13 +150,23 @@ func TestGetMissingUnsetListingFieldWithSettingsParamPeripheral(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			got := getMissingListingFieldWithSettingsParam(settingsParam, tc.listing)
+			got := getMissingListingFieldWithSettingsParam(paramMap, settingsParam, tc.listing)
 			assert.Equal(t, tc.want, got)
 		})
 	}
 }
 
 func TestGetMissingUnsetListingFieldWithSettingsParamClothing(t *testing.T) {
+	filtersSectionNewadJson, err := os.ReadFile("tori/testdata/v1_2_public_filters_section_newad.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newadFilters, err := tori.ParseNewadFilters(filtersSectionNewadJson)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paramMap := newadFilters.Newad.ParamMap
+
 	tests := map[string]struct {
 		listing tori.Listing
 		json    []byte
@@ -192,13 +223,23 @@ func TestGetMissingUnsetListingFieldWithSettingsParamClothing(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			got := getMissingListingFieldWithSettingsParam(settingsParam, tc.listing)
+			got := getMissingListingFieldWithSettingsParam(paramMap, settingsParam, tc.listing)
 			assert.Equal(t, tc.want, got)
 		})
 	}
 }
 
 func TestGetMissingListingField(t *testing.T) {
+	filtersSectionNewadJson, err := os.ReadFile("tori/testdata/v1_2_public_filters_section_newad.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newadFilters, err := tori.ParseNewadFilters(filtersSectionNewadJson)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paramMap := newadFilters.Newad.ParamMap
+
 	json := []byte(`
 [
   {
@@ -325,7 +366,7 @@ func TestGetMissingListingField(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			got := getMissingListingField(settingsParam, tc.listing)
+			got := getMissingListingField(paramMap, settingsParam, tc.listing)
 			assert.Equal(t, tc.want, got)
 		})
 	}

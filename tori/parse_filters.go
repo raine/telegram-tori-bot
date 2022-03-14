@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 )
 
-func ParseNewadFilters(jsonData []byte) (FiltersNewad, error) {
-	var filters FiltersNewad
+func ParseNewadFilters(jsonData []byte) (NewadFilters, error) {
+	var filters NewadFilters
 	err := json.Unmarshal(jsonData, &filters)
 	return filters, err
 }

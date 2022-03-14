@@ -3,19 +3,19 @@ package main
 import "github.com/raine/go-telegram-bot/tori"
 
 // TODO: TTL
-var cachedNewadFilters *tori.FiltersNewad
+var cachedNewadFilters *tori.NewadFilters
 
 func clearCachedNewadFilters() {
 	cachedNewadFilters = nil
 }
 
-func setCachedNewadFilters(newadFilters tori.FiltersNewad) {
+func setCachedNewadFilters(newadFilters tori.NewadFilters) {
 	cachedNewadFilters = &newadFilters
 }
 
-func getCachedNewadFilters() (tori.FiltersNewad, bool) {
+func getCachedNewadFilters() (tori.NewadFilters, bool) {
 	if cachedNewadFilters == nil {
-		return tori.FiltersNewad{}, false
+		return tori.NewadFilters{}, false
 	} else {
 		return *cachedNewadFilters, true
 	}

@@ -1,6 +1,6 @@
 package tori
 
-type FiltersNewad struct {
+type NewadFilters struct {
 	Newad Newad `json:"newad"`
 }
 
@@ -61,6 +61,6 @@ type SettingsParam struct {
 }
 
 type Newad struct {
-	ParamMap      ParamMap        `json:"param_map"`
-	SettingsParam []SettingsParam `json:"settings_param"`
+	ParamMap       ParamMap        `json:"param_map"`
+	SettingsParams []SettingsParam `json:"settings_param"`
 }
