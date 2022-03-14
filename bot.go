@@ -25,6 +25,7 @@ func (s *UserSession) reset() {
 	log.Info().Int64("userId", s.userId).Msg("reset user session")
 	s.listing = nil
 	s.photos = nil
+	s.categories = nil
 }
 
 func (s *UserSession) replyWithError(err error) {
