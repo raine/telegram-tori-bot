@@ -1,23 +1,21 @@
 package main
 
-import (
-	tf "github.com/raine/go-telegram-bot/tori_filters"
-)
+import "github.com/raine/go-telegram-bot/tori"
 
 // TODO: TTL
-var cachedNewadFilters *tf.FiltersNewad
+var cachedNewadFilters *tori.FiltersNewad
 
 func clearCachedNewadFilters() {
 	cachedNewadFilters = nil
 }
 
-func setCachedNewadFilters(newadFilters tf.FiltersNewad) {
+func setCachedNewadFilters(newadFilters tori.FiltersNewad) {
 	cachedNewadFilters = &newadFilters
 }
 
-func getCachedNewadFilters() (tf.FiltersNewad, bool) {
+func getCachedNewadFilters() (tori.FiltersNewad, bool) {
 	if cachedNewadFilters == nil {
-		return tf.FiltersNewad{}, false
+		return tori.FiltersNewad{}, false
 	} else {
 		return *cachedNewadFilters, true
 	}

@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/raine/go-telegram-bot/tori"
-	tf "github.com/raine/go-telegram-bot/tori_filters"
 )
 
 func doesListingMatchValue(listing tori.Listing, key string, value string) bool {
@@ -81,7 +80,7 @@ func getMissingFieldFromSettingsResult(listing tori.Listing, settingsResult []st
 	return ""
 }
 
-func getMissingListingFieldWithSettingsParam(settingsParam tf.SettingsParam, listing tori.Listing) string {
+func getMissingListingFieldWithSettingsParam(settingsParam tori.SettingsParam, listing tori.Listing) string {
 	for _, setting := range settingsParam.Settings {
 		if doesListingMatchAllValues(listing, settingsParam.Keys, setting.Values) {
 			return getMissingFieldFromSettingsResult(listing, setting.SettingsResult)
@@ -90,7 +89,7 @@ func getMissingListingFieldWithSettingsParam(settingsParam tf.SettingsParam, lis
 	return ""
 }
 
-func getMissingListingField(settingsParams []tf.SettingsParam, listing tori.Listing) string {
+func getMissingListingField(settingsParams []tori.SettingsParam, listing tori.Listing) string {
 	for _, settingsParam := range settingsParams {
 		if next := getMissingListingFieldWithSettingsParam(settingsParam, listing); next != "" {
 			return next

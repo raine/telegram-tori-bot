@@ -2,24 +2,22 @@ package tori
 
 import (
 	"encoding/json"
-
-	tf "github.com/raine/go-telegram-bot/tori_filters"
 )
 
-func ParseNewadFilters(jsonData []byte) (tf.FiltersNewad, error) {
-	var filters tf.FiltersNewad
+func ParseNewadFilters(jsonData []byte) (FiltersNewad, error) {
+	var filters FiltersNewad
 	err := json.Unmarshal(jsonData, &filters)
 	return filters, err
 }
 
-func ParseOneSettingsParam(jsonData []byte) (tf.SettingsParam, error) {
-	var settingsParam tf.SettingsParam
+func ParseOneSettingsParam(jsonData []byte) (SettingsParam, error) {
+	var settingsParam SettingsParam
 	err := json.Unmarshal(jsonData, &settingsParam)
 	return settingsParam, err
 }
 
-func ParseMultipleSettingsParams(jsonData []byte) ([]tf.SettingsParam, error) {
-	var settingsParams []tf.SettingsParam
+func ParseMultipleSettingsParams(jsonData []byte) ([]SettingsParam, error) {
+	var settingsParams []SettingsParam
 	err := json.Unmarshal(jsonData, &settingsParams)
 	return settingsParams, err
 }

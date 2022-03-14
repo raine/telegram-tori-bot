@@ -1,7 +1,4 @@
-package tori_filters
-
-// Generated with https://mholt.github.io/json-to-go/ without inline types and
-// some minor edits done on the generated result.
+package tori
 
 type FiltersNewad struct {
 	Newad Newad `json:"newad"`

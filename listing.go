@@ -5,10 +5,9 @@ import (
 	"strings"
 
 	"github.com/raine/go-telegram-bot/tori"
-	tf "github.com/raine/go-telegram-bot/tori_filters"
 )
 
-func findParamValueForLabel(param tf.Param, label string) (string, error) {
+func findParamValueForLabel(param tori.Param, label string) (string, error) {
 	switch {
 	case param.SingleSelection != nil:
 		for _, v := range param.SingleSelection.ValuesList {
@@ -29,7 +28,7 @@ func initEmptyAdDetails(listing *tori.Listing) {
 	}
 }
 
-func setListingFieldFromMessage(paramMap tf.ParamMap, listing tori.Listing, field string, message string) (tori.Listing, error) {
+func setListingFieldFromMessage(paramMap tori.ParamMap, listing tori.Listing, field string, message string) (tori.Listing, error) {
 	switch field {
 	case "price":
 		price, err := parsePriceMessage(message)

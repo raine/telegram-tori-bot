@@ -7,7 +7,6 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/raine/go-telegram-bot/tori"
-	tf "github.com/raine/go-telegram-bot/tori_filters"
 	"github.com/rs/zerolog/log"
 )
 
@@ -260,7 +259,7 @@ func (b *Bot) HandleUpdate(update tgbotapi.Update) {
 	}
 }
 
-func makeNextFieldPrompt(newadFilters tf.FiltersNewad, listing tori.Listing) (tgbotapi.MessageConfig, error) {
+func makeNextFieldPrompt(newadFilters tori.FiltersNewad, listing tori.Listing) (tgbotapi.MessageConfig, error) {
 	missingField := getMissingListingField(newadFilters.Newad.SettingsParam, listing)
 	log.Info().Str("field", missingField).Msg("next missing field")
 	msg, err := makeMissingFieldPromptMessage(newadFilters.Newad.ParamMap, missingField)
@@ -270,7 +269,7 @@ func makeNextFieldPrompt(newadFilters tf.FiltersNewad, listing tori.Listing) (tg
 	return msg, nil
 }
 
-func fetchNewadFilters(get func() (tf.FiltersNewad, error)) (tf.FiltersNewad, error) {
+func fetchNewadFilters(get func() (tori.FiltersNewad, error)) (tori.FiltersNewad, error) {
 	cachedNewadFilters, ok := getCachedNewadFilters()
 	if !ok {
 		newadFilters, err := get()

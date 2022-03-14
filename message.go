@@ -7,7 +7,6 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/raine/go-telegram-bot/tori"
-	tf "github.com/raine/go-telegram-bot/tori_filters"
 )
 
 func makeCategoriesInlineKeyboard(categories []tori.Category) tgbotapi.InlineKeyboardMarkup {
@@ -58,7 +57,7 @@ func makeCategoryMessage(categories []tori.Category, categoryCode string) tgbota
 	return msg
 }
 
-func valuesListToReplyKeyboard(valuesList []tf.Value) tgbotapi.ReplyKeyboardMarkup {
+func valuesListToReplyKeyboard(valuesList []tori.Value) tgbotapi.ReplyKeyboardMarkup {
 	buttonsPerRow := 3
 
 	var rows [][]tgbotapi.KeyboardButton
@@ -80,7 +79,7 @@ func valuesListToReplyKeyboard(valuesList []tf.Value) tgbotapi.ReplyKeyboardMark
 }
 
 func makeMissingFieldPromptMessage(
-	paramMap tf.ParamMap,
+	paramMap tori.ParamMap,
 	missingField string,
 ) (tgbotapi.MessageConfig, error) {
 	msg := tgbotapi.NewMessage(0, "")
@@ -96,7 +95,7 @@ func makeMissingFieldPromptMessage(
 		// but in tori UI it is a checkbox multi selection.
 		if missingField == "delivery_options" {
 			msg.Text = fmt.Sprintf("%s\n", param.MultiSelection.ValuesList[0].Label)
-			msg.ReplyMarkup = valuesListToReplyKeyboard([]tf.Value{
+			msg.ReplyMarkup = valuesListToReplyKeyboard([]tori.Value{
 				{Label: "Kyllä", Value: "yes"},
 				{Label: "En", Value: "no"},
 			})

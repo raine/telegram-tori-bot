@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/go-resty/resty/v2"
-	tf "github.com/raine/go-telegram-bot/tori_filters"
 )
 
 const (
@@ -144,8 +143,8 @@ func (c *Client) GetCategories() (Categories, error) {
 	return *result, err
 }
 
-func (c *Client) GetFiltersSectionNewad() (tf.FiltersNewad, error) {
-	result := &tf.FiltersNewad{}
+func (c *Client) GetFiltersSectionNewad() (FiltersNewad, error) {
+	result := &FiltersNewad{}
 	_, err := c.req(result).
 		SetQueryParam("section", "newad").
 		Get("/v1.2/public/filters")

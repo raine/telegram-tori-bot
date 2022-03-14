@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/raine/go-telegram-bot/tori"
-	tf "github.com/raine/go-telegram-bot/tori_filters"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -25,5 +24,5 @@ func TestCachedNewadFilters(t *testing.T) {
 	setCachedNewadFilters(newadFilters)
 	result, ok := getCachedNewadFilters()
 	assert.True(t, ok)
-	assert.NotEqual(t, tf.FiltersNewad{}, result)
+	assert.NotEqual(t, tori.FiltersNewad{}, result)
 }
