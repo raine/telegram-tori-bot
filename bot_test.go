@@ -4,7 +4,10 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strconv"
 	"testing"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/raine/go-telegram-bot/tori"
@@ -76,6 +79,10 @@ func strPtr(v string) *string {
 
 var authMap = map[int64]string{
 	1: "foo",
+}
+
+func TestMain(m *testing.M) {
+	os.Setenv("GO_ENV", "test")
 }
 
 func TestHandleUpdate_ListingStart(t *testing.T) {
@@ -338,7 +345,6 @@ func TestHandleUpdate_EnterDeliveryOptions(t *testing.T) {
 
 	bot.HandleUpdate(update)
 	tg.AssertExpectations(t)
-
 	assert.Equal(t, &tori.Listing{
 		Subject:  "iPhone 12",
 		Category: "5012",
@@ -350,4 +356,61 @@ func TestHandleUpdate_EnterDeliveryOptions(t *testing.T) {
 			"delivery_options":  []string{},
 		},
 	}, session.listing)
+}
+
+func TestHandleUpdate_AddPhoto(t *testing.T) {
+	ts := makeTestServer(t)
+	defer ts.Close()
+
+	userId := int64(1)
+	tg := new(botApiMock)
+	bot := NewBot(tg, authMap, ts.URL)
+
+	session, err := bot.state.getUserSession(userId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.listing = &tori.Listing{
+		Subject:  "iPhone 12",
+		Category: "5012",
+		Type:     tori.ListingTypeSell,
+	}
+
+	tg.On("Send", makeMessage(userId, "3 kuvaa lisätty")).Return(tgbotapi.Message{}, nil).Once()
+
+	for i := 0; i < 3; i++ {
+		bot.HandleUpdate(
+			tgbotapi.Update{
+				Message: &tgbotapi.Message{
+					From: &tgbotapi.User{ID: userId},
+					Text: "",
+					Photo: []tgbotapi.PhotoSize{
+						{FileID: "a", FileUniqueID: strconv.Itoa(i + 1), Width: 67, Height: 90, FileSize: 1359},
+						{FileID: "a", FileUniqueID: strconv.Itoa(i + 2), Width: 240, Height: 320, FileSize: 17212},
+						{FileID: "a", FileUniqueID: strconv.Itoa(i + 3), Width: 371, Height: 495, FileSize: 28548},
+					},
+				},
+			},
+		)
+	}
+
+	assert.Eventually(
+		t,
+		func() bool {
+			return len(session.photos) == 3 &&
+				assert.ObjectsAreEqual(
+					tgbotapi.PhotoSize{
+						FileID:       "a",
+						FileUniqueID: "3",
+						Width:        371,
+						Height:       495,
+						FileSize:     28548,
+					}, session.photos[0])
+		},
+		time.Millisecond*100,
+		time.Millisecond,
+		"expected photos in session.photos",
+	)
+
+	tg.AssertExpectations(t)
 }

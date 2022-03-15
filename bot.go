@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -50,7 +51,12 @@ func (s *UserSession) handlePhoto(message *tgbotapi.Message) {
 		s.pendingPhotos = new([]tgbotapi.PhotoSize)
 
 		go func() {
-			time.Sleep(1 * time.Second)
+			env, _ := os.LookupEnv("GO_ENV")
+			if env == "test" {
+				time.Sleep(100 * time.Microsecond)
+			} else {
+				time.Sleep(1 * time.Second)
+			}
 			s.photos = append(s.photos, *s.pendingPhotos...)
 			s.reply("%s lisätty", pluralize("kuva", "kuvaa", len(*s.pendingPhotos)))
 			s.pendingPhotos = nil
