@@ -57,7 +57,10 @@ func (s *UserSession) handlePhoto(message *tgbotapi.Message) {
 		}()
 	}
 
-	pendingPhotos := append(*s.pendingPhotos, message.Photo[len(message.Photo)-1])
+	// message.Photo is an array of PhotoSizes and the last one is the largest size
+	largestPhoto := message.Photo[len(message.Photo)-1]
+	log.Info().Interface("photo", largestPhoto).Msg("added photo")
+	pendingPhotos := append(*s.pendingPhotos, largestPhoto)
 	s.pendingPhotos = &pendingPhotos
 }
 
