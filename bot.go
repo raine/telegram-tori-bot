@@ -225,8 +225,13 @@ func (b *Bot) HandleUpdate(update tgbotapi.Update) {
 				session.reset()
 				return
 			}
+			if len(categories) == 0 {
+				// TODO: add fallback mechanism for selecting category
+				session.reply("En keksinyt osastoa otsikon perusteella, eli pieleen meni")
+				session.reset()
+				return
+			}
 			session.categories = categories
-			// TODO: Handle no categories case
 			session.listing.Category = categories[0].Code
 			msg := makeCategoryMessage(categories, session.listing.Category)
 			session.replyWithMessage(msg)
