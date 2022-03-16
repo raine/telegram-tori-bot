@@ -49,6 +49,8 @@ func (b *Bot) HandleCallback(update tgbotapi.Update) {
 	}
 
 	session.listing.Category = newCategoryCode
+	// Clear the AdDetails, since category has changed
+	session.listing.AdDetails = nil
 	msg := makeCategoryMessage(session.categories, newCategoryCode)
 	msgReplyMarkup, _ := msg.ReplyMarkup.(tgbotapi.InlineKeyboardMarkup)
 	editMsg := tgbotapi.NewEditMessageTextAndMarkup(
@@ -62,10 +64,19 @@ func (b *Bot) HandleCallback(update tgbotapi.Update) {
 	if err != nil {
 		log.Error().Err(err).Send()
 	}
+
 	callback := tgbotapi.NewCallback(update.CallbackQuery.ID, update.CallbackQuery.Data)
 	if _, err := b.tg.Request(callback); err != nil {
 		log.Error().Err(err).Send()
 	}
+
+	// Prompt user for next field because category has changed and AdDetails has been cleared
+	msg, _, err = makeNextFieldPrompt(session.client.GetFiltersSectionNewad, *session.listing)
+	if err != nil {
+		session.replyWithError(err)
+		return
+	}
+	session.replyWithMessage(msg)
 }
 
 func (b *Bot) HandleUpdate(update tgbotapi.Update) {
@@ -129,13 +140,7 @@ func (b *Bot) HandleUpdate(update tgbotapi.Update) {
 			session.replyWithMessage(msg)
 			log.Info().Interface("listing", session.listing).Msg("started a new listing")
 
-			newadFilters, err := fetchNewadFilters(session.client.GetFiltersSectionNewad)
-			if err != nil {
-				session.replyWithError(err)
-				return
-			}
-
-			msg, err = makeNextFieldPrompt(newadFilters, *session.listing)
+			msg, _, err = makeNextFieldPrompt(session.client.GetFiltersSectionNewad, *session.listing)
 			if err != nil {
 				session.replyWithError(err)
 				return
@@ -163,9 +168,8 @@ func (b *Bot) HandleUpdate(update tgbotapi.Update) {
 			session.listing = &newListing
 			log.Info().Interface("listing", newListing).Msg("updated listing")
 
-			nextMissingField := getMissingListingField(paramMap, settingsParams, *session.listing)
-			if nextMissingField != "" {
-				msg, err := makeMissingFieldPromptMessage(paramMap, nextMissingField)
+			msg, missingField, err := makeNextFieldPrompt(session.client.GetFiltersSectionNewad, *session.listing)
+			if missingField != "" {
 				if err != nil {
 					session.replyWithError(err)
 					return
@@ -176,18 +180,31 @@ func (b *Bot) HandleUpdate(update tgbotapi.Update) {
 	}
 }
 
-func makeNextFieldPrompt(newadFilters tori.NewadFilters, listing tori.Listing) (tgbotapi.MessageConfig, error) {
+func makeNextFieldPrompt(
+	getNewadFilters func() (tori.NewadFilters, error),
+	listing tori.Listing,
+) (
+	tgbotapi.MessageConfig,
+	string,
+	error,
+) {
+	newadFilters, err := fetchNewadFilters(getNewadFilters)
+	if err != nil {
+		return tgbotapi.MessageConfig{}, "", err
+	}
 	missingField := getMissingListingField(
 		newadFilters.Newad.ParamMap,
 		newadFilters.Newad.SettingsParams,
 		listing,
 	)
-	log.Info().Str("field", missingField).Msg("next missing field")
+	if missingField == "" {
+		return tgbotapi.MessageConfig{}, "", nil
+	}
 	msg, err := makeMissingFieldPromptMessage(newadFilters.Newad.ParamMap, missingField)
 	if err != nil {
-		return msg, err
+		return msg, missingField, err
 	}
-	return msg, nil
+	return msg, missingField, nil
 }
 
 func fetchNewadFilters(get func() (tori.NewadFilters, error)) (tori.NewadFilters, error) {
