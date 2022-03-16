@@ -10,7 +10,7 @@ import (
 )
 
 func makeCategoriesInlineKeyboard(categories []tori.Category) tgbotapi.InlineKeyboardMarkup {
-	buttonsPerRow := 3
+	buttonsPerRow := 2
 
 	var rows [][]tgbotapi.InlineKeyboardButton
 	for i := 0; i < len(categories); i += buttonsPerRow {
