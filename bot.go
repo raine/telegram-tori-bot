@@ -70,7 +70,7 @@ func (s *UserSession) handlePhoto(message *tgbotapi.Message) {
 	s.pendingPhotos = &pendingPhotos
 }
 
-func (s *UserSession) reply(text string, a ...interface{}) {
+func (s *UserSession) reply(text string, a ...any) {
 	msg := tgbotapi.NewMessage(0, fmt.Sprintf(text, a...))
 	msg.ParseMode = tgbotapi.ModeMarkdown
 	s.replyWithMessage(msg)

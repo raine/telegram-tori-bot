@@ -16,7 +16,7 @@ type AccountResponse struct {
 	Account `json:"account"`
 }
 
-type Location interface{}
+type Location any
 
 type Account struct {
 	AccountId string `json:"account_id"`
@@ -55,7 +55,7 @@ func NewClient(opts ClientOpts) *Client {
 	return &c
 }
 
-func (c *Client) req(result interface{}) *resty.Request {
+func (c *Client) req(result any) *resty.Request {
 	request := c.httpClient.
 		SetBaseURL(c.baseURL).
 		NewRequest().

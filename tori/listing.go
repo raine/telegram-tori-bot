@@ -47,7 +47,7 @@ func (t ListingType) MarshalJSON() ([]byte, error) {
 
 type (
 	Price       int
-	AdDetails   map[string]interface{}
+	AdDetails   map[string]any
 	SingleValue string
 	MultiValue  []string
 )
@@ -62,7 +62,7 @@ type Listing struct {
 }
 
 func (a AdDetails) MarshalJSON() ([]byte, error) {
-	obj := make(map[string]interface{})
+	obj := make(map[string]any)
 
 	for k, v := range a {
 		switch v := v.(type) {
@@ -81,8 +81,8 @@ func (a AdDetails) MarshalJSON() ([]byte, error) {
 }
 
 func (s SingleValue) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]interface{}{
-		"single": map[string]interface{}{
+	return json.Marshal(map[string]any{
+		"single": map[string]any{
 			"code": string(s),
 		},
 	})
@@ -104,7 +104,7 @@ func (m MultiValue) MarshalJSON() ([]byte, error) {
 }
 
 func (p Price) MarshalJSON() ([]byte, error) {
-	return json.Marshal(map[string]interface{}{
+	return json.Marshal(map[string]any{
 		"value":    int(p),
 		"currency": "€",
 	})

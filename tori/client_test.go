@@ -30,17 +30,17 @@ func TestGetAccountId(t *testing.T) {
 	assert.Equal(t, acc, Account{
 		AccountId: "/private/accounts/123123 ",
 		Locations: []Location{
-			map[string]interface{}{
+			map[string]any{
 				"code":  "18",
 				"key":   "region",
 				"label": "Uusimaa",
-				"locations": []interface{}{
-					map[string]interface{}{
+				"locations": []any{
+					map[string]any{
 						"code":  "313",
 						"key":   "area",
 						"label": "Helsinki",
-						"locations": []interface{}{
-							map[string]interface{}{
+						"locations": []any{
+							map[string]any{
 								"code":  "00320",
 								"key":   "zipcode",
 								"label": "EtelÃ¤-Haaga",

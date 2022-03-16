@@ -1,6 +1,6 @@
 package tori
 
 // For development
-func ignoreError(val interface{}, err error) interface{} {
+func ignoreError(val any, err error) any {
 	return val
 }

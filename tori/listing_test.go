@@ -19,7 +19,7 @@ func TestListingMarshalJSON(t *testing.T) {
 				Body:    "foo",
 				Price:   100,
 				Type:    ListingTypeSell,
-				AdDetails: map[string]interface{}{
+				AdDetails: map[string]any{
 					"clothing_kind": "16",
 					"clothing_size": "1",
 					"test":          []string{"1", "2", "3"},
@@ -65,7 +65,7 @@ func TestListingMarshalJSON(t *testing.T) {
 		"empty multi value in AdDetails is not marshaled": {
 			listing: Listing{
 				Type: ListingTypeSell,
-				AdDetails: map[string]interface{}{
+				AdDetails: map[string]any{
 					"delivery_options": []string{},
 				},
 			},
