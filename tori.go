@@ -35,23 +35,34 @@ func getDistinctCategoriesFromSearchQuery(client *tori.Client, query string) ([]
 	// Get unique categories with help of a map
 	sptMetadataCategoryToListIdCode := make(map[string]string)
 	for _, listAdItem := range ads {
-		sptMetadataCategoryToListIdCode[listAdItem.SptMetadata.Category] =
-			listAdItem.ListAd.ListIdCode
+		sptMetadataCategoryToListIdCode[listAdItem.SptMetadata.Category] = listAdItem.ListAd.ListIdCode
+	}
+
+	// Take 5 first list ids from the map
+	const categoryCount = 5
+	var listIds []string
+	var i int
+	for _, listIdCode := range sptMetadataCategoryToListIdCode {
+		if i > categoryCount-1 {
+			break
+		}
+		listIds = append(listIds, listIdCode)
+		i++
 	}
 
 	var wg sync.WaitGroup
 	categoryChan := make(chan tori.Category)
-	for _, listIdCode := range sptMetadataCategoryToListIdCode {
+	for _, id := range listIds {
 		wg.Add(1)
-		go func(listIdCode string) {
-			listing, err := client.GetListing(listIdCode)
+		go func(id string) {
+			listing, err := client.GetListing(id)
 			if err != nil {
-				log.Error().Str("listIdCode", listIdCode).Err(err).Msg("error when fetching listing")
+				log.Error().Str("listIdCode", id).Err(err).Msg("error when fetching listing")
 			} else {
 				categoryChan <- listing.Category
 			}
 			defer wg.Done()
-		}(listIdCode)
+		}(id)
 	}
 
 	go func() {
