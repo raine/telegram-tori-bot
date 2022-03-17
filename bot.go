@@ -159,6 +159,11 @@ func (b *Bot) HandleUpdate(update tgbotapi.Update) {
 			// User is replying to bot's question, and we can determine what, by
 			// getting the next missing field from Listing
 			repliedField := getMissingListingField(paramMap, settingsParams, *session.listing)
+			if repliedField == "" {
+				log.Info().Msg("not expecting a reply")
+				return
+			}
+
 			log.Info().Str("field", repliedField).Msg("user is replying to field")
 			newListing, err := setListingFieldFromMessage(paramMap, *session.listing, repliedField, text)
 			if err != nil {
