@@ -7,10 +7,13 @@ import (
 	"github.com/raine/go-telegram-bot/tori"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog/pkgerrors"
 )
 
 func main() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
+	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
+
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	botToken, ok := os.LookupEnv("BOT_TOKEN")
 	if !ok {

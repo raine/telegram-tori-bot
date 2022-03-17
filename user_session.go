@@ -38,7 +38,7 @@ func (s *UserSession) replyWithMessage(msg tgbotapi.MessageConfig) {
 	msg.ChatID = s.userId
 	_, err := s.bot.tg.Send(msg)
 	if err != nil {
-		log.Error().Err(err).Interface("msg", msg).Msg("failed to send reply message")
+		log.Error().Stack().Err(err).Interface("msg", msg).Msg("failed to send reply message")
 	}
 }
 
