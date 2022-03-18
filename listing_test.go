@@ -65,7 +65,16 @@ func TestSetListingFieldFromMessage(t *testing.T) {
 				},
 			},
 		},
-		// TODO TEST clothing_sex_0 sets clothing_sex
+		"clothing_sex_0": {
+			listing: tori.Listing{},
+			field:   "clothing_sex_0",
+			message: "Naisten",
+			want: tori.Listing{
+				AdDetails: tori.AdDetails{
+					"clothing_sex": "1",
+				},
+			},
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
