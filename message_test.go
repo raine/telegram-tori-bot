@@ -24,16 +24,23 @@ func TestMakeMissingFieldPromptMessage(t *testing.T) {
 		want         tgbotapi.MessageConfig
 	}{
 		{
+			"body",
+			tgbotapi.MessageConfig{
+				Text:      "Ilmoitusteksti?",
+				ParseMode: tgbotapi.ModeMarkdown,
+			},
+		},
+		{
 			"price",
 			tgbotapi.MessageConfig{
-				Text:      "Hinta?\n",
+				Text:      "Hinta?",
 				ParseMode: tgbotapi.ModeMarkdown,
 			},
 		},
 		{
 			"general_condition",
 			tgbotapi.MessageConfig{
-				Text:      "Kunto?\n",
+				Text:      "Kunto?",
 				ParseMode: tgbotapi.ModeMarkdown,
 				BaseChat: tgbotapi.BaseChat{
 					ReplyMarkup: tgbotapi.ReplyKeyboardMarkup{
@@ -57,7 +64,7 @@ func TestMakeMissingFieldPromptMessage(t *testing.T) {
 		{
 			"delivery_options",
 			tgbotapi.MessageConfig{
-				Text:      "Voin lähettää tuotteen\n",
+				Text:      "Voin lähettää tuotteen",
 				ParseMode: tgbotapi.ModeMarkdown,
 				BaseChat: tgbotapi.BaseChat{
 					ReplyMarkup: tgbotapi.ReplyKeyboardMarkup{

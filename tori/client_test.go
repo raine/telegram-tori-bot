@@ -5,14 +5,12 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func TestGetAccountId(t *testing.T) {
+func TestGetAccount(t *testing.T) {
 	var req *http.Request
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		req = r
@@ -30,20 +28,20 @@ func TestGetAccountId(t *testing.T) {
 	assert.Equal(t, acc, Account{
 		AccountId: "/private/accounts/123123 ",
 		Locations: []Location{
-			map[string]any{
-				"code":  "18",
-				"key":   "region",
-				"label": "Uusimaa",
-				"locations": []any{
-					map[string]any{
-						"code":  "313",
-						"key":   "area",
-						"label": "Helsinki",
-						"locations": []any{
-							map[string]any{
-								"code":  "00320",
-								"key":   "zipcode",
-								"label": "EtelÃ¤-Haaga",
+			{
+				Code:  "18",
+				Key:   "region",
+				Label: "Uusimaa",
+				Locations: []Location{
+					{
+						Code:  "313",
+						Key:   "area",
+						Label: "Helsinki",
+						Locations: []Location{
+							{
+								Code:  "00320",
+								Key:   "zipcode",
+								Label: "EtelÃ¤-Haaga",
 							},
 						},
 					},
@@ -55,26 +53,25 @@ func TestGetAccountId(t *testing.T) {
 	assert.Equal(t, "foo", req.Header.Get("Authorization"))
 }
 
-func TestUploadListingImage(t *testing.T) {
+func TestUploadMedia(t *testing.T) {
 	var req *http.Request
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		req = r
 		body, _ := io.ReadAll(req.Body)
-		assert.Equal(t, 118941, len(body))
+		assert.Equal(t, 4, len(body))
 		w.Header().Set("Content-Type", "plain/text") // Yes, really
 		io.WriteString(w, `{"image":{"url":"https://images.tori.fi/api/v1/imagestori/images/100094050777.jpg?rule=images","id":"100094050777"}}`)
 	}))
 	defer ts.Close()
 
-	file, err := os.Open(filepath.Join(cwd(), "photo.jpg"))
-	assert.Nil(t, err)
+	data := []byte("asdf")
 	client := NewClient(ClientOpts{
 		BaseURL: ts.URL,
 		Auth:    "foo",
 	})
-	media, err := client.UploadMedia(file)
+	media, err := client.UploadMedia(data)
 	assert.Nil(t, err)
-	assert.Equal(t, Image{
+	assert.Equal(t, Media{
 		Url: "https://images.tori.fi/api/v1/imagestori/images/100094050777.jpg?rule=images",
 		Id:  "100094050777",
 	}, media)
@@ -158,4 +155,95 @@ func TestGetFiltersSectionNewad(t *testing.T) {
 	assert.Equal(t, "/v1.2/public/filters", req.URL.Path)
 	assert.Equal(t, "section=newad", req.URL.RawQuery)
 	assert.Nil(t, err)
+}
+
+func TestPostListing(t *testing.T) {
+	var handlerCalled bool
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handlerCalled = true
+		body, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := `{
+  "subject": "iPhone 12",
+  "body": "Myydään käytetty iPhone 12",
+  "price": {
+    "currency": "€",
+    "value": 50
+  },
+  "type": "s",
+  "ad_details": {
+    "cell_phone": {
+      "single": {
+        "code": "apple"
+      }
+    },
+    "general_condition": {
+      "single": {
+        "code": "new"
+      }
+    }
+  },
+  "category": "5012",
+  "location": {
+    "region": "18",
+    "zipcode": "00420",
+    "area": "313"
+  },
+  "images": [
+    {
+      "media_id": "1"
+    },
+    {
+      "media_id": "2"
+    },
+    {
+      "media_id": "3"
+    }
+  ],
+  "phone_hidden": true,
+  "account_id": ""
+}`
+		assert.Equal(t, want, formatJson(body))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{}`))
+	}))
+
+	defer ts.Close()
+	client := NewClient(ClientOpts{
+		BaseURL: ts.URL,
+		Auth:    "foo",
+	})
+
+	listing := Listing{
+		Subject:  "iPhone 12",
+		Body:     "Myydään käytetty iPhone 12",
+		Category: "5012",
+		Type:     ListingTypeSell,
+		Price:    50,
+		AdDetails: AdDetails{
+			"general_condition": "new",
+			"cell_phone":        "apple",
+			"delivery_options":  []string{},
+		},
+		Location: &ListingLocation{
+			Region:  "18",
+			Zipcode: "00420",
+			Area:    "313",
+		},
+		Images: &[]ListingMedia{
+			{Id: "1"},
+			{Id: "2"},
+			{Id: "3"},
+		},
+		PhoneHidden: true,
+	}
+
+	err := client.PostListing(listing)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assert.Equal(t, true, handlerCalled)
 }

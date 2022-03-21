@@ -30,6 +30,8 @@ func initEmptyAdDetails(listing *tori.Listing) {
 
 func setListingFieldFromMessage(paramMap tori.ParamMap, listing tori.Listing, field string, message string) (tori.Listing, error) {
 	switch field {
+	case "body":
+		listing.Body = strings.TrimSpace(message)
 	case "price":
 		price, err := parsePriceMessage(message)
 		if err != nil {

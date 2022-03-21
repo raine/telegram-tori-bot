@@ -1,6 +1,9 @@
 package main
 
 import (
+	"os"
+	"time"
+
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/raine/go-telegram-bot/tori"
 	"github.com/rs/zerolog/log"
@@ -9,19 +12,20 @@ import (
 type BotAPI interface {
 	Send(c tgbotapi.Chattable) (tgbotapi.Message, error)
 	Request(c tgbotapi.Chattable) (*tgbotapi.APIResponse, error)
+	GetFileDirectURL(fileID string) (string, error)
 }
 
 type Bot struct {
 	tg             BotAPI
 	state          BotState
 	toriApiBaseUrl string
-	authMap        map[int64]string
+	userConfigMap  UserConfigMap
 }
 
-func NewBot(tg BotAPI, authMap map[int64]string, toriApiBaseUrl string) *Bot {
+func NewBot(tg BotAPI, userConfigMap UserConfigMap, toriApiBaseUrl string) *Bot {
 	bot := &Bot{
 		tg:             tg,
-		authMap:        authMap,
+		userConfigMap:  userConfigMap,
 		toriApiBaseUrl: toriApiBaseUrl,
 	}
 
@@ -29,7 +33,44 @@ func NewBot(tg BotAPI, authMap map[int64]string, toriApiBaseUrl string) *Bot {
 	return bot
 }
 
-func (b *Bot) HandleCallback(update tgbotapi.Update) {
+func (b *Bot) handlePhoto(message *tgbotapi.Message) {
+	session, err := b.state.getUserSession(message.From.ID)
+	if err != nil {
+		log.Error().Err(err).Send()
+		return
+	}
+
+	// When photos are sent as a "media group" that appear like a single message
+	// with multiple photos, the photos are in fact sent one by one in separate
+	// messages. To give feedback like "n photos added", we have to wait a bit
+	// after the first photo is sent and keep track of photos since then
+	if session.pendingPhotos == nil {
+		session.pendingPhotos = new([]tgbotapi.PhotoSize)
+
+		go func() {
+			env, _ := os.LookupEnv("GO_ENV")
+			if env == "test" {
+				time.Sleep(100 * time.Microsecond)
+			} else {
+				time.Sleep(1 * time.Second)
+			}
+			session.photos = append(session.photos, *session.pendingPhotos...)
+			session.reply("%s lisätty", pluralize("kuva", "kuvaa", len(*session.pendingPhotos)))
+			session.pendingPhotos = nil
+		}()
+	}
+
+	// message.Photo is an array of PhotoSizes and the last one is the largest size
+	largestPhoto := message.Photo[len(message.Photo)-1]
+	log.Info().Interface("photo", largestPhoto).Msg("added photo to listing")
+	pendingPhotos := append(*session.pendingPhotos, largestPhoto)
+	session.pendingPhotos = &pendingPhotos
+}
+
+// handleCallback is called when a tgbotapi.update with CallbackQuery is
+// received. That happens when user interacts with an inline keyboard with
+// callback data.
+func (b *Bot) handleCallback(update tgbotapi.Update) {
 	log.Info().Msg("got callback")
 
 	session, err := b.state.getUserSession(update.CallbackQuery.From.ID)
@@ -79,10 +120,170 @@ func (b *Bot) HandleCallback(update tgbotapi.Update) {
 	session.replyWithMessage(msg)
 }
 
-func (b *Bot) HandleUpdate(update tgbotapi.Update) {
+func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
+	text := update.Message.Text
+	session, err := b.state.getUserSession(update.Message.From.ID)
+	if err != nil {
+		log.Error().Err(err).Send()
+		return
+	}
+
+	// Message has a photo
+	if len(update.Message.Photo) > 0 {
+		b.handlePhoto(update.Message)
+	}
+
+	if text == "" {
+		return
+	}
+
+	// Start a new listing from message
+	if session.listing == nil {
+		if err != nil {
+			session.replyWithError(err)
+			return
+		}
+		session.listing = newListingFromMessage(text)
+		session.reply("*Ilmoituksen otsikko:* %s\n", session.listing.Subject)
+		if session.listing.Body != "" {
+			session.reply("*Ilmoituksen kuvaus:*\n%s", session.listing.Body)
+		}
+		categories, err := getDistinctCategoriesFromSearchQuery(session.client, session.listing.Subject)
+		if err != nil {
+			session.replyWithError(err)
+			session.reset()
+			return
+		}
+		if len(categories) == 0 {
+			// TODO: add fallback mechanism for selecting category
+			session.reply(cantFigureOutCategoryText)
+			session.reset()
+			return
+		}
+		session.categories = categories
+		session.listing.Category = categories[0].Code
+		msg := makeCategoryMessage(categories, session.listing.Category)
+		session.replyWithMessage(msg)
+		log.Info().Interface("listing", session.listing).Msg("started a new listing")
+
+		msg, _, err = makeNextFieldPrompt(session.client.GetFiltersSectionNewad, *session.listing)
+		if err != nil {
+			session.replyWithError(err)
+			return
+		}
+		session.replyWithMessage(msg)
+	} else {
+		// Augment a previously started listing with user's message
+		newadFilters, err := fetchNewadFilters(session.client.GetFiltersSectionNewad)
+		if err != nil {
+			session.replyWithError(err)
+			return
+		}
+		settingsParams := newadFilters.Newad.SettingsParams
+		paramMap := newadFilters.Newad.ParamMap
+
+		// User is replying to bot's question, and we can determine what, by
+		// getting the next missing field from Listing
+		repliedField := getMissingListingField(paramMap, settingsParams, *session.listing)
+		if repliedField == "" {
+			log.Info().Msg("not expecting a reply")
+			return
+		}
+
+		log.Info().Str("field", repliedField).Msg("user is replying to field")
+		newListing, err := setListingFieldFromMessage(paramMap, *session.listing, repliedField, text)
+		if err != nil {
+			session.replyWithError(err)
+			return
+		}
+		session.listing = &newListing
+		log.Info().Interface("listing", newListing).Msg("updated listing")
+
+		msg, missingField, err := makeNextFieldPrompt(session.client.GetFiltersSectionNewad, *session.listing)
+		if missingField != "" {
+			if err != nil {
+				session.replyWithError(err)
+				return
+			}
+			session.replyWithMessage(msg)
+		} else {
+			session.reply(listingReadyToBeSentText)
+		}
+	}
+}
+
+func (b *Bot) sendListingCommand(update tgbotapi.Update) {
+	userId := update.Message.From.ID
+	session, err := b.state.getUserSession(userId)
+	if err != nil {
+		log.Error().Err(err).Send()
+		return
+	}
+
+	newadFilters, err := fetchNewadFilters(session.client.GetFiltersSectionNewad)
+	if err != nil {
+		log.Err(err).Send()
+		return
+	}
+
+	if session.listing == nil {
+		session.reply(noListingOnSendText)
+		return
+	}
+
+	missingField := getMissingListingField(
+		newadFilters.Newad.ParamMap,
+		newadFilters.Newad.SettingsParams,
+		*session.listing,
+	)
+
+	if missingField != "" {
+		log.Info().Str("missingField", missingField).Msg("cannot send listing with missing field(s)")
+		session.reply(incompleteListingOnSendText)
+		return
+	}
+
+	// Add location to listing based on logged in user's location
+	account, err := session.client.GetAccount(session.toriAccountId)
+	if err != nil {
+		session.replyWithError(err)
+		return
+	}
+	listingLocation := tori.AccountLocationListToListingLocation(account.Locations)
+	session.listing.Location = &listingLocation
+	session.listing.AccountId = tori.ParseAccountIdNumberFromPath(account.AccountId)
+
+	// Phone number hidden implicitly
+	session.listing.PhoneHidden = true
+
+	medias, err := uploadListingPhotos(b.tg.GetFileDirectURL, session.client.UploadMedia, session.photos)
+	if err != nil {
+		session.replyWithError(err)
+		return
+	}
+
+	listingImages := make([]tori.ListingMedia, 0, len(medias))
+	for _, m := range medias {
+		listingImages = append(listingImages, tori.ListingMedia{
+			Id: "/public/media/ad/" + m.Id,
+		})
+	}
+	session.listing.Images = &listingImages
+
+	err = session.client.PostListing(*session.listing)
+	if err != nil {
+		session.replyWithError(err)
+		return
+	}
+
+	log.Info().Interface("listing", session.listing).Msg("listing posted")
+	session.reply(listingSentText)
+}
+
+func (b *Bot) handleUpdate(update tgbotapi.Update) {
 	// Update is user interacting with inline keyboard
 	if update.CallbackQuery != nil {
-		b.HandleCallback(update)
+		b.handleCallback(update)
 		return
 	}
 
@@ -99,89 +300,16 @@ func (b *Bot) HandleUpdate(update tgbotapi.Update) {
 
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	log.Info().Str("text", update.Message.Text).Msg("got message")
 
+	log.Info().Str("text", update.Message.Text).Msg("got message")
 	switch text := update.Message.Text; text {
-	case "/abort":
+	case "/peru":
 		session.reset()
 		session.reply("Ok!")
+	case "/laheta":
+		b.sendListingCommand(update)
 	default:
-		// Message has a photo
-		if len(update.Message.Photo) > 0 {
-			session.handlePhoto(update.Message)
-		}
-
-		if text == "" {
-			return
-		}
-
-		// Start a new listing from message
-		if session.listing == nil {
-			session.listing = newListingFromMessage(text)
-			session.reply("*Ilmoituksen otsikko:* %s\n", session.listing.Subject)
-			if session.listing.Body != "" {
-				session.reply("*Ilmoituksen kuvaus:*\n%s", session.listing.Body)
-			}
-			categories, err := getDistinctCategoriesFromSearchQuery(session.client, session.listing.Subject)
-			if err != nil {
-				session.replyWithError(err)
-				session.reset()
-				return
-			}
-			if len(categories) == 0 {
-				// TODO: add fallback mechanism for selecting category
-				session.reply("En keksinyt osastoa otsikon perusteella, eli pieleen meni")
-				session.reset()
-				return
-			}
-			session.categories = categories
-			session.listing.Category = categories[0].Code
-			msg := makeCategoryMessage(categories, session.listing.Category)
-			session.replyWithMessage(msg)
-			log.Info().Interface("listing", session.listing).Msg("started a new listing")
-
-			msg, _, err = makeNextFieldPrompt(session.client.GetFiltersSectionNewad, *session.listing)
-			if err != nil {
-				session.replyWithError(err)
-				return
-			}
-			session.replyWithMessage(msg)
-		} else {
-			// Augment a previously started listing with user's message
-			newadFilters, err := fetchNewadFilters(session.client.GetFiltersSectionNewad)
-			if err != nil {
-				session.replyWithError(err)
-				return
-			}
-			settingsParams := newadFilters.Newad.SettingsParams
-			paramMap := newadFilters.Newad.ParamMap
-
-			// User is replying to bot's question, and we can determine what, by
-			// getting the next missing field from Listing
-			repliedField := getMissingListingField(paramMap, settingsParams, *session.listing)
-			if repliedField == "" {
-				log.Info().Msg("not expecting a reply")
-				return
-			}
-
-			log.Info().Str("field", repliedField).Msg("user is replying to field")
-			newListing, err := setListingFieldFromMessage(paramMap, *session.listing, repliedField, text)
-			if err != nil {
-				session.replyWithError(err)
-				return
-			}
-			session.listing = &newListing
-			log.Info().Interface("listing", newListing).Msg("updated listing")
-
-			msg, missingField, err := makeNextFieldPrompt(session.client.GetFiltersSectionNewad, *session.listing)
-			if missingField != "" {
-				if err != nil {
-					session.replyWithError(err)
-					return
-				}
-				session.replyWithMessage(msg)
-			}
-		}
+		b.handleFreetextReply(update)
 	}
 }
 

@@ -280,8 +280,16 @@ func TestGetMissingListingField(t *testing.T) {
 		listing tori.Listing
 		want    string
 	}{
+		"body": {
+			listing: tori.Listing{
+				Type:     tori.ListingTypeSell,
+				Category: "3050",
+			},
+			want: "body",
+		},
 		"general_condition": {
 			listing: tori.Listing{
+				Body:     "asdf",
 				Type:     tori.ListingTypeSell,
 				Category: "3050",
 			},
@@ -289,6 +297,7 @@ func TestGetMissingListingField(t *testing.T) {
 		},
 		"price": {
 			listing: tori.Listing{
+				Body:     "asdf",
 				Type:     tori.ListingTypeSell,
 				Category: "3050",
 				AdDetails: tori.AdDetails{
@@ -299,6 +308,7 @@ func TestGetMissingListingField(t *testing.T) {
 		},
 		"clothing_sex": {
 			listing: tori.Listing{
+				Body:     "asdf",
 				Type:     tori.ListingTypeSell,
 				Category: "3050",
 				Price:    1,
@@ -310,6 +320,7 @@ func TestGetMissingListingField(t *testing.T) {
 		},
 		"clothing_kind matches after clothing_sex is set": {
 			listing: tori.Listing{
+				Body:     "asdf",
 				Type:     tori.ListingTypeSell,
 				Category: "3050",
 				Price:    1,
@@ -322,6 +333,7 @@ func TestGetMissingListingField(t *testing.T) {
 		},
 		"clothing_size matches after clothing_kind is set": {
 			listing: tori.Listing{
+				Body:     "asdf",
 				Type:     tori.ListingTypeSell,
 				Category: "3050",
 				Price:    1,
@@ -335,6 +347,7 @@ func TestGetMissingListingField(t *testing.T) {
 		},
 		"delivery_options": {
 			listing: tori.Listing{
+				Body:     "asdf",
 				Type:     tori.ListingTypeSell,
 				Category: "3050",
 				Price:    1,
@@ -349,6 +362,7 @@ func TestGetMissingListingField(t *testing.T) {
 		},
 		"no fields after delivery_options": {
 			listing: tori.Listing{
+				Body:     "asdf",
 				Type:     tori.ListingTypeSell,
 				Category: "3050",
 				Price:    1,

@@ -15,15 +15,16 @@ type BotState struct {
 }
 
 func (bs *BotState) newUserSession(userId int64) (*UserSession, error) {
-	token, ok := bs.bot.authMap[userId]
+	userConfig, ok := bs.bot.userConfigMap[userId]
 	if !ok {
-		return nil, fmt.Errorf("user %d has no auth token set", userId)
+		return nil, fmt.Errorf("user %d has no config", userId)
 	}
 
 	session := UserSession{
-		userId: userId,
+		userId:        userId,
+		toriAccountId: userConfig.ToriAccountId,
 		client: tori.NewClient(tori.ClientOpts{
-			Auth:    token,
+			Auth:    userConfig.Token,
 			BaseURL: bs.bot.toriApiBaseUrl,
 		}),
 		bot: bs.bot,

@@ -46,7 +46,7 @@ func TestListingMarshalJSON(t *testing.T) {
       }
     },
     "test": {
-      "multi": [
+      "multiple": [
         {
           "code": "1"
         },
@@ -59,7 +59,9 @@ func TestListingMarshalJSON(t *testing.T) {
       ]
     }
   },
-  "category": ""
+  "category": "",
+  "phone_hidden": false,
+  "account_id": ""
 }`,
 		},
 		"empty multi value in AdDetails is not marshaled": {
@@ -79,7 +81,73 @@ func TestListingMarshalJSON(t *testing.T) {
   },
   "type": "s",
   "ad_details": {},
-  "category": ""
+  "category": "",
+  "phone_hidden": false,
+  "account_id": ""
+}`,
+		},
+		"listing location": {
+			listing: Listing{
+				Type: ListingTypeSell,
+				Location: &ListingLocation{
+					Region:  "18",
+					Zipcode: "00420",
+					Area:    "313",
+				},
+			},
+			want: `
+{
+  "subject": "",
+  "body": "",
+  "price": {
+    "currency": "€",
+    "value": 0
+  },
+  "type": "s",
+  "ad_details": {},
+  "category": "",
+  "location": {
+    "region": "18",
+    "zipcode": "00420",
+    "area": "313"
+  },
+  "phone_hidden": false,
+  "account_id": ""
+}`,
+		},
+		"images": {
+			listing: Listing{
+				Type: ListingTypeSell,
+				Images: &[]ListingMedia{
+					{Id: "1"},
+					{Id: "2"},
+					{Id: "3"},
+				},
+			},
+			want: `
+{
+  "subject": "",
+  "body": "",
+  "price": {
+    "currency": "€",
+    "value": 0
+  },
+  "type": "s",
+  "ad_details": {},
+  "category": "",
+  "images": [
+    {
+      "media_id": "1"
+    },
+    {
+      "media_id": "2"
+    },
+    {
+      "media_id": "3"
+    }
+  ],
+  "phone_hidden": false,
+  "account_id": ""
 }`,
 		},
 	}

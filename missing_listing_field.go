@@ -102,6 +102,11 @@ func getMissingListingFieldWithSettingsParam(
 }
 
 func getMissingListingField(paramMap tori.ParamMap, settingsParams []tori.SettingsParam, listing tori.Listing) string {
+	// body is not specified in tori's settings_param list so we check it separately
+	if listing.Body == "" {
+		return "body"
+	}
+
 	for _, settingsParam := range settingsParams {
 		if next := getMissingListingFieldWithSettingsParam(paramMap, settingsParam, listing); next != "" {
 			return next

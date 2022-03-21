@@ -52,13 +52,27 @@ type (
 	MultiValue  []string
 )
 
+type ListingLocation struct {
+	Region  string `json:"region"`
+	Zipcode string `json:"zipcode"`
+	Area    string `json:"area"`
+}
+
+type ListingMedia struct {
+	Id string `json:"media_id"`
+}
+
 type Listing struct {
-	Subject   string      `json:"subject"`
-	Body      string      `json:"body"`
-	Price     Price       `json:"price"`
-	Type      ListingType `json:"type"`
-	AdDetails AdDetails   `json:"ad_details"`
-	Category  string      `json:"category"`
+	Subject     string           `json:"subject"`
+	Body        string           `json:"body"`
+	Price       Price            `json:"price"`
+	Type        ListingType      `json:"type"`
+	AdDetails   AdDetails        `json:"ad_details"`
+	Category    string           `json:"category"`
+	Location    *ListingLocation `json:"location,omitempty"`
+	Images      *[]ListingMedia  `json:"images,omitempty"`
+	PhoneHidden bool             `json:"phone_hidden"`
+	AccountId   string           `json:"account_id"`
 }
 
 func (a AdDetails) MarshalJSON() ([]byte, error) {
@@ -99,7 +113,7 @@ func (m MultiValue) MarshalJSON() ([]byte, error) {
 	}
 
 	return json.Marshal(map[string]MultiValueArray{
-		"multi": multi,
+		"multiple": multi,
 	})
 }
 

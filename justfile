@@ -7,5 +7,8 @@ run-watch:
 test-all *FLAGS:
   richgo test {{FLAGS}} ./...
 
-test-watch *FLAGS:
+test-all-watch *FLAGS:
   fd .go | entr richgo test {{FLAGS}} ./...
+
+test-watch *FLAGS:
+  fd .go | entr richgo test {{FLAGS}}

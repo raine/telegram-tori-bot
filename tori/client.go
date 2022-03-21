@@ -3,9 +3,9 @@ package tori
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/go-resty/resty/v2"
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -16,11 +16,16 @@ type AccountResponse struct {
 	Account `json:"account"`
 }
 
-type Location any
+type Location struct {
+	Code      string     `json:"code"`
+	Key       string     `json:"key"`
+	Label     string     `json:"label"`
+	Locations []Location `json:"locations"`
+}
 
 type Account struct {
-	AccountId string `json:"account_id"`
-	Locations []Location
+	AccountId string     `json:"account_id"`
+	Locations []Location `json:"locations"`
 }
 
 type ClientOpts struct {
@@ -43,7 +48,7 @@ func NewClient(opts ClientOpts) *Client {
 		c.auth = opts.Auth
 	}
 	c.httpClient = resty.New().
-		SetDebug(false).
+		SetDebug(true).
 		SetBaseURL(c.baseURL).
 		SetHeaders(
 			map[string]string{
@@ -81,32 +86,29 @@ func (c *Client) GetAccount(accountId string) (Account, error) {
 }
 
 type UploadMediaResponse struct {
-	Image `json:"image"`
+	Media `json:"image"`
 }
 
-type Image struct {
+type Media struct {
 	Id  string `json:"id"`
 	Url string `json:"url"`
 }
 
-func (c *Client) UploadMedia(file *os.File) (Image, error) {
-	image := Image{}
-	fileInfo, err := file.Stat()
-	if err != nil {
-		return image, err
-	}
+func (c *Client) UploadMedia(data []byte) (Media, error) {
+	media := Media{}
 
-	res, err := c.req(nil).SetHeaders(
-		map[string]string{
-			"Content-Type":   "application/x-www-form-urlencoded",
-			"User-Agent":     "Tori/12.1.16 (com.tori.tori; build:190; iOS 15.3.1) Alamofire/5.4.4",
-			"Content-Length": fmt.Sprintf("%v", fileInfo.Size()),
-		},
-	).
-		SetBody(file).
-		Post("/v2.2/media")
+	res, err := handleError(
+		c.req(nil).SetHeaders(
+			map[string]string{
+				"Content-Type":   "application/x-www-form-urlencoded",
+				"User-Agent":     "Tori/12.1.16 (com.tori.tori; build:190; iOS 15.3.1) Alamofire/5.4.4",
+				"Content-Length": fmt.Sprintf("%v", len(data)),
+			},
+		).
+			SetBody(data).
+			Post("/v2.2/media"))
 	if err != nil {
-		return image, err
+		return media, err
 	}
 
 	// Tori API returns the wrong content-type (text/plain) so we can't use
@@ -114,9 +116,9 @@ func (c *Client) UploadMedia(file *os.File) (Image, error) {
 	var uploadImageResponse UploadMediaResponse
 	err = json.Unmarshal(res.Body(), &uploadImageResponse)
 	if err != nil {
-		return image, err
+		return media, err
 	}
-	return uploadImageResponse.Image, err
+	return uploadImageResponse.Media, err
 }
 
 type Ad struct {
@@ -130,23 +132,55 @@ type GetListingResponse struct {
 
 func (c *Client) GetListing(id string) (Ad, error) {
 	result := &GetListingResponse{}
-	_, err := c.req(result).
-		SetPathParam("id", id).
-		Get("/v2/listings/{id}")
+	_, err := handleError(
+		c.req(result).
+			SetPathParam("id", id).
+			Get("/v2/listings/{id}"))
 
 	return result.Ad, err
 }
 
 func (c *Client) GetCategories() (Categories, error) {
 	result := &Categories{}
-	_, err := c.req(result).Get("/v1.2/public/categories/insert")
+	_, err := handleError(
+		c.req(result).Get("/v1.2/public/categories/insert"))
+
 	return *result, err
 }
 
 func (c *Client) GetFiltersSectionNewad() (NewadFilters, error) {
 	result := &NewadFilters{}
-	_, err := c.req(result).
-		SetQueryParam("section", "newad").
-		Get("/v1.2/public/filters")
+	_, err := handleError(
+		c.req(result).
+			SetQueryParam("section", "newad").
+			Get("/v1.2/public/filters"))
+
 	return *result, err
+}
+
+func (c *Client) PostListing(listing Listing) error {
+	_, err := handleError(
+		c.req(nil).
+			SetBody(listing).
+			Post("/v2/listings"))
+
+	return err
+}
+
+// handleError is a generic error handler for failing response (>399 status
+// code). Without this, failing responses would have nil error.
+func handleError(res *resty.Response, err error) (*resty.Response, error) {
+	if err != nil {
+		return res, err
+	}
+	if res.IsError() {
+		log.Error().
+			Str("url", res.Request.URL).
+			Str("method", res.Request.Method).
+			Interface("request", res.Request.Body).
+			Send()
+		return res, fmt.Errorf("request failed: %s", string(res.Body()))
+	}
+
+	return res, nil
 }

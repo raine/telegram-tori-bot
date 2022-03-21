@@ -84,17 +84,24 @@ func makeMissingFieldPromptMessage(
 ) (tgbotapi.MessageConfig, error) {
 	msg := tgbotapi.NewMessage(0, "")
 	msg.ParseMode = tgbotapi.ModeMarkdown
+
+	// body is not in tori's param_map
+	if missingField == "body" {
+		msg.Text = "Ilmoitusteksti?"
+		return msg, nil
+	}
+
 	param := paramMap[missingField]
 	switch {
 	case param.SingleSelection != nil:
 		msg.ReplyMarkup = valuesListToReplyKeyboard(param.SingleSelection.ValuesList)
-		msg.Text = fmt.Sprintf("%s?\n", (*param.SingleSelection).Label)
+		msg.Text = fmt.Sprintf("%s?", (*param.SingleSelection).Label)
 	case param.MultiSelection != nil:
 		// delivery_options param is multi selection with single value. For a
 		// bot, it makes more sense as a single selection with yes/no answers,
 		// but in tori UI it is a checkbox multi selection.
 		if missingField == "delivery_options" {
-			msg.Text = fmt.Sprintf("%s\n", param.MultiSelection.ValuesList[0].Label)
+			msg.Text = param.MultiSelection.ValuesList[0].Label
 			msg.ReplyMarkup = valuesListToReplyKeyboard([]tori.Value{
 				{Label: "Kyllä", Value: "yes"},
 				{Label: "En", Value: "no"},
@@ -103,7 +110,7 @@ func makeMissingFieldPromptMessage(
 		}
 		return msg, fmt.Errorf("multi selection param %s not implemented", missingField)
 	case param.Text != nil:
-		msg.Text = fmt.Sprintf("%s?\n", (*param.Text).Label)
+		msg.Text = fmt.Sprintf("%s?", (*param.Text).Label)
 	default:
 		return msg, fmt.Errorf("could not find param for missing field '%s'", missingField)
 	}
@@ -124,3 +131,15 @@ func parsePriceMessage(message string) (tori.Price, error) {
 		return tori.Price(n), err
 	}
 }
+
+const (
+	listingReadyToBeSentText = `
+    Ilmoitus on valmis lähetettäväksi.
+
+    /laheta - Lähetä ilmoitus
+    /peru - Peru ilmoituksen teko`
+	cantFigureOutCategoryText   = "En keksinyt osastoa otsikon perusteella, eli pieleen meni."
+	incompleteListingOnSendText = "Ilmoituksesta puuttuu kenttiä."
+	noListingOnSendText         = "Ei ole ilmoitusta mitä lähettää."
+	listingSentText             = "Ilmoitus lähetetty!"
+)

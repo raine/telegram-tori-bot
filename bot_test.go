@@ -1,19 +1,33 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/lithammer/dedent"
 	"github.com/raine/go-telegram-bot/tori"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
+
+func formatJson(b []byte) string {
+	var out bytes.Buffer
+	err := json.Indent(&out, b, "", "  ")
+	if err != nil {
+		panic(err)
+	}
+	return out.String()
+}
 
 type botApiMock struct {
 	mock.Mock
@@ -27,6 +41,22 @@ func (m *botApiMock) Send(c tgbotapi.Chattable) (tgbotapi.Message, error) {
 func (m *botApiMock) Request(c tgbotapi.Chattable) (*tgbotapi.APIResponse, error) {
 	args := m.Called(c)
 	return args.Get(0).(*tgbotapi.APIResponse), args.Error(1)
+}
+
+func (m *botApiMock) GetFileDirectURL(fileID string) (string, error) {
+	args := m.Called(fileID)
+	return args.Get(0).(string), args.Error(1)
+}
+
+func makeUpdateWithMessageText(userId int64, text string) tgbotapi.Update {
+	return tgbotapi.Update{
+		Message: &tgbotapi.Message{
+			From: &tgbotapi.User{
+				ID: userId,
+			},
+			Text: text,
+		},
+	}
 }
 
 func makeMessage(userId int64, text string) tgbotapi.MessageConfig {
@@ -47,42 +77,70 @@ func makeMessageWithReplyMarkup(userId int64, text string, replyMarkup tgbotapi.
 	return msg
 }
 
-func makeTestServer(t *testing.T) *httptest.Server {
+func makeTestServerWithOnReqFn(t *testing.T, onReq func(r *http.Request)) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		onReq(r)
 		var b []byte
 		var err error
+		// body, err := ioutil.ReadAll(r.Body)
+		// fmt.Printf("string(body = %+v\n", string(body))
 		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/v2/listings/search":
-			b = makeListingsSearchResponse(t)
-		case "/v2/listings/1":
+		methodAndPath := fmt.Sprintf("%s %s", r.Method, r.URL.Path)
+		switch methodAndPath {
+		case "GET /v2/listings/search":
+			w.Write(makeListingsSearchResponse(t))
+		case "GET /v2/listings/1":
 			w.Write(makeListingResponse(t, "1", tori.Category{Code: "5012", Label: "Puhelimet"}))
-		case "/v2/listings/2":
+		case "GET /v2/listings/2":
 			w.Write(makeListingResponse(t, "2", tori.Category{Code: "5022", Label: "Televisiot"}))
-		case "/v2/listings/4":
+		case "GET /v2/listings/4":
 			w.Write(makeListingResponse(t, "4", tori.Category{Code: "5031", Label: "Tabletit"}))
-		case "/v1.2/public/filters":
+		case "GET /v1.2/public/filters":
 			b, err = ioutil.ReadFile("tori/testdata/v1_2_public_filters_section_newad.json")
+			w.Write(b)
+		case "GET /v1.2/private/accounts/123123":
+			b, err = ioutil.ReadFile("tori/testdata/v1_2_private_accounts_123123.json")
+			w.Write(b)
+		case "POST /v2/listings":
+			w.Write([]byte("{}"))
+		case "POST /v2.2/media":
+			media := tori.Media{Id: "a", Url: ""}
+			response := tori.UploadMediaResponse{Media: media}
+			responseJson, err := json.Marshal(response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			w.Header().Set("Content-Type", "plain/text") // Yes, really
+			w.Write(responseJson)
+		case "GET /1.jpg", "GET /2.jpg":
+			w.Write([]byte("123"))
 		default:
-			t.Fatal("invalid path " + r.URL.Path)
+			t.Fatal(fmt.Sprintf("invalid request to test server: %s %s", r.Method, r.URL.Path))
 		}
 		if err != nil {
 			t.Fatal(err)
 		}
-		w.Write(b)
 	}))
+}
+
+func makeTestServer(t *testing.T) *httptest.Server {
+	return makeTestServerWithOnReqFn(t, func(r *http.Request) {})
 }
 
 func strPtr(v string) *string {
 	return &v
 }
 
-var authMap = map[int64]string{
-	1: "foo",
+var userConfigMap = UserConfigMap{
+	1: UserConfig{
+		Token:         "foo",
+		ToriAccountId: "123123",
+	},
 }
 
 func TestMain(m *testing.M) {
 	os.Setenv("GO_ENV", "test")
+	os.Exit(m.Run())
 }
 
 func TestHandleUpdate_ListingStart(t *testing.T) {
@@ -90,17 +148,10 @@ func TestHandleUpdate_ListingStart(t *testing.T) {
 	defer ts.Close()
 	userId := int64(1)
 	tg := new(botApiMock)
-	bot := NewBot(tg, authMap, ts.URL)
-	update := tgbotapi.Update{
-		Message: &tgbotapi.Message{
-			From: &tgbotapi.User{
-				ID: userId,
-			},
-			Text: "iPhone 12\n\nMyydään käytetty iPhone 12",
-		},
-	}
+	bot := NewBot(tg, userConfigMap, ts.URL)
+	update := makeUpdateWithMessageText(userId, "iPhone 12\n\nMyydään käytetty iPhone 12")
 
-	tg.On("Send", makeMessage(userId, "*Ilmoituksen otsikko:* iPhone 12\n")).Return(tgbotapi.Message{}, nil).Once()
+	tg.On("Send", makeMessage(userId, "*Ilmoituksen otsikko:* iPhone 12")).Return(tgbotapi.Message{}, nil).Once()
 	tg.On("Send", makeMessage(userId, "*Ilmoituksen kuvaus:*\nMyydään käytetty iPhone 12")).Return(tgbotapi.Message{}, nil).Once()
 	tg.On("Send", makeMessageWithFn(userId, "*Osasto:* Puhelimet\n", func(msg *tgbotapi.MessageConfig) {
 		msg.ReplyMarkup = tgbotapi.InlineKeyboardMarkup{
@@ -114,10 +165,10 @@ func TestHandleUpdate_ListingStart(t *testing.T) {
 	})).
 		Return(tgbotapi.Message{}, nil).Once()
 	// Bot prompts for first missing field in listing
-	tg.On("Send", makeMessage(userId, "Hinta?\n")).
+	tg.On("Send", makeMessage(userId, "Hinta?")).
 		Return(tgbotapi.Message{}, nil).Once()
 
-	bot.HandleUpdate(update)
+	bot.handleUpdate(update)
 	tg.AssertExpectations(t)
 	session, err := bot.state.getUserSession(userId)
 	if err != nil {
@@ -135,6 +186,7 @@ func TestHandleUpdate_ListingStart(t *testing.T) {
 			Type:     tori.ListingTypeSell,
 			Category: "5012",
 		},
+		toriAccountId: "123123",
 		pendingPhotos: nil,
 		photos:        nil,
 		categories: []tori.Category{
@@ -145,21 +197,14 @@ func TestHandleUpdate_ListingStart(t *testing.T) {
 	}, session)
 }
 
-func TestHandleUpdate_EnterPrice(t *testing.T) {
+func TestHandleUpdate_EnterBodySeparatelyFromInitialMessage(t *testing.T) {
 	ts := makeTestServer(t)
 	defer ts.Close()
 
 	userId := int64(1)
 	tg := new(botApiMock)
-	bot := NewBot(tg, authMap, ts.URL)
-	update := tgbotapi.Update{
-		Message: &tgbotapi.Message{
-			From: &tgbotapi.User{
-				ID: userId,
-			},
-			Text: "50€",
-		},
-	}
+	bot := NewBot(tg, userConfigMap, ts.URL)
+	update := makeUpdateWithMessageText(userId, "Myydään käytetty iPhone 12")
 
 	session, err := bot.state.getUserSession(userId)
 	if err != nil {
@@ -172,7 +217,42 @@ func TestHandleUpdate_EnterPrice(t *testing.T) {
 	}
 
 	// Bot asks the next field
-	tg.On("Send", makeMessageWithReplyMarkup(userId, "Kunto?\n",
+	tg.On("Send", makeMessage(userId, "Hinta?")).
+		Return(tgbotapi.Message{}, nil).Once()
+
+	bot.handleUpdate(update)
+	tg.AssertExpectations(t)
+
+	assert.Equal(t, &tori.Listing{
+		Subject:  "iPhone 12",
+		Body:     "Myydään käytetty iPhone 12",
+		Category: "5012",
+		Type:     tori.ListingTypeSell,
+	}, session.listing)
+}
+
+func TestHandleUpdate_EnterPrice(t *testing.T) {
+	ts := makeTestServer(t)
+	defer ts.Close()
+
+	userId := int64(1)
+	tg := new(botApiMock)
+	bot := NewBot(tg, userConfigMap, ts.URL)
+	update := makeUpdateWithMessageText(userId, "50€")
+
+	session, err := bot.state.getUserSession(userId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.listing = &tori.Listing{
+		Subject:  "iPhone 12",
+		Body:     "Myydään käytetty iPhone 12",
+		Category: "5012",
+		Type:     tori.ListingTypeSell,
+	}
+
+	// Bot asks the next field
+	tg.On("Send", makeMessageWithReplyMarkup(userId, "Kunto?",
 		tgbotapi.ReplyKeyboardMarkup{
 			Keyboard: [][]tgbotapi.KeyboardButton{{
 				tgbotapi.KeyboardButton{Text: "Uusi"},
@@ -188,11 +268,12 @@ func TestHandleUpdate_EnterPrice(t *testing.T) {
 	)).
 		Return(tgbotapi.Message{}, nil).Once()
 
-	bot.HandleUpdate(update)
+	bot.handleUpdate(update)
 	tg.AssertExpectations(t)
 
 	assert.Equal(t, &tori.Listing{
 		Subject:  "iPhone 12",
+		Body:     "Myydään käytetty iPhone 12",
 		Category: "5012",
 		Type:     tori.ListingTypeSell,
 		Price:    50,
@@ -205,15 +286,8 @@ func TestHandleUpdate_EnterCondition(t *testing.T) {
 
 	userId := int64(1)
 	tg := new(botApiMock)
-	bot := NewBot(tg, authMap, ts.URL)
-	update := tgbotapi.Update{
-		Message: &tgbotapi.Message{
-			From: &tgbotapi.User{
-				ID: userId,
-			},
-			Text: "Uusi",
-		},
-	}
+	bot := NewBot(tg, userConfigMap, ts.URL)
+	update := makeUpdateWithMessageText(userId, "Uusi")
 
 	session, err := bot.state.getUserSession(userId)
 	if err != nil {
@@ -221,13 +295,14 @@ func TestHandleUpdate_EnterCondition(t *testing.T) {
 	}
 	session.listing = &tori.Listing{
 		Subject:  "iPhone 12",
+		Body:     "Myydään käytetty iPhone 12",
 		Category: "5012",
 		Type:     tori.ListingTypeSell,
 		Price:    50,
 	}
 
 	// Bot asks the next field
-	tg.On("Send", makeMessageWithReplyMarkup(userId, "Laitevalmistaja?\n",
+	tg.On("Send", makeMessageWithReplyMarkup(userId, "Laitevalmistaja?",
 		tgbotapi.ReplyKeyboardMarkup{
 			Keyboard: [][]tgbotapi.KeyboardButton{
 				{tgbotapi.KeyboardButton{Text: "Apple"}, tgbotapi.KeyboardButton{Text: "Doro"}, tgbotapi.KeyboardButton{Text: "HTC"}},
@@ -240,10 +315,11 @@ func TestHandleUpdate_EnterCondition(t *testing.T) {
 		})).
 		Return(tgbotapi.Message{}, nil).Once()
 
-	bot.HandleUpdate(update)
+	bot.handleUpdate(update)
 
 	assert.Equal(t, &tori.Listing{
 		Subject:  "iPhone 12",
+		Body:     "Myydään käytetty iPhone 12",
 		Category: "5012",
 		Type:     tori.ListingTypeSell,
 		Price:    50,
@@ -259,15 +335,8 @@ func TestHandleUpdate_EnterManufacturer(t *testing.T) {
 
 	userId := int64(1)
 	tg := new(botApiMock)
-	bot := NewBot(tg, authMap, ts.URL)
-	update := tgbotapi.Update{
-		Message: &tgbotapi.Message{
-			From: &tgbotapi.User{
-				ID: userId,
-			},
-			Text: "Apple",
-		},
-	}
+	bot := NewBot(tg, userConfigMap, ts.URL)
+	update := makeUpdateWithMessageText(userId, "Apple")
 
 	session, err := bot.state.getUserSession(userId)
 	if err != nil {
@@ -275,6 +344,7 @@ func TestHandleUpdate_EnterManufacturer(t *testing.T) {
 	}
 	session.listing = &tori.Listing{
 		Subject:  "iPhone 12",
+		Body:     "Myydään käytetty iPhone 12",
 		Category: "5012",
 		Type:     tori.ListingTypeSell,
 		Price:    50,
@@ -284,7 +354,7 @@ func TestHandleUpdate_EnterManufacturer(t *testing.T) {
 	}
 
 	// Bot asks the next field
-	tg.On("Send", makeMessageWithReplyMarkup(userId, "Voin lähettää tuotteen\n",
+	tg.On("Send", makeMessageWithReplyMarkup(userId, "Voin lähettää tuotteen",
 		tgbotapi.ReplyKeyboardMarkup{
 			Keyboard: [][]tgbotapi.KeyboardButton{
 				{
@@ -297,11 +367,12 @@ func TestHandleUpdate_EnterManufacturer(t *testing.T) {
 		})).
 		Return(tgbotapi.Message{}, nil).Once()
 
-	bot.HandleUpdate(update)
+	bot.handleUpdate(update)
 	tg.AssertExpectations(t)
 
 	assert.Equal(t, &tori.Listing{
 		Subject:  "iPhone 12",
+		Body:     "Myydään käytetty iPhone 12",
 		Category: "5012",
 		Type:     tori.ListingTypeSell,
 		Price:    50,
@@ -318,15 +389,8 @@ func TestHandleUpdate_EnterDeliveryOptions(t *testing.T) {
 
 	userId := int64(1)
 	tg := new(botApiMock)
-	bot := NewBot(tg, authMap, ts.URL)
-	update := tgbotapi.Update{
-		Message: &tgbotapi.Message{
-			From: &tgbotapi.User{
-				ID: userId,
-			},
-			Text: "En",
-		},
-	}
+	bot := NewBot(tg, userConfigMap, ts.URL)
+	update := makeUpdateWithMessageText(userId, "En")
 
 	session, err := bot.state.getUserSession(userId)
 	if err != nil {
@@ -334,6 +398,7 @@ func TestHandleUpdate_EnterDeliveryOptions(t *testing.T) {
 	}
 	session.listing = &tori.Listing{
 		Subject:  "iPhone 12",
+		Body:     "Myydään käytetty iPhone 12",
 		Category: "5012",
 		Type:     tori.ListingTypeSell,
 		Price:    50,
@@ -343,10 +408,18 @@ func TestHandleUpdate_EnterDeliveryOptions(t *testing.T) {
 		},
 	}
 
-	bot.HandleUpdate(update)
+	tg.On("Send", makeMessage(userId, strings.TrimSpace(dedent.Dedent(`
+    Ilmoitus on valmis lähetettäväksi.
+
+    /laheta - Lähetä ilmoitus
+    /peru - Peru ilmoituksen teko`)),
+	)).Return(tgbotapi.Message{}, nil).Once()
+
+	bot.handleUpdate(update)
 	tg.AssertExpectations(t)
 	assert.Equal(t, &tori.Listing{
 		Subject:  "iPhone 12",
+		Body:     "Myydään käytetty iPhone 12",
 		Category: "5012",
 		Type:     tori.ListingTypeSell,
 		Price:    50,
@@ -364,7 +437,7 @@ func TestHandleUpdate_AddPhoto(t *testing.T) {
 
 	userId := int64(1)
 	tg := new(botApiMock)
-	bot := NewBot(tg, authMap, ts.URL)
+	bot := NewBot(tg, userConfigMap, ts.URL)
 
 	session, err := bot.state.getUserSession(userId)
 	if err != nil {
@@ -379,7 +452,7 @@ func TestHandleUpdate_AddPhoto(t *testing.T) {
 	tg.On("Send", makeMessage(userId, "3 kuvaa lisätty")).Return(tgbotapi.Message{}, nil).Once()
 
 	for i := 0; i < 3; i++ {
-		bot.HandleUpdate(
+		bot.handleUpdate(
 			tgbotapi.Update{
 				Message: &tgbotapi.Message{
 					From: &tgbotapi.User{ID: userId},
@@ -413,4 +486,120 @@ func TestHandleUpdate_AddPhoto(t *testing.T) {
 	)
 
 	tg.AssertExpectations(t)
+}
+
+func TestHandleUpdate_SendListingWithIncompleteListing(t *testing.T) {
+	ts := makeTestServer(t)
+	defer ts.Close()
+
+	userId := int64(1)
+	tg := new(botApiMock)
+	bot := NewBot(tg, userConfigMap, ts.URL)
+	update := makeUpdateWithMessageText(userId, "/laheta")
+	session, err := bot.state.getUserSession(userId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.listing = &tori.Listing{
+		Subject:  "iPhone 12",
+		Category: "5012",
+		Type:     tori.ListingTypeSell,
+		Price:    50,
+		AdDetails: tori.AdDetails{
+			"general_condition": "new",
+			"cell_phone":        "apple",
+		},
+	}
+
+	tg.On("Send", makeMessage(userId, "Ilmoituksesta puuttuu kenttiä.")).
+		Return(tgbotapi.Message{}, nil).Once()
+
+	bot.handleUpdate(update)
+	tg.AssertExpectations(t)
+}
+
+func TestHandleUpdate_SendListing(t *testing.T) {
+	var postListingJson []byte
+	ts := makeTestServerWithOnReqFn(t, func(r *http.Request) {
+		if r.Method == "POST" && r.URL.Path == "/v2/listings" {
+			if b, err := ioutil.ReadAll(r.Body); err == nil {
+				postListingJson = b
+			} else {
+				t.Fatal(err)
+			}
+		}
+	})
+	defer ts.Close()
+
+	userId := int64(1)
+	tg := new(botApiMock)
+	bot := NewBot(tg, userConfigMap, ts.URL)
+	update := makeUpdateWithMessageText(userId, "/laheta")
+	session, err := bot.state.getUserSession(userId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.listing = &tori.Listing{
+		Subject:  "iPhone 12",
+		Body:     "Myydään käytetty iPhone 12",
+		Category: "5012",
+		Type:     tori.ListingTypeSell,
+		Price:    50,
+		AdDetails: tori.AdDetails{
+			"general_condition": "new",
+			"cell_phone":        "apple",
+			"delivery_options":  []string{},
+		},
+	}
+	session.photos = []tgbotapi.PhotoSize{
+		{FileID: "1", FileUniqueID: "1", Width: 371, Height: 495, FileSize: 28548},
+		{FileID: "2", FileUniqueID: "2", Width: 371, Height: 495, FileSize: 28548},
+	}
+
+	tg.On("GetFileDirectURL", "1").Return(ts.URL+"/1.jpg", nil).Once()
+	tg.On("GetFileDirectURL", "2").Return(ts.URL+"/2.jpg", nil).Once()
+	tg.On("Send", makeMessage(userId, "Ilmoitus lähetetty!")).Return(tgbotapi.Message{}, nil).Once()
+
+	bot.handleUpdate(update)
+	tg.AssertExpectations(t)
+
+	wantPostListingJson := `{
+  "subject": "iPhone 12",
+  "body": "Myydään käytetty iPhone 12",
+  "price": {
+    "currency": "€",
+    "value": 50
+  },
+  "type": "s",
+  "ad_details": {
+    "cell_phone": {
+      "single": {
+        "code": "apple"
+      }
+    },
+    "general_condition": {
+      "single": {
+        "code": "new"
+      }
+    }
+  },
+  "category": "5012",
+  "location": {
+    "region": "18",
+    "zipcode": "00320",
+    "area": "313"
+  },
+  "images": [
+    {
+      "media_id": "/public/media/ad/a"
+    },
+    {
+      "media_id": "/public/media/ad/a"
+    }
+  ],
+  "phone_hidden": true,
+  "account_id": "123123"
+}`
+
+	assert.Equal(t, wantPostListingJson, formatJson(postListingJson))
 }

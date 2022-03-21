@@ -24,6 +24,14 @@ func TestSetListingFieldFromMessage(t *testing.T) {
 		message string
 		want    tori.Listing
 	}{
+		"body": {
+			listing: tori.Listing{},
+			field:   "body",
+			message: "Hehheh",
+			want: tori.Listing{
+				Body: "Hehheh",
+			},
+		},
 		"price": {
 			listing: tori.Listing{},
 			field:   "price",
