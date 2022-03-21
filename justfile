@@ -4,11 +4,8 @@ build:
 run-watch:
   fd .go | entr -r go run .
 
-test-all *FLAGS:
+test *FLAGS:
   richgo test {{FLAGS}} ./...
 
-test-all-watch *FLAGS:
-  fd .go | entr richgo test {{FLAGS}} ./...
-
 test-watch *FLAGS:
-  fd .go | entr richgo test {{FLAGS}}
+  fd .go | entr richgo test {{FLAGS}} ./...
