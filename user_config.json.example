@@ -1,0 +1,6 @@
+{
+  "TELEGRAM_USER_ID": {
+    "token": "TOKEN",
+    "toriAccountId": "TORI_ACCOUNT_ID"
+  }
+}
