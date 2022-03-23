@@ -276,8 +276,9 @@ func (b *Bot) sendListingCommand(update tgbotapi.Update) {
 		return
 	}
 
-	log.Info().Interface("listing", session.listing).Msg("listing posted")
+	log.Info().Interface("listing", session.listing).Msg("listing posted successfully")
 	session.reply(listingSentText)
+	session.reset()
 }
 
 func (b *Bot) handleUpdate(update tgbotapi.Update) {
