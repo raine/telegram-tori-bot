@@ -1,9 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"sync"
 
+	"github.com/pkg/errors"
 	"github.com/raine/go-telegram-bot/tori"
 	"github.com/rs/zerolog/log"
 )
@@ -17,7 +17,7 @@ type BotState struct {
 func (bs *BotState) newUserSession(userId int64) (*UserSession, error) {
 	userConfig, ok := bs.bot.userConfigMap[userId]
 	if !ok {
-		return nil, fmt.Errorf("user %d has no config", userId)
+		return nil, errors.Errorf("user %d has no config", userId)
 	}
 
 	session := UserSession{

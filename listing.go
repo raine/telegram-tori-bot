@@ -1,9 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 
+	"github.com/pkg/errors"
 	"github.com/raine/go-telegram-bot/tori"
 )
 
@@ -16,9 +16,9 @@ func findParamValueForLabel(param tori.Param, label string) (string, error) {
 			}
 		}
 
-		return "", fmt.Errorf("could not find value for label %s with field %s", label, param.SingleSelection.ParamKey)
+		return "", errors.Errorf("could not find value for label %s with field %s", label, param.SingleSelection.ParamKey)
 	default:
-		return "", fmt.Errorf("findValueForLabel can only be used with single selection params")
+		return "", errors.Errorf("findValueForLabel can only be used with single selection params")
 	}
 }
 
@@ -65,9 +65,9 @@ func setListingFieldFromMessage(paramMap tori.ParamMap, listing tori.Listing, fi
 				return listing, nil
 			}
 
-			return listing, fmt.Errorf("multi selection param %s not implemented", field)
+			return listing, errors.Errorf("multi selection param %s not implemented", field)
 		default:
-			return listing, fmt.Errorf("could not find param for field %s", field)
+			return listing, errors.Errorf("could not find param for field %s", field)
 		}
 	}
 	return listing, nil

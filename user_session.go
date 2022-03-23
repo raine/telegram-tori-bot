@@ -7,6 +7,7 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/lithammer/dedent"
+	"github.com/pkg/errors"
 	"github.com/raine/go-telegram-bot/tori"
 	"github.com/rs/zerolog/log"
 )
@@ -40,7 +41,9 @@ func (s *UserSession) replyWithMessage(msg tgbotapi.MessageConfig) {
 	msg.ChatID = s.userId
 	_, err := s.bot.tg.Send(msg)
 	if err != nil {
-		log.Error().Stack().Err(err).Interface("msg", msg).Msg("failed to send reply message")
+		log.Error().Stack().
+			Interface("msg", msg).
+			Err(errors.Wrap(err, "failed to send reply message")).Send()
 	}
 }
 

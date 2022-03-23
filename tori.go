@@ -1,10 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"sort"
 	"sync"
 
+	"github.com/pkg/errors"
 	"github.com/raine/go-telegram-bot/tori"
 	"github.com/rs/zerolog/log"
 )
@@ -16,7 +16,7 @@ func getCategoryFromSearchQuery(client *tori.Client, query string) (tori.Categor
 		return category, err
 	}
 	if len(ads) == 0 {
-		return category, fmt.Errorf("could not find category for search query")
+		return category, errors.Errorf("could not find category for search query")
 	}
 
 	listing, err := client.GetListing(ads[0].ListAd.ListIdCode)

@@ -2,8 +2,9 @@ package tori
 
 import (
 	"encoding/json"
-	"fmt"
 	"reflect"
+
+	"github.com/pkg/errors"
 )
 
 type ListingType uint8
@@ -39,7 +40,7 @@ func (t ListingType) MarshalJSON() ([]byte, error) {
 	}
 
 	if str == "" {
-		return nil, fmt.Errorf("don't know how to marshal %+v", t)
+		return nil, errors.Errorf("don't know how to marshal %+v", t)
 	} else {
 		return json.Marshal(str)
 	}
@@ -87,7 +88,7 @@ func (a AdDetails) MarshalJSON() ([]byte, error) {
 				obj[k] = MultiValue(v)
 			}
 		default:
-			return nil, fmt.Errorf("invalid value type %s on key '%s'", reflect.TypeOf(v), k)
+			return nil, errors.Errorf("invalid value type %s on key '%s'", reflect.TypeOf(v), k)
 		}
 	}
 
