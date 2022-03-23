@@ -48,7 +48,7 @@ func NewClient(opts ClientOpts) *Client {
 		c.auth = opts.Auth
 	}
 	c.httpClient = resty.New().
-		SetDebug(true).
+		SetDebug(false).
 		SetBaseURL(c.baseURL).
 		SetHeaders(
 			map[string]string{
