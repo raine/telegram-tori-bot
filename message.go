@@ -54,7 +54,11 @@ func makeCategoryMessage(categories []tori.Category, categoryCode string) tgbota
 
 	msg := tgbotapi.NewMessage(0, fmt.Sprintf("*Osasto:* %s\n", currentCategoryLabel))
 	msg.ParseMode = tgbotapi.ModeMarkdown
-	msg.ReplyMarkup = makeCategoriesInlineKeyboard(inlineKeyboardCategories)
+
+	if len(categories) > 1 {
+		msg.ReplyMarkup = makeCategoriesInlineKeyboard(inlineKeyboardCategories)
+	}
+
 	return msg
 }
 
