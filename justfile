@@ -1,11 +1,11 @@
 build:
   go build .
 
-run-watch:
+run-w:
   fd .go | entr -r go run .
 
-test *FLAGS:
-  richgo test {{FLAGS}} ./...
+test +FLAGS='./...':
+  richgo test {{FLAGS}}
 
-test-watch *FLAGS:
-  fd .go | entr richgo test {{FLAGS}} ./...
+test-w +FLAGS='./...':
+  fd .go | entr richgo test {{FLAGS}}
