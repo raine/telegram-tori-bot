@@ -82,13 +82,17 @@ func makeTestServerWithOnReqFn(t *testing.T, onReq func(r *http.Request)) *httpt
 		onReq(r)
 		var b []byte
 		var err error
-		// body, err := ioutil.ReadAll(r.Body)
-		// fmt.Printf("string(body = %+v\n", string(body))
 		w.Header().Set("Content-Type", "application/json")
 		methodAndPath := fmt.Sprintf("%s %s", r.Method, r.URL.Path)
 		switch methodAndPath {
 		case "GET /v2/listings/search":
-			w.Write(makeListingsSearchResponse(t))
+			w.Write(makeListingsSearchResponse(t, []tori.ListAdItem{
+				makeListAdItem("1", "Electronics > Phones and accessories > Phones"),
+				makeListAdItem("2", "Electronics > Tv audio video cameras > Television"),
+				makeListAdItem("3", "Electronics > Phones and accessories > Tablets"),
+				makeListAdItem("4", "Electronics > Phones and accessories > Tablets"),
+			},
+			))
 		case "GET /v2/listings/1":
 			w.Write(makeListingResponse(t, "1", tori.Category{Code: "5012", Label: "Puhelimet"}))
 		case "GET /v2/listings/2":

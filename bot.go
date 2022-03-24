@@ -148,7 +148,7 @@ func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
 		if session.listing.Body != "" {
 			session.reply("*Ilmoituksen kuvaus:*\n%s", session.listing.Body)
 		}
-		categories, err := getDistinctCategoriesFromSearchQuery(session.client, session.listing.Subject)
+		categories, err := getCategoriesForSubject(session.client, session.listing.Subject)
 		if err != nil {
 			session.replyWithError(err)
 			session.reset()
