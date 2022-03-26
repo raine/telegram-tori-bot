@@ -4,11 +4,16 @@ Telegram bot created with the intent of making selling stuff on tori.fi as
 streamlined as possible. Takes advantage of Telegram's photo sending and bot
 features like Custom Reply Keyboards and Inline Keyboards.
 
+## install
+
+```sh
+go install github.com/raine/telegram-tori-bot
+```
+
 ## usage
 
-1. Compile the binary with `go build .`
-2. Run the program with env variables and user config set up
-3. Tell your bot what you want to sell
+1. Run `telegram-tori-bot` with env variables and user config set up
+2. Tell your bot what you want to sell
 
 ### env vars
 
