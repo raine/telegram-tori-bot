@@ -89,6 +89,13 @@ func (b *Bot) handleCallback(update tgbotapi.Update) {
 		}
 	}
 
+	newadFilters, err := fetchNewadFilters(session.client.GetFiltersSectionNewad)
+	if err != nil {
+		session.replyWithError(err)
+		return
+	}
+	missingFieldBefore := getMissingListingField(newadFilters.Newad.ParamMap, newadFilters.Newad.SettingsParams, *session.listing)
+
 	session.listing.Category = newCategoryCode
 	// Clear the AdDetails, since category has changed
 	session.listing.AdDetails = nil
@@ -103,21 +110,27 @@ func (b *Bot) handleCallback(update tgbotapi.Update) {
 	editMsg.ParseMode = tgbotapi.ModeMarkdown
 	_, err = b.tg.Send(editMsg)
 	if err != nil {
-		log.Error().Err(err).Send()
+		session.replyWithError(err)
+		return
 	}
 
 	callback := tgbotapi.NewCallback(update.CallbackQuery.ID, update.CallbackQuery.Data)
 	if _, err := b.tg.Request(callback); err != nil {
-		log.Error().Err(err).Send()
+		session.replyWithError(err)
+		return
 	}
 
 	// Prompt user for next field because category has changed and AdDetails has been cleared
-	msg, _, err = makeNextFieldPrompt(session.client.GetFiltersSectionNewad, *session.listing)
+	msg, missingFieldNow, err := makeNextFieldPrompt(session.client.GetFiltersSectionNewad, *session.listing)
 	if err != nil {
 		session.replyWithError(err)
 		return
 	}
-	session.replyWithMessage(msg)
+	// Reduce a bit of noise by not sending the prompt message if it's the same
+	// as previous one, before changing category
+	if missingFieldBefore != missingFieldNow {
+		session.replyWithMessage(msg)
+	}
 }
 
 func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
@@ -220,23 +233,16 @@ func (b *Bot) sendListingCommand(update tgbotapi.Update) {
 		return
 	}
 
-	newadFilters, err := fetchNewadFilters(session.client.GetFiltersSectionNewad)
-	if err != nil {
-		log.Err(err).Send()
-		return
-	}
-
 	if session.listing == nil {
 		session.reply(noListingOnSendText)
 		return
 	}
 
-	missingField := getMissingListingField(
-		newadFilters.Newad.ParamMap,
-		newadFilters.Newad.SettingsParams,
-		*session.listing,
-	)
-
+	_, missingField, err := makeNextFieldPrompt(session.client.GetFiltersSectionNewad, *session.listing)
+	if err != nil {
+		log.Error().Stack().Err(err).Send()
+		return
+	}
 	if missingField != "" {
 		log.Info().Str("missingField", missingField).Msg("cannot send listing with missing field(s)")
 		session.reply(incompleteListingOnSendText)
