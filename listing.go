@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
-	"github.com/raine/go-telegram-bot/tori"
+	"github.com/raine/telegram-tori-bot/tori"
 )
 
 func findParamValueForLabel(param tori.Param, label string) (string, error) {

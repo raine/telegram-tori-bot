@@ -1,4 +1,4 @@
-module github.com/raine/go-telegram-bot
+module github.com/raine/telegram-tori-bot
 
 go 1.18
 

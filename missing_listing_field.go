@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/raine/go-telegram-bot/tori"
+	"github.com/raine/telegram-tori-bot/tori"
 )
 
 func doesListingMatchValue(listing tori.Listing, key string, value string) bool {

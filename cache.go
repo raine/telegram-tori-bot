@@ -1,6 +1,6 @@
 package main
 
-import "github.com/raine/go-telegram-bot/tori"
+import "github.com/raine/telegram-tori-bot/tori"
 
 // TODO: TTL
 var cachedNewadFilters *tori.NewadFilters

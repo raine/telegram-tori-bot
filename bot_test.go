@@ -15,7 +15,7 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/lithammer/dedent"
-	"github.com/raine/go-telegram-bot/tori"
+	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )

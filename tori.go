@@ -3,7 +3,7 @@ package main
 import (
 	"strings"
 
-	"github.com/raine/go-telegram-bot/tori"
+	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/rs/zerolog/log"
 	orderedmap "github.com/wk8/go-ordered-map"
 	"golang.org/x/exp/slices"

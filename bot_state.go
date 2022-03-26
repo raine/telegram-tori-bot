@@ -4,7 +4,7 @@ import (
 	"sync"
 
 	"github.com/pkg/errors"
-	"github.com/raine/go-telegram-bot/tori"
+	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/rs/zerolog/log"
 )
 

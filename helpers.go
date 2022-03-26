@@ -2,7 +2,7 @@ package main
 
 import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/raine/go-telegram-bot/tori"
+	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
 )
