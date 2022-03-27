@@ -2,6 +2,8 @@ package main
 
 import (
 	"os"
+	"os/signal"
+	"syscall"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/raine/telegram-tori-bot/tori"
@@ -11,6 +13,7 @@ import (
 )
 
 func main() {
+	handleGracefulExit()
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
 
@@ -42,4 +45,18 @@ func main() {
 	for update := range updates {
 		go bot.handleUpdate(update)
 	}
+}
+
+func handleGracefulExit() {
+	sigc := make(chan os.Signal, 1)
+	signal.Notify(sigc,
+		syscall.SIGINT,
+		syscall.SIGTERM)
+
+	go func() {
+		s := <-sigc
+		log.Info().Msgf("Got %s, exiting", s)
+		// The program doesn't really have anything to clean up so this should be fine
+		os.Exit(1)
+	}()
 }
