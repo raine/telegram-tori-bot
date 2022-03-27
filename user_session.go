@@ -27,6 +27,7 @@ type UserSession struct {
 func (s *UserSession) reset() {
 	log.Info().Int64("userId", s.userId).Msg("reset user session")
 	s.listing = nil
+	s.pendingPhotos = nil
 	s.photos = nil
 	s.categories = nil
 }
