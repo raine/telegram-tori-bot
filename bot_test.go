@@ -607,3 +607,37 @@ func TestHandleUpdate_SendListing(t *testing.T) {
 
 	assert.Equal(t, wantPostListingJson, formatJson(postListingJson))
 }
+
+func TestHandleUpdate_RemovePhotosCommand(t *testing.T) {
+	message := "/poistakuvat"
+
+	ts := makeTestServer(t)
+	defer ts.Close()
+
+	userId := int64(1)
+	tg := new(botApiMock)
+	bot := NewBot(tg, userConfigMap, ts.URL)
+	update := makeUpdateWithMessageText(userId, message)
+	session, err := bot.state.getUserSession(userId)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.listing = &tori.Listing{
+		Subject:  "foo",
+		Body:     "bar",
+		Category: "5012",
+		Type:     tori.ListingTypeSell,
+		Price:    50,
+	}
+	session.photos = []tgbotapi.PhotoSize{
+		{FileID: "1", FileUniqueID: "1", Width: 371, Height: 495, FileSize: 28548},
+		{FileID: "2", FileUniqueID: "2", Width: 371, Height: 495, FileSize: 28548},
+	}
+
+	tg.On("Send", makeMessage(userId, "Kuvat poistettu.")).Return(tgbotapi.Message{}, nil).Once()
+
+	bot.handleUpdate(update)
+	tg.AssertExpectations(t)
+
+	assert.Empty(t, session.photos)
+}

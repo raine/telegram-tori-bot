@@ -315,6 +315,10 @@ func (b *Bot) handleUpdate(update tgbotapi.Update) {
 		session.reply("Ok!")
 	case "/laheta":
 		b.sendListingCommand(update)
+	case "/poistakuvat":
+		session.photos = nil
+		session.pendingPhotos = nil
+		session.reply(photosRemoved)
 	default:
 		b.handleFreetextReply(update)
 	}

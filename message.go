@@ -147,4 +147,5 @@ const (
 	incompleteListingOnSendText = "Ilmoituksesta puuttuu kenttiä."
 	noListingOnSendText         = "Ei ole ilmoitusta mitä lähettää."
 	listingSentText             = "Ilmoitus lähetetty!"
+	photosRemoved               = "Kuvat poistettu."
 )
