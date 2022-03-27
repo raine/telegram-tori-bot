@@ -1,12 +1,25 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/raine/telegram-tori-bot/tori"
 )
 
+type NoLabelFoundError struct {
+	Label string
+	Field string
+}
+
+func (e *NoLabelFoundError) Error() string {
+	return fmt.Sprintf("could not find value for label %s with field %s", e.Label, e.Field)
+}
+
+// findParamValueForLabel tries to find a value for a given human friendly
+// label. For example if you have general_condition param, and the label
+// "Uusi", the value would be "new".
 func findParamValueForLabel(param tori.Param, label string) (string, error) {
 	switch {
 	case param.SingleSelection != nil:
@@ -16,7 +29,7 @@ func findParamValueForLabel(param tori.Param, label string) (string, error) {
 			}
 		}
 
-		return "", errors.Errorf("could not find value for label %s with field %s", label, param.SingleSelection.ParamKey)
+		return "", &NoLabelFoundError{Label: label, Field: param.SingleSelection.ParamKey}
 	default:
 		return "", errors.Errorf("findValueForLabel can only be used with single selection params")
 	}

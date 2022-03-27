@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 
+	"github.com/pkg/errors"
 	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/rs/zerolog/log"
 	orderedmap "github.com/wk8/go-ordered-map"
@@ -89,4 +90,21 @@ func getCategoriesForSubject(client *tori.Client, subject string) ([]tori.Catego
 	}
 
 	return categories, nil
+}
+
+func getLabelForField(
+	paramMap tori.ParamMap,
+	field string,
+) (string, error) {
+	param := paramMap[field]
+	switch {
+	case param.SingleSelection != nil:
+		return (*param.SingleSelection).Label, nil
+	case param.MultiSelection != nil:
+		return param.MultiSelection.ValuesList[0].Label, nil
+	case param.Text != nil:
+		return (*param.Text).Label, nil
+	default:
+		return "", errors.Errorf("could not find param for field '%s'", field)
+	}
 }

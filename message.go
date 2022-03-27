@@ -148,4 +148,5 @@ const (
 	noListingOnSendText         = "Ei ole ilmoitusta mitä lähettää."
 	listingSentText             = "Ilmoitus lähetetty!"
 	photosRemoved               = "Kuvat poistettu."
+	invalidReplyToField         = `Vastauksesi ei sovi kenttään "%s". Valitse vastaus nappuloista viestikentän alapuolelta.`
 )

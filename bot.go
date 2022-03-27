@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"time"
 
@@ -206,7 +207,14 @@ func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
 		log.Info().Str("field", repliedField).Msg("user is replying to field")
 		newListing, err := setListingFieldFromMessage(paramMap, *session.listing, repliedField, text)
 		if err != nil {
-			session.replyWithError(err)
+			var noLabelFoundError *NoLabelFoundError
+			label, _ := getLabelForField(paramMap, repliedField) // can't error in this case
+			if errors.As(err, &noLabelFoundError) {
+				session.reply(invalidReplyToField, label)
+			} else {
+				session.replyWithError(err)
+			}
+
 			return
 		}
 		session.listing = &newListing
