@@ -2,7 +2,9 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -163,10 +165,14 @@ func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
 			session.replyWithError(err)
 			return
 		}
-		session.listing = newListingFromMessage(text)
-		session.reply("*Ilmoituksen otsikko:* %s\n", session.listing.Subject)
+		listing := newListingFromMessage(text)
+		session.userSubjectMessageId = update.Message.MessageID
+		session.listing = &listing
+		sent := session.reply(listingSubjectIsText, session.listing.Subject)
+		session.botSubjectMessageId = sent.MessageID
 		if session.listing.Body != "" {
-			session.reply("*Ilmoituksen kuvaus:*\n%s", session.listing.Body)
+			sent = session.reply(listingBodyIsText, session.listing.Body)
+			session.botBodyMessageId = sent.MessageID
 		}
 		categories, err := getCategoriesForSubject(session.client, session.listing.Subject)
 		if err != nil {
@@ -301,10 +307,70 @@ func (b *Bot) sendListingCommand(update tgbotapi.Update) {
 	session.reset()
 }
 
+func (b *Bot) handleMessageEdit(update tgbotapi.Update) {
+	userId := update.EditedMessage.From.ID
+	session, err := b.state.getUserSession(userId)
+	if err != nil {
+		log.Error().Err(err).Send()
+		return
+	}
+
+	if session.listing == nil {
+		return
+	}
+
+	var text string
+	if update.EditedMessage.Caption != "" {
+		text = update.EditedMessage.Caption
+	} else {
+		text = update.EditedMessage.Text
+	}
+
+	var editMsg tgbotapi.EditMessageTextConfig
+	switch update.EditedMessage.MessageID {
+	// User edited subject message with the intent of changing the subject
+	case session.userSubjectMessageId:
+		listing := newListingFromMessage(text)
+		log.Info().Str("oldSubject", session.listing.Subject).Str("newSubject", listing.Subject).Msg("listing subject updated")
+		session.listing.Subject = listing.Subject
+
+		editMsg = tgbotapi.NewEditMessageText(
+			session.userId,
+			session.botSubjectMessageId,
+			fmt.Sprintf(listingSubjectIsText, session.listing.Subject),
+		)
+	// User edited body message with the intent of changing the subject
+	case session.userBodyMessageId:
+		log.Info().Str("oldBody", session.listing.Body).Str("newBody", text).Msg("listing body updated")
+		session.listing.Body = strings.TrimSpace(text)
+
+		editMsg = tgbotapi.NewEditMessageText(
+			session.userId,
+			session.botBodyMessageId,
+			fmt.Sprintf(listingBodyIsText, session.listing.Body),
+		)
+	}
+
+	if editMsg.ChatID != 0 {
+		editMsg.ParseMode = tgbotapi.ModeMarkdown
+		_, err = b.tg.Send(editMsg)
+		log.Info().Interface("editMsg", editMsg).Msg("message edited")
+		if err != nil {
+			session.replyWithError(err)
+			return
+		}
+	}
+}
+
 func (b *Bot) handleUpdate(update tgbotapi.Update) {
 	// Update is user interacting with inline keyboard
 	if update.CallbackQuery != nil {
 		b.handleCallback(update)
+		return
+	}
+
+	if update.EditedMessage != nil {
+		b.handleMessageEdit(update)
 		return
 	}
 

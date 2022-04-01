@@ -55,7 +55,7 @@ func handleGracefulExit() {
 
 	go func() {
 		s := <-sigc
-		log.Info().Msgf("Got %s, exiting", s)
+		log.Info().Msgf("got %s, exiting", s)
 		// The program doesn't really have anything to clean up so this should be fine
 		os.Exit(1)
 	}()

@@ -618,6 +618,7 @@ func TestHandleUpdate_RemovePhotosCommand(t *testing.T) {
 	ts, userId, tg, bot, session := setup(t)
 	defer ts.Close()
 	update := makeUpdateWithMessageText(userId, message)
+
 	session.listing = &tori.Listing{
 		Subject:  "foo",
 		Body:     "bar",
@@ -636,4 +637,76 @@ func TestHandleUpdate_RemovePhotosCommand(t *testing.T) {
 	tg.AssertExpectations(t)
 
 	assert.Empty(t, session.photos)
+}
+
+func TestHandleUpdate_EditSubject(t *testing.T) {
+	ts, userId, tg, bot, session := setup(t)
+	defer ts.Close()
+
+	session.userSubjectMessageId = 10
+	session.botSubjectMessageId = 20
+	session.listing = &tori.Listing{
+		Subject:  "iPhone 12",
+		Body:     "Myydään käytetty iPhone 12",
+		Category: "5012",
+		Type:     tori.ListingTypeSell,
+	}
+
+	update := tgbotapi.Update{
+		EditedMessage: &tgbotapi.Message{
+			MessageID: 10,
+			From:      &tgbotapi.User{ID: userId},
+			Text:      "iPhone 13",
+		},
+	}
+
+	editMsg := tgbotapi.NewEditMessageText(1, 20, "*Ilmoituksen otsikko:* iPhone 13")
+	editMsg.ParseMode = tgbotapi.ModeMarkdown
+	tg.On("Send", editMsg).Return(tgbotapi.Message{}, nil).Once()
+
+	bot.handleUpdate(update)
+	tg.AssertExpectations(t)
+
+	assert.Equal(t, &tori.Listing{
+		Subject:  "iPhone 13",
+		Body:     "Myydään käytetty iPhone 12",
+		Category: "5012",
+		Type:     tori.ListingTypeSell,
+	}, session.listing)
+}
+
+func TestHandleUpdate_EditBody(t *testing.T) {
+	ts, userId, tg, bot, session := setup(t)
+	defer ts.Close()
+
+	session.userBodyMessageId = 10
+	session.botBodyMessageId = 20
+	session.listing = &tori.Listing{
+		Subject:  "iPhone 12",
+		Body:     "Myydään käytetty iPhone 12",
+		Category: "5012",
+		Type:     tori.ListingTypeSell,
+	}
+
+	update := tgbotapi.Update{
+		EditedMessage: &tgbotapi.Message{
+			MessageID: 10,
+			From:      &tgbotapi.User{ID: userId},
+			Text:      "Myydään käytetty iPhone 100",
+		},
+	}
+
+	editMsg := tgbotapi.NewEditMessageText(1, 20, "*Ilmoituksen kuvaus:*\nMyydään käytetty iPhone 100")
+	editMsg.ParseMode = tgbotapi.ModeMarkdown
+	tg.On("Send", editMsg).Return(tgbotapi.Message{}, nil).Once()
+
+	bot.handleUpdate(update)
+	tg.AssertExpectations(t)
+
+	assert.Equal(t, &tori.Listing{
+		Subject:  "iPhone 12",
+		Body:     "Myydään käytetty iPhone 100",
+		Category: "5012",
+		Type:     tori.ListingTypeSell,
+	}, session.listing)
 }

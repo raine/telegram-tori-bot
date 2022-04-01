@@ -13,15 +13,19 @@ import (
 )
 
 type UserSession struct {
-	userId        int64
-	client        *tori.Client
-	listing       *tori.Listing
-	toriAccountId string
-	bot           *Bot
-	mu            sync.Mutex
-	pendingPhotos *[]tgbotapi.PhotoSize
-	photos        []tgbotapi.PhotoSize
-	categories    []tori.Category
+	userId               int64
+	client               *tori.Client
+	listing              *tori.Listing
+	toriAccountId        string
+	bot                  *Bot
+	mu                   sync.Mutex
+	pendingPhotos        *[]tgbotapi.PhotoSize
+	photos               []tgbotapi.PhotoSize
+	categories           []tori.Category
+	userSubjectMessageId int
+	userBodyMessageId    int
+	botSubjectMessageId  int
+	botBodyMessageId     int
 }
 
 func (s *UserSession) reset() {
@@ -30,6 +34,7 @@ func (s *UserSession) reset() {
 	s.pendingPhotos = nil
 	s.photos = nil
 	s.categories = nil
+	s.userSubjectMessageId = 0
 }
 
 func (s *UserSession) replyWithError(err error) {
@@ -38,18 +43,20 @@ func (s *UserSession) replyWithError(err error) {
 	s.replyWithMessage(msg)
 }
 
-func (s *UserSession) replyWithMessage(msg tgbotapi.MessageConfig) {
+func (s *UserSession) replyWithMessage(msg tgbotapi.MessageConfig) tgbotapi.Message {
 	msg.ChatID = s.userId
-	_, err := s.bot.tg.Send(msg)
+	sent, err := s.bot.tg.Send(msg)
 	if err != nil {
 		log.Error().Stack().
 			Interface("msg", msg).
 			Err(errors.Wrap(err, "failed to send reply message")).Send()
 	}
+
+	return sent
 }
 
-func (s *UserSession) reply(text string, a ...any) {
+func (s *UserSession) reply(text string, a ...any) tgbotapi.Message {
 	msg := tgbotapi.NewMessage(0, fmt.Sprintf(strings.TrimSpace(dedent.Dedent(text)), a...))
 	msg.ParseMode = tgbotapi.ModeMarkdown
-	s.replyWithMessage(msg)
+	return s.replyWithMessage(msg)
 }

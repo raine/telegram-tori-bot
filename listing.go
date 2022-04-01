@@ -86,12 +86,12 @@ func setListingFieldFromMessage(paramMap tori.ParamMap, listing tori.Listing, fi
 	return listing, nil
 }
 
-func newListingFromMessage(message string) *tori.Listing {
+func newListingFromMessage(message string) tori.Listing {
 	parts := strings.Split(strings.TrimSpace(message), "\n\n")
 	subject := parts[0]
 	body := strings.Join(parts[1:], "\n\n")
 
-	listing := &tori.Listing{
+	listing := tori.Listing{
 		Subject: subject,
 		Body:    body,
 		// For now, assume only sell listings

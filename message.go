@@ -138,6 +138,8 @@ func parsePriceMessage(message string) (tori.Price, error) {
 }
 
 const (
+	listingSubjectIsText     = "*Ilmoituksen otsikko:* %s"
+	listingBodyIsText        = "*Ilmoituksen kuvaus:*\n%s"
 	listingReadyToBeSentText = `
     Ilmoitus on valmis lähetettäväksi.
 
