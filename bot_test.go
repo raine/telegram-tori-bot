@@ -492,6 +492,69 @@ func TestHandleUpdate_AddPhoto(t *testing.T) {
 	tg.AssertExpectations(t)
 }
 
+func TestHandleUpdate_AddPhotoInSameMessageAsSubject(t *testing.T) {
+	ts := makeTestServer(t)
+	defer ts.Close()
+
+	userId := int64(1)
+	tg := new(botApiMock)
+	bot := NewBot(tg, userConfigMap, ts.URL)
+
+	session, err := bot.state.getUserSession(userId)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tg.On("Send", makeMessage(userId, "*Ilmoituksen otsikko:* iPhone 12")).Return(tgbotapi.Message{}, nil).Once()
+	tg.On("Send", makeMessage(userId, "Ilmoitusteksti?")).Return(tgbotapi.Message{}, nil).Once()
+	tg.On("Send", makeMessage(userId, "1 kuva lisätty")).Return(tgbotapi.Message{}, nil).Once()
+	tg.On("Send", makeMessageWithFn(userId, "*Osasto:* Puhelimet\n", func(msg *tgbotapi.MessageConfig) {
+		msg.ReplyMarkup = tgbotapi.InlineKeyboardMarkup{
+			InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{
+				{
+					{Text: "Televisiot", CallbackData: strPtr("Televisiot")},
+					{Text: "Tabletit", CallbackData: strPtr("Tabletit")},
+				},
+			},
+		}
+	})).
+		Return(tgbotapi.Message{}, nil).Once()
+
+	update := tgbotapi.Update{
+		Message: &tgbotapi.Message{
+			From:    &tgbotapi.User{ID: userId},
+			Caption: "iPhone 12",
+			Photo: []tgbotapi.PhotoSize{
+				{FileID: "a", FileUniqueID: "1", Width: 67, Height: 90, FileSize: 1359},
+				{FileID: "a", FileUniqueID: "2", Width: 240, Height: 320, FileSize: 17212},
+				{FileID: "a", FileUniqueID: "3", Width: 371, Height: 495, FileSize: 28548},
+			},
+		},
+	}
+
+	bot.handleUpdate(update)
+
+	assert.Eventually(
+		t,
+		func() bool {
+			return len(session.photos) == 1 &&
+				assert.ObjectsAreEqual(
+					tgbotapi.PhotoSize{
+						FileID:       "a",
+						FileUniqueID: "3",
+						Width:        371,
+						Height:       495,
+						FileSize:     28548,
+					}, session.photos[0])
+		},
+		time.Millisecond*100,
+		time.Millisecond,
+		"expected photos in session.photos",
+	)
+
+	tg.AssertExpectations(t)
+}
+
 func TestHandleUpdate_SendListingWithIncompleteListing(t *testing.T) {
 	ts := makeTestServer(t)
 	defer ts.Close()

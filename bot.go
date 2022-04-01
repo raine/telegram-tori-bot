@@ -135,7 +135,13 @@ func (b *Bot) handleCallback(update tgbotapi.Update) {
 }
 
 func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
-	text := update.Message.Text
+	var text string
+	if update.Message.Caption != "" {
+		text = update.Message.Caption
+	} else {
+		text = update.Message.Text
+	}
+
 	session, err := b.state.getUserSession(update.Message.From.ID)
 	if err != nil {
 		log.Error().Err(err).Send()
