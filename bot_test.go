@@ -20,6 +20,23 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+func setupWithTestServer(t *testing.T, ts *httptest.Server) (*httptest.Server, int64, *botApiMock, *Bot, *UserSession) {
+	userId := int64(1)
+	tg := new(botApiMock)
+	bot := NewBot(tg, userConfigMap, ts.URL)
+	session, err := bot.state.getUserSession(userId)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return ts, userId, tg, bot, session
+}
+
+func setup(t *testing.T) (*httptest.Server, int64, *botApiMock, *Bot, *UserSession) {
+	ts := makeTestServer(t)
+	return setupWithTestServer(t, ts)
+}
+
 func formatJson(b []byte) string {
 	var out bytes.Buffer
 	err := json.Indent(&out, b, "", "  ")
@@ -148,11 +165,8 @@ func TestMain(m *testing.M) {
 }
 
 func TestHandleUpdate_ListingStart(t *testing.T) {
-	ts := makeTestServer(t)
+	ts, userId, tg, bot, session := setup(t)
 	defer ts.Close()
-	userId := int64(1)
-	tg := new(botApiMock)
-	bot := NewBot(tg, userConfigMap, ts.URL)
 	update := makeUpdateWithMessageText(userId, "iPhone 12\n\nMyydään käytetty iPhone 12")
 
 	tg.On("Send", makeMessage(userId, "*Ilmoituksen otsikko:* iPhone 12")).Return(tgbotapi.Message{}, nil).Once()
@@ -174,10 +188,7 @@ func TestHandleUpdate_ListingStart(t *testing.T) {
 
 	bot.handleUpdate(update)
 	tg.AssertExpectations(t)
-	session, err := bot.state.getUserSession(userId)
-	if err != nil {
-		t.Fatal(err)
-	}
+
 	// Skip these fields as they are difficult and not very fruitful to assert
 	session.client = nil
 	session.bot = nil
@@ -202,18 +213,10 @@ func TestHandleUpdate_ListingStart(t *testing.T) {
 }
 
 func TestHandleUpdate_EnterBodySeparatelyFromInitialMessage(t *testing.T) {
-	ts := makeTestServer(t)
+	ts, userId, tg, bot, session := setup(t)
 	defer ts.Close()
 
-	userId := int64(1)
-	tg := new(botApiMock)
-	bot := NewBot(tg, userConfigMap, ts.URL)
 	update := makeUpdateWithMessageText(userId, "Myydään käytetty iPhone 12")
-
-	session, err := bot.state.getUserSession(userId)
-	if err != nil {
-		t.Fatal(err)
-	}
 	session.listing = &tori.Listing{
 		Subject:  "iPhone 12",
 		Category: "5012",
@@ -236,18 +239,11 @@ func TestHandleUpdate_EnterBodySeparatelyFromInitialMessage(t *testing.T) {
 }
 
 func TestHandleUpdate_EnterPrice(t *testing.T) {
-	ts := makeTestServer(t)
+	ts, userId, tg, bot, session := setup(t)
 	defer ts.Close()
 
-	userId := int64(1)
-	tg := new(botApiMock)
-	bot := NewBot(tg, userConfigMap, ts.URL)
 	update := makeUpdateWithMessageText(userId, "50€")
 
-	session, err := bot.state.getUserSession(userId)
-	if err != nil {
-		t.Fatal(err)
-	}
 	session.listing = &tori.Listing{
 		Subject:  "iPhone 12",
 		Body:     "Myydään käytetty iPhone 12",
@@ -285,18 +281,10 @@ func TestHandleUpdate_EnterPrice(t *testing.T) {
 }
 
 func TestHandleUpdate_EnterCondition(t *testing.T) {
-	ts := makeTestServer(t)
+	ts, userId, tg, bot, session := setup(t)
 	defer ts.Close()
 
-	userId := int64(1)
-	tg := new(botApiMock)
-	bot := NewBot(tg, userConfigMap, ts.URL)
 	update := makeUpdateWithMessageText(userId, "Uusi")
-
-	session, err := bot.state.getUserSession(userId)
-	if err != nil {
-		t.Fatal(err)
-	}
 	session.listing = &tori.Listing{
 		Subject:  "iPhone 12",
 		Body:     "Myydään käytetty iPhone 12",
@@ -334,18 +322,10 @@ func TestHandleUpdate_EnterCondition(t *testing.T) {
 }
 
 func TestHandleUpdate_EnterManufacturer(t *testing.T) {
-	ts := makeTestServer(t)
+	ts, userId, tg, bot, session := setup(t)
 	defer ts.Close()
 
-	userId := int64(1)
-	tg := new(botApiMock)
-	bot := NewBot(tg, userConfigMap, ts.URL)
 	update := makeUpdateWithMessageText(userId, "Apple")
-
-	session, err := bot.state.getUserSession(userId)
-	if err != nil {
-		t.Fatal(err)
-	}
 	session.listing = &tori.Listing{
 		Subject:  "iPhone 12",
 		Body:     "Myydään käytetty iPhone 12",
@@ -388,18 +368,10 @@ func TestHandleUpdate_EnterManufacturer(t *testing.T) {
 }
 
 func TestHandleUpdate_EnterDeliveryOptions(t *testing.T) {
-	ts := makeTestServer(t)
+	ts, userId, tg, bot, session := setup(t)
 	defer ts.Close()
 
-	userId := int64(1)
-	tg := new(botApiMock)
-	bot := NewBot(tg, userConfigMap, ts.URL)
 	update := makeUpdateWithMessageText(userId, "En")
-
-	session, err := bot.state.getUserSession(userId)
-	if err != nil {
-		t.Fatal(err)
-	}
 	session.listing = &tori.Listing{
 		Subject:  "iPhone 12",
 		Body:     "Myydään käytetty iPhone 12",
@@ -436,17 +408,9 @@ func TestHandleUpdate_EnterDeliveryOptions(t *testing.T) {
 }
 
 func TestHandleUpdate_AddPhoto(t *testing.T) {
-	ts := makeTestServer(t)
+	ts, userId, tg, bot, session := setup(t)
 	defer ts.Close()
 
-	userId := int64(1)
-	tg := new(botApiMock)
-	bot := NewBot(tg, userConfigMap, ts.URL)
-
-	session, err := bot.state.getUserSession(userId)
-	if err != nil {
-		t.Fatal(err)
-	}
 	session.listing = &tori.Listing{
 		Subject:  "iPhone 12",
 		Category: "5012",
@@ -493,17 +457,8 @@ func TestHandleUpdate_AddPhoto(t *testing.T) {
 }
 
 func TestHandleUpdate_AddPhotoInSameMessageAsSubject(t *testing.T) {
-	ts := makeTestServer(t)
+	ts, userId, tg, bot, session := setup(t)
 	defer ts.Close()
-
-	userId := int64(1)
-	tg := new(botApiMock)
-	bot := NewBot(tg, userConfigMap, ts.URL)
-
-	session, err := bot.state.getUserSession(userId)
-	if err != nil {
-		t.Fatal(err)
-	}
 
 	tg.On("Send", makeMessage(userId, "*Ilmoituksen otsikko:* iPhone 12")).Return(tgbotapi.Message{}, nil).Once()
 	tg.On("Send", makeMessage(userId, "Ilmoitusteksti?")).Return(tgbotapi.Message{}, nil).Once()
@@ -556,17 +511,10 @@ func TestHandleUpdate_AddPhotoInSameMessageAsSubject(t *testing.T) {
 }
 
 func TestHandleUpdate_SendListingWithIncompleteListing(t *testing.T) {
-	ts := makeTestServer(t)
+	ts, userId, tg, bot, session := setup(t)
 	defer ts.Close()
 
-	userId := int64(1)
-	tg := new(botApiMock)
-	bot := NewBot(tg, userConfigMap, ts.URL)
 	update := makeUpdateWithMessageText(userId, "/laheta")
-	session, err := bot.state.getUserSession(userId)
-	if err != nil {
-		t.Fatal(err)
-	}
 	session.listing = &tori.Listing{
 		Subject:  "iPhone 12",
 		Category: "5012",
@@ -596,16 +544,9 @@ func TestHandleUpdate_SendListing(t *testing.T) {
 			}
 		}
 	})
+	ts, userId, tg, bot, session := setupWithTestServer(t, ts)
 	defer ts.Close()
-
-	userId := int64(1)
-	tg := new(botApiMock)
-	bot := NewBot(tg, userConfigMap, ts.URL)
 	update := makeUpdateWithMessageText(userId, "/laheta")
-	session, err := bot.state.getUserSession(userId)
-	if err != nil {
-		t.Fatal(err)
-	}
 	session.listing = &tori.Listing{
 		Subject:  "iPhone 12",
 		Body:     "Myydään käytetty iPhone 12",
@@ -674,17 +615,9 @@ func TestHandleUpdate_SendListing(t *testing.T) {
 func TestHandleUpdate_RemovePhotosCommand(t *testing.T) {
 	message := "/poistakuvat"
 
-	ts := makeTestServer(t)
+	ts, userId, tg, bot, session := setup(t)
 	defer ts.Close()
-
-	userId := int64(1)
-	tg := new(botApiMock)
-	bot := NewBot(tg, userConfigMap, ts.URL)
 	update := makeUpdateWithMessageText(userId, message)
-	session, err := bot.state.getUserSession(userId)
-	if err != nil {
-		t.Fatal(err)
-	}
 	session.listing = &tori.Listing{
 		Subject:  "foo",
 		Body:     "bar",
