@@ -126,3 +126,38 @@ func TestFindValueForLabel(t *testing.T) {
 		})
 	}
 }
+
+func TestNewListingFromMessage(t *testing.T) {
+	tests := map[string]struct {
+		message string
+		want    tori.Listing
+	}{
+		"defaults to sell listing type": {
+			message: "Horipad Logitech Switch peliohjain",
+			want: tori.Listing{
+				Subject: "Horipad Logitech Switch peliohjain",
+				Type:    tori.ListingTypeSell,
+			},
+		},
+		"you can prefix with 'myydään' but it's redundant": {
+			message: "Myydään Horipad Logitech Switch peliohjain",
+			want: tori.Listing{
+				Subject: "Horipad Logitech Switch peliohjain",
+				Type:    tori.ListingTypeSell,
+			},
+		},
+		"annetaan listing type": {
+			message: "Annetaan Horipad Logitech Switch peliohjain",
+			want: tori.Listing{
+				Subject: "Horipad Logitech Switch peliohjain",
+				Type:    tori.ListingTypeGive,
+			},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			got := newListingFromMessage(tc.message)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}

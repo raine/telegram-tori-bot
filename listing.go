@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -87,6 +88,19 @@ func setListingFieldFromMessage(paramMap tori.ParamMap, listing tori.Listing, fi
 }
 
 func newListingFromMessage(message string) tori.Listing {
+	var listingType tori.ListingType
+	re := regexp.MustCompile(`(?i)(myydään|annetaan)\s`)
+	m := re.FindStringSubmatch(strings.ToLower(message))
+	switch {
+	case m == nil:
+		listingType = tori.ListingTypeSell
+	case m[1] == "myydään":
+		listingType = tori.ListingTypeSell
+	case m[1] == "annetaan":
+		listingType = tori.ListingTypeGive
+	}
+
+	message = re.ReplaceAllString(message, "")
 	parts := strings.Split(strings.TrimSpace(message), "\n\n")
 	subject := parts[0]
 	body := strings.Join(parts[1:], "\n\n")
@@ -94,8 +108,7 @@ func newListingFromMessage(message string) tori.Listing {
 	listing := tori.Listing{
 		Subject: subject,
 		Body:    body,
-		// For now, assume only sell listings
-		Type: tori.ListingTypeSell,
+		Type:    listingType,
 	}
 	return listing
 }
