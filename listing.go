@@ -24,7 +24,7 @@ func findParamValueForLabel(param tori.Param, label string) (string, error) {
 	switch {
 	case param.SingleSelection != nil:
 		for _, v := range param.SingleSelection.ValuesList {
-			if v.Label == label {
+			if strings.EqualFold(v.Label, label) {
 				return v.Value, nil
 			}
 		}
