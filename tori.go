@@ -1,6 +1,7 @@
 package main
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -26,6 +27,12 @@ func getListingsCategoryMap(listings []tori.ListAdItem) *orderedmap.OrderedMap {
 
 func getCategoriesForSubject(client *tori.Client, subject string) ([]tori.Category, error) {
 	log.Info().Str("subject", subject).Msg("getting categories for subject")
+
+	// Remove parenthesis blocks from subject. This could be something
+	// like "(2 kpl)" or "(M-koko)"
+	re := regexp.MustCompile(`\(.+\)`)
+	subject = strings.TrimSpace(re.ReplaceAllString(subject, ""))
+
 	allSubjectParts := strings.Split(subject, " ")
 	accCategoryMap := orderedmap.New()
 
