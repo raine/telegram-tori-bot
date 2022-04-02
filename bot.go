@@ -393,6 +393,10 @@ func (b *Bot) handleUpdate(update tgbotapi.Update) {
 
 	log.Info().Str("text", update.Message.Text).Str("caption", update.Message.Caption).Msg("got message")
 	switch text := update.Message.Text; text {
+	// /start is the command telegram client prompts user to send to a
+	// bot when there are no prior messages
+	case "/start":
+		session.reply(startText)
 	case "/peru":
 		session.reset()
 		session.replyAndRemoveCustomKeyboard(okText)

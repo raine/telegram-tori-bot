@@ -28,6 +28,7 @@ const (
 	invalidReplyToField         = `Vastauksesi ei sovi kenttään "%s". Valitse vastaus nappuloista viestikentän alapuolelta.`
 	unexpectedErrorText         = `Odottamaton virhe: %s`
 	okText                      = `Ok!`
+	startText                   = "Aloita ilmoituksen teko kirjoittamalla tavaran otsikko"
 )
 
 func makeCategoriesInlineKeyboard(categories []tori.Category) tgbotapi.InlineKeyboardMarkup {
