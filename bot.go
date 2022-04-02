@@ -235,6 +235,12 @@ func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
 		session.listing = &newListing
 		log.Info().Interface("listing", newListing).Msg("updated listing")
 
+		if repliedField == "body" {
+			session.userBodyMessageId = update.Message.MessageID
+			sent := session.reply(listingBodyIsText, session.listing.Body)
+			session.botBodyMessageId = sent.MessageID
+		}
+
 		msg, missingField, err := makeNextFieldPrompt(session.client.GetFiltersSectionNewad, *session.listing)
 		if missingField != "" {
 			if err != nil {

@@ -231,6 +231,8 @@ func TestHandleUpdate_EnterBodySeparatelyFromInitialMessage(t *testing.T) {
 		Type:     tori.ListingTypeSell,
 	}
 
+	tg.On("Send", makeMessage(userId, "*Ilmoituksen kuvaus:*\nMyydään käytetty iPhone 12")).
+		Return(tgbotapi.Message{}, nil).Once()
 	// Bot asks the next field
 	tg.On("Send", makeMessage(userId, "Hinta?")).
 		Return(tgbotapi.Message{}, nil).Once()
