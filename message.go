@@ -13,22 +13,22 @@ import (
 )
 
 const (
-	listingSubjectIsText     = "*Ilmoituksen otsikko:* %s"
-	listingBodyIsText        = "*Ilmoituksen kuvaus:*\n%s"
-	listingReadyToBeSentText = `
-    Ilmoitus on valmis lähetettäväksi.
-
-    /laheta - Lähetä ilmoitus
-    /peru - Peru ilmoituksen teko`
-	cantFigureOutCategoryText   = "En keksinyt osastoa otsikon perusteella, eli pieleen meni."
-	incompleteListingOnSendText = "Ilmoituksesta puuttuu kenttiä."
-	noListingOnSendText         = "Ei ole ilmoitusta mitä lähettää."
-	listingSentText             = "Ilmoitus lähetetty!"
-	photosRemoved               = "Kuvat poistettu."
-	invalidReplyToField         = `Vastauksesi ei sovi kenttään "%s". Valitse vastaus nappuloista viestikentän alapuolelta.`
-	unexpectedErrorText         = `Odottamaton virhe: %s`
-	okText                      = `Ok!`
-	startText                   = "Aloita ilmoituksen teko kirjoittamalla tavaran otsikko"
+	listingSubjectIsText = "*Ilmoituksen otsikko:* %s"
+	listingBodyIsText    = "*Ilmoituksen kuvaus:*\n%s"
+	listingReadyCommands = `
+/laheta - Lähetä ilmoitus
+/peru - Peru ilmoituksen teko`
+	listingReadyToBeSentText         = `Ilmoitus on valmis lähetettäväksi.`
+	listingReadyToBeSentTextNoImages = `Ilmoitus on valmis lähetettäväksi, mutta kuvat puuttuu.`
+	cantFigureOutCategoryText        = "En keksinyt osastoa otsikon perusteella, eli pieleen meni."
+	incompleteListingOnSendText      = "Ilmoituksesta puuttuu kenttiä."
+	noListingOnSendText              = "Ei ole ilmoitusta mitä lähettää."
+	listingSentText                  = "Ilmoitus lähetetty!"
+	photosRemoved                    = "Kuvat poistettu."
+	invalidReplyToField              = `Vastauksesi ei sovi kenttään "%s". Valitse vastaus nappuloista viestikentän alapuolelta.`
+	unexpectedErrorText              = `Odottamaton virhe: %s`
+	okText                           = `Ok!`
+	startText                        = "Aloita ilmoituksen teko kirjoittamalla tavaran otsikko"
 )
 
 func makeCategoriesInlineKeyboard(categories []tori.Category) tgbotapi.InlineKeyboardMarkup {

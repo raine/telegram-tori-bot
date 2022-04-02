@@ -249,7 +249,15 @@ func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
 			}
 			session.replyWithMessage(msg)
 		} else {
-			session.reply(listingReadyToBeSentText)
+			var text string
+			if len(session.photos) == 0 {
+				text = listingReadyToBeSentTextNoImages
+			} else {
+				text = listingReadyToBeSentText
+			}
+			session.reply(
+				fmt.Sprintf("%s\n%s", text, listingReadyCommands),
+			)
 		}
 	}
 }

@@ -395,7 +395,7 @@ func TestHandleUpdate_EnterDeliveryOptions(t *testing.T) {
 	}
 
 	tg.On("Send", makeMessage(userId, strings.TrimSpace(dedent.Dedent(`
-    Ilmoitus on valmis lähetettäväksi.
+    Ilmoitus on valmis lähetettäväksi, mutta kuvat puuttuu.
 
     /laheta - Lähetä ilmoitus
     /peru - Peru ilmoituksen teko`)),
