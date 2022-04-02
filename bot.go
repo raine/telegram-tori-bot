@@ -182,6 +182,7 @@ func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
 			session.reset()
 			return
 		}
+		log.Info().Str("subject", session.listing.Subject).Interface("categories", categories).Msg("found categories for subject")
 		if len(categories) == 0 {
 			// TODO: add fallback mechanism for selecting category
 			session.reply(cantFigureOutCategoryText)
