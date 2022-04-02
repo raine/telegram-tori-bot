@@ -391,7 +391,7 @@ func (b *Bot) handleUpdate(update tgbotapi.Update) {
 	session.mu.Lock()
 	defer session.mu.Unlock()
 
-	log.Info().Str("text", update.Message.Text).Msg("got message")
+	log.Info().Str("text", update.Message.Text).Str("caption", update.Message.Caption).Msg("got message")
 	switch text := update.Message.Text; text {
 	case "/peru":
 		session.reset()
