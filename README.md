@@ -19,7 +19,8 @@ go install github.com/raine/telegram-tori-bot
 
 - `BOT_TOKEN`: Telegram bot's token. You get this from @botfather. **required**
 - `USER_CONFIG_PATH`: Path to user config. See `user_config.json.example` for an
-  example. **required**
+  example. If your telegram user id is not found in the user config, the bot
+  will disregard your message. **required**
 
 ## development
 
