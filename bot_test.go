@@ -718,3 +718,26 @@ func TestHandleUpdate_EditBody(t *testing.T) {
 		Type:     tori.ListingTypeSell,
 	}, session.listing)
 }
+
+func TestHandleUpdate_UnauthorizedAccess(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		t.Fatal("no requests expected")
+	}))
+	defer ts.Close()
+	userId := int64(99999) // Not in userConfigMap
+	tg := new(botApiMock)
+	bot := NewBot(tg, userConfigMap, ts.URL)
+
+	update := tgbotapi.Update{
+		EditedMessage: &tgbotapi.Message{
+			MessageID: 10,
+			From:      &tgbotapi.User{ID: userId},
+			Text:      "/start",
+		},
+	}
+
+	bot.handleUpdate(update)
+
+	// The test will fail if bot sends any messages
+	tg.AssertExpectations(t)
+}
