@@ -14,7 +14,7 @@ import (
 
 const (
 	listingSubjectIsText = "*Ilmoituksen otsikko:* %s"
-	listingBodyIsText    = "*Ilmoituksen kuvaus:*\n%s"
+	listingBodyIsText    = "*Ilmoitusteksti:*\n%s"
 	listingReadyCommands = `
 /laheta - Lähetä ilmoitus
 /peru - Peru ilmoituksen teko`

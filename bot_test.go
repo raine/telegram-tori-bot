@@ -178,7 +178,7 @@ func TestHandleUpdate_ListingStart(t *testing.T) {
 	update := makeUpdateWithMessageText(userId, "iPhone 12\n\nMyydään käytetty iPhone 12")
 
 	tg.On("Send", makeMessageWithRemoveReplyKeyboard(userId, "*Ilmoituksen otsikko:* iPhone 12")).Return(tgbotapi.Message{}, nil).Once()
-	tg.On("Send", makeMessage(userId, "*Ilmoituksen kuvaus:*\nMyydään käytetty iPhone 12")).Return(tgbotapi.Message{}, nil).Once()
+	tg.On("Send", makeMessage(userId, "*Ilmoitusteksti:*\nMyydään käytetty iPhone 12")).Return(tgbotapi.Message{}, nil).Once()
 	tg.On("Send", makeMessageWithFn(userId, "*Osasto:* Puhelimet\n", func(msg *tgbotapi.MessageConfig) {
 		msg.ReplyMarkup = tgbotapi.InlineKeyboardMarkup{
 			InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{
@@ -231,7 +231,7 @@ func TestHandleUpdate_EnterBodySeparatelyFromInitialMessage(t *testing.T) {
 		Type:     tori.ListingTypeSell,
 	}
 
-	tg.On("Send", makeMessage(userId, "*Ilmoituksen kuvaus:*\nMyydään käytetty iPhone 12")).
+	tg.On("Send", makeMessage(userId, "*Ilmoitusteksti:*\nMyydään käytetty iPhone 12")).
 		Return(tgbotapi.Message{}, nil).Once()
 	// Bot asks the next field
 	tg.On("Send", makeMessage(userId, "Hinta?")).
@@ -706,7 +706,7 @@ func TestHandleUpdate_EditBody(t *testing.T) {
 		},
 	}
 
-	editMsg := tgbotapi.NewEditMessageText(1, 20, "*Ilmoituksen kuvaus:*\nMyydään käytetty iPhone 100")
+	editMsg := tgbotapi.NewEditMessageText(1, 20, "*Ilmoitusteksti:*\nMyydään käytetty iPhone 100")
 	editMsg.ParseMode = tgbotapi.ModeMarkdown
 	tg.On("Send", editMsg).Return(tgbotapi.Message{}, nil).Once()
 
