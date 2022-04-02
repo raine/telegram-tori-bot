@@ -4,10 +4,30 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/lithammer/dedent"
 	"github.com/pkg/errors"
 	"github.com/raine/telegram-tori-bot/tori"
+)
+
+const (
+	listingSubjectIsText     = "*Ilmoituksen otsikko:* %s"
+	listingBodyIsText        = "*Ilmoituksen kuvaus:*\n%s"
+	listingReadyToBeSentText = `
+    Ilmoitus on valmis lähetettäväksi.
+
+    /laheta - Lähetä ilmoitus
+    /peru - Peru ilmoituksen teko`
+	cantFigureOutCategoryText   = "En keksinyt osastoa otsikon perusteella, eli pieleen meni."
+	incompleteListingOnSendText = "Ilmoituksesta puuttuu kenttiä."
+	noListingOnSendText         = "Ei ole ilmoitusta mitä lähettää."
+	listingSentText             = "Ilmoitus lähetetty!"
+	photosRemoved               = "Kuvat poistettu."
+	invalidReplyToField         = `Vastauksesi ei sovi kenttään "%s". Valitse vastaus nappuloista viestikentän alapuolelta.`
+	unexpectedErrorText         = `Odottamaton virhe: %s`
+	okText                      = `Ok!`
 )
 
 func makeCategoriesInlineKeyboard(categories []tori.Category) tgbotapi.InlineKeyboardMarkup {
@@ -137,18 +157,6 @@ func parsePriceMessage(message string) (tori.Price, error) {
 	}
 }
 
-const (
-	listingSubjectIsText     = "*Ilmoituksen otsikko:* %s"
-	listingBodyIsText        = "*Ilmoituksen kuvaus:*\n%s"
-	listingReadyToBeSentText = `
-    Ilmoitus on valmis lähetettäväksi.
-
-    /laheta - Lähetä ilmoitus
-    /peru - Peru ilmoituksen teko`
-	cantFigureOutCategoryText   = "En keksinyt osastoa otsikon perusteella, eli pieleen meni."
-	incompleteListingOnSendText = "Ilmoituksesta puuttuu kenttiä."
-	noListingOnSendText         = "Ei ole ilmoitusta mitä lähettää."
-	listingSentText             = "Ilmoitus lähetetty!"
-	photosRemoved               = "Kuvat poistettu."
-	invalidReplyToField         = `Vastauksesi ei sovi kenttään "%s". Valitse vastaus nappuloista viestikentän alapuolelta.`
-)
+func formatReplyText(text string, a ...any) string {
+	return fmt.Sprintf(strings.TrimSpace(dedent.Dedent(text)), a...)
+}

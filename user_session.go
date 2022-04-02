@@ -1,12 +1,9 @@
 package main
 
 import (
-	"fmt"
-	"strings"
 	"sync"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/lithammer/dedent"
 	"github.com/pkg/errors"
 	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/rs/zerolog/log"
@@ -37,10 +34,9 @@ func (s *UserSession) reset() {
 	s.userSubjectMessageId = 0
 }
 
-func (s *UserSession) replyWithError(err error) {
+func (s *UserSession) replyWithError(err error) tgbotapi.Message {
 	log.Error().Err(err).Send()
-	msg := tgbotapi.NewMessage(0, fmt.Sprintf("Virhe: %s\n", err))
-	s.replyWithMessage(msg)
+	return s._reply(formatReplyText(unexpectedErrorText, err), false)
 }
 
 func (s *UserSession) replyWithMessage(msg tgbotapi.MessageConfig) tgbotapi.Message {
@@ -55,8 +51,28 @@ func (s *UserSession) replyWithMessage(msg tgbotapi.MessageConfig) tgbotapi.Mess
 	return sent
 }
 
-func (s *UserSession) reply(text string, a ...any) tgbotapi.Message {
-	msg := tgbotapi.NewMessage(0, fmt.Sprintf(strings.TrimSpace(dedent.Dedent(text)), a...))
-	msg.ParseMode = tgbotapi.ModeMarkdown
+func (s *UserSession) _reply(text string, removeReplyKeyboard bool) tgbotapi.Message {
+	msg := tgbotapi.MessageConfig{
+		Text:      text,
+		ParseMode: tgbotapi.ModeMarkdown,
+	}
+
+	if removeReplyKeyboard {
+		msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(false)
+	}
+
 	return s.replyWithMessage(msg)
+}
+
+func (s *UserSession) reply(text string, a ...any) tgbotapi.Message {
+	return s._reply(formatReplyText(text, a...), false)
+}
+
+// replyAndRemoveCustomKeyboard sends a text as reply while removing any
+// existing custom reply keyboard. In telegram, bot's custom keyboards will
+// remain as long as a new one is sent or the current one is removed. If
+// not removed manually, you will often see custom keyboards that are no
+// longer valid in the context.
+func (s *UserSession) replyAndRemoveCustomKeyboard(text string, a ...any) tgbotapi.Message {
+	return s._reply(formatReplyText(text, a...), true)
 }

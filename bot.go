@@ -168,7 +168,9 @@ func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
 		listing := newListingFromMessage(text)
 		session.userSubjectMessageId = update.Message.MessageID
 		session.listing = &listing
-		sent := session.reply(listingSubjectIsText, session.listing.Subject)
+		// Remove custom keyboard just in case there was one from previous
+		// listing creation that did not finish
+		sent := session.replyAndRemoveCustomKeyboard(listingSubjectIsText, session.listing.Subject)
 		session.botSubjectMessageId = sent.MessageID
 		if session.listing.Body != "" {
 			sent = session.reply(listingBodyIsText, session.listing.Body)
@@ -303,7 +305,7 @@ func (b *Bot) sendListingCommand(update tgbotapi.Update) {
 	}
 
 	log.Info().Interface("listing", session.listing).Msg("listing posted successfully")
-	session.reply(listingSentText)
+	session.replyAndRemoveCustomKeyboard(listingSentText)
 	session.reset()
 }
 
@@ -392,7 +394,7 @@ func (b *Bot) handleUpdate(update tgbotapi.Update) {
 	switch text := update.Message.Text; text {
 	case "/peru":
 		session.reset()
-		session.reply("Ok!")
+		session.replyAndRemoveCustomKeyboard(okText)
 	case "/laheta":
 		b.sendListingCommand(update)
 	case "/poistakuvat":

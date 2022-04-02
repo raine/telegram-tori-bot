@@ -82,13 +82,21 @@ func makeMessage(userId int64, text string) tgbotapi.MessageConfig {
 	return msg
 }
 
+func makeMessageWithRemoveReplyKeyboard(userId int64, text string) tgbotapi.MessageConfig {
+	return makeMessageWithReplyMarkup(
+		userId,
+		text,
+		tgbotapi.ReplyKeyboardRemove{RemoveKeyboard: true, Selective: false},
+	)
+}
+
 func makeMessageWithFn(userId int64, text string, fn func(msg *tgbotapi.MessageConfig)) tgbotapi.MessageConfig {
 	msg := makeMessage(userId, text)
 	fn(&msg)
 	return msg
 }
 
-func makeMessageWithReplyMarkup(userId int64, text string, replyMarkup tgbotapi.ReplyKeyboardMarkup) tgbotapi.MessageConfig {
+func makeMessageWithReplyMarkup(userId int64, text string, replyMarkup interface{}) tgbotapi.MessageConfig {
 	msg := makeMessage(userId, text)
 	msg.ReplyMarkup = replyMarkup
 	return msg
@@ -169,7 +177,7 @@ func TestHandleUpdate_ListingStart(t *testing.T) {
 	defer ts.Close()
 	update := makeUpdateWithMessageText(userId, "iPhone 12\n\nMyydään käytetty iPhone 12")
 
-	tg.On("Send", makeMessage(userId, "*Ilmoituksen otsikko:* iPhone 12")).Return(tgbotapi.Message{}, nil).Once()
+	tg.On("Send", makeMessageWithRemoveReplyKeyboard(userId, "*Ilmoituksen otsikko:* iPhone 12")).Return(tgbotapi.Message{}, nil).Once()
 	tg.On("Send", makeMessage(userId, "*Ilmoituksen kuvaus:*\nMyydään käytetty iPhone 12")).Return(tgbotapi.Message{}, nil).Once()
 	tg.On("Send", makeMessageWithFn(userId, "*Osasto:* Puhelimet\n", func(msg *tgbotapi.MessageConfig) {
 		msg.ReplyMarkup = tgbotapi.InlineKeyboardMarkup{
@@ -460,7 +468,7 @@ func TestHandleUpdate_AddPhotoInSameMessageAsSubject(t *testing.T) {
 	ts, userId, tg, bot, session := setup(t)
 	defer ts.Close()
 
-	tg.On("Send", makeMessage(userId, "*Ilmoituksen otsikko:* iPhone 12")).Return(tgbotapi.Message{}, nil).Once()
+	tg.On("Send", makeMessageWithRemoveReplyKeyboard(userId, "*Ilmoituksen otsikko:* iPhone 12")).Return(tgbotapi.Message{}, nil).Once()
 	tg.On("Send", makeMessage(userId, "Ilmoitusteksti?")).Return(tgbotapi.Message{}, nil).Once()
 	tg.On("Send", makeMessage(userId, "1 kuva lisätty")).Return(tgbotapi.Message{}, nil).Once()
 	tg.On("Send", makeMessageWithFn(userId, "*Osasto:* Puhelimet\n", func(msg *tgbotapi.MessageConfig) {
@@ -566,7 +574,7 @@ func TestHandleUpdate_SendListing(t *testing.T) {
 
 	tg.On("GetFileDirectURL", "1").Return(ts.URL+"/1.jpg", nil).Once()
 	tg.On("GetFileDirectURL", "2").Return(ts.URL+"/2.jpg", nil).Once()
-	tg.On("Send", makeMessage(userId, "Ilmoitus lähetetty!")).Return(tgbotapi.Message{}, nil).Once()
+	tg.On("Send", makeMessageWithRemoveReplyKeyboard(userId, "Ilmoitus lähetetty!")).Return(tgbotapi.Message{}, nil).Once()
 
 	bot.handleUpdate(update)
 	tg.AssertExpectations(t)
