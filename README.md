@@ -4,6 +4,8 @@ Telegram bot created with the intent of making selling stuff on tori.fi as
 streamlined as possible. Takes advantage of Telegram's photo sending and bot
 features like Custom Reply Keyboards and Inline Keyboards.
 
+<video src="https://user-images.githubusercontent.com/11027/161634069-6462e726-bfe6-4340-8bec-1ae41a21ae6c.mp4"></video>
+
 ## install
 
 ```sh
