@@ -175,10 +175,9 @@ func TestMain(m *testing.M) {
 func TestHandleUpdate_ListingStart(t *testing.T) {
 	ts, userId, tg, bot, session := setup(t)
 	defer ts.Close()
-	update := makeUpdateWithMessageText(userId, "iPhone 12\n\nMyydään käytetty iPhone 12")
+	update := makeUpdateWithMessageText(userId, "iPhone 12")
 
 	tg.On("Send", makeMessageWithRemoveReplyKeyboard(userId, "*Ilmoituksen otsikko:* iPhone 12")).Return(tgbotapi.Message{}, nil).Once()
-	tg.On("Send", makeMessage(userId, "*Ilmoitusteksti:*\nMyydään käytetty iPhone 12")).Return(tgbotapi.Message{}, nil).Once()
 	tg.On("Send", makeMessageWithFn(userId, "*Osasto:* Puhelimet\n", func(msg *tgbotapi.MessageConfig) {
 		msg.ReplyMarkup = tgbotapi.InlineKeyboardMarkup{
 			InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{
@@ -191,7 +190,7 @@ func TestHandleUpdate_ListingStart(t *testing.T) {
 	})).
 		Return(tgbotapi.Message{}, nil).Once()
 	// Bot prompts for first missing field in listing
-	tg.On("Send", makeMessage(userId, "Hinta?")).
+	tg.On("Send", makeMessage(userId, "Ilmoitusteksti?")).
 		Return(tgbotapi.Message{}, nil).Once()
 
 	bot.handleUpdate(update)
@@ -205,7 +204,6 @@ func TestHandleUpdate_ListingStart(t *testing.T) {
 		userId: 1,
 		listing: &tori.Listing{
 			Subject:  "iPhone 12",
-			Body:     "Myydään käytetty iPhone 12",
 			Type:     tori.ListingTypeSell,
 			Category: "5012",
 		},
@@ -220,7 +218,7 @@ func TestHandleUpdate_ListingStart(t *testing.T) {
 	}, session)
 }
 
-func TestHandleUpdate_EnterBodySeparatelyFromInitialMessage(t *testing.T) {
+func TestHandleUpdate_EnterBody(t *testing.T) {
 	ts, userId, tg, bot, session := setup(t)
 	defer ts.Close()
 

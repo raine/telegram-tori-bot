@@ -91,6 +91,7 @@ func newListingFromMessage(message string) tori.Listing {
 	var listingType tori.ListingType
 	re := regexp.MustCompile(`(?i)(myydään|annetaan)\s`)
 	m := re.FindStringSubmatch(strings.ToLower(message))
+
 	switch {
 	case m == nil:
 		listingType = tori.ListingTypeSell
@@ -101,13 +102,10 @@ func newListingFromMessage(message string) tori.Listing {
 	}
 
 	message = re.ReplaceAllString(message, "")
-	parts := strings.Split(strings.TrimSpace(message), "\n\n")
-	subject := parts[0]
-	body := strings.Join(parts[1:], "\n\n")
+	subject := strings.TrimSpace(message)
 
 	listing := tori.Listing{
 		Subject: subject,
-		Body:    body,
 		Type:    listingType,
 	}
 	return listing
