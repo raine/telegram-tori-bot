@@ -1,7 +1,6 @@
 package tori
 
 import (
-	"fmt"
 	"regexp"
 )
 
@@ -20,7 +19,6 @@ func AccountLocationListToListingLocation(location []Location) ListingLocation {
 func ParseAccountIdNumberFromPath(str string) string {
 	re := regexp.MustCompile(`/private/accounts/(\d+)`)
 	m := re.FindStringSubmatch(str)
-	fmt.Printf("m = %+v\n", m)
 	if m == nil {
 		return ""
 	} else {
