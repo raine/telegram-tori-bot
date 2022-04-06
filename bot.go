@@ -10,6 +10,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/exp/slices"
 )
 
 type BotAPI interface {
@@ -46,27 +47,53 @@ func (b *Bot) handlePhoto(message *tgbotapi.Message) {
 	// When photos are sent as a "media group" that appear like a single message
 	// with multiple photos, the photos are in fact sent one by one in separate
 	// messages. To give feedback like "n photos added", we have to wait a bit
-	// after the first photo is sent and keep track of photos since then
+	// after the first photo is sent and keep track of photos since then.
+	//
+	// Also, in media groups, photos have an order. It looks like the order is
+	// based on message's id. So eventually we need to add uploaded photos
+	// to session.photo in ordered by message id.
 	if session.pendingPhotos == nil {
-		session.pendingPhotos = new([]tgbotapi.PhotoSize)
+		session.pendingPhotos = new([]PendingPhoto)
 
 		go func() {
 			env, _ := os.LookupEnv("GO_ENV")
 			if env == "test" {
-				time.Sleep(100 * time.Microsecond)
+				time.Sleep(1000 * time.Microsecond)
 			} else {
 				time.Sleep(1 * time.Second)
 			}
-			session.photos = append(session.photos, *session.pendingPhotos...)
+
+			// Order pending photos batch based on message id, which is the
+			// order in which message were sent, but not necessary the order
+			// they are processed by the program
+			slices.SortStableFunc(*session.pendingPhotos, func(a PendingPhoto, b PendingPhoto) bool {
+				return a.messageId < b.messageId
+			})
+
+			for _, pendingPhoto := range *session.pendingPhotos {
+				session.photos = append(session.photos, pendingPhoto.photoSize)
+			}
+
 			session.reply("%s lisätty", pluralize("kuva", "kuvaa", len(*session.pendingPhotos)))
 			session.pendingPhotos = nil
+			log.Info().Interface("photos", session.photos).Msg("added pending photos to session")
 		}()
 	}
 
 	// message.Photo is an array of PhotoSizes and the last one is the largest size
 	largestPhoto := message.Photo[len(message.Photo)-1]
-	log.Info().Interface("photo", largestPhoto).Msg("added photo to listing")
-	pendingPhotos := append(*session.pendingPhotos, largestPhoto)
+	url, err := b.tg.GetFileDirectURL(largestPhoto.FileID)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to get photo url")
+		return
+	}
+
+	log.Info().Interface("photo", largestPhoto).Str("url", url).Int("messageId", message.MessageID).Msg("added photo to listing")
+	pendingPhoto := PendingPhoto{
+		messageId: message.MessageID,
+		photoSize: largestPhoto,
+	}
+	pendingPhotos := append(*session.pendingPhotos, pendingPhoto)
 	session.pendingPhotos = &pendingPhotos
 }
 

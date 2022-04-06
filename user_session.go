@@ -9,6 +9,11 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+type PendingPhoto struct {
+	messageId int
+	photoSize tgbotapi.PhotoSize
+}
+
 type UserSession struct {
 	userId               int64
 	client               *tori.Client
@@ -16,7 +21,7 @@ type UserSession struct {
 	toriAccountId        string
 	bot                  *Bot
 	mu                   sync.Mutex
-	pendingPhotos        *[]tgbotapi.PhotoSize
+	pendingPhotos        *[]PendingPhoto
 	photos               []tgbotapi.PhotoSize
 	categories           []tori.Category
 	userSubjectMessageId int

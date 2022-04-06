@@ -425,40 +425,48 @@ func TestHandleUpdate_AddPhoto(t *testing.T) {
 		Type:     tori.ListingTypeSell,
 	}
 
+	tg.On("GetFileDirectURL", "a").Return(ts.URL+"/a.jpg", nil)
+	tg.On("GetFileDirectURL", "b").Return(ts.URL+"/b.jpg", nil)
+	tg.On("GetFileDirectURL", "c").Return(ts.URL+"/c.jpg", nil)
 	tg.On("Send", makeMessage(userId, "3 kuvaa lisätty")).Return(tgbotapi.Message{}, nil).Once()
 
+	const asciiA = 97
 	for i := 0; i < 3; i++ {
-		bot.handleUpdate(
-			tgbotapi.Update{
-				Message: &tgbotapi.Message{
-					From: &tgbotapi.User{ID: userId},
-					Text: "",
-					Photo: []tgbotapi.PhotoSize{
-						{FileID: "a", FileUniqueID: strconv.Itoa(i + 1), Width: 67, Height: 90, FileSize: 1359},
-						{FileID: "a", FileUniqueID: strconv.Itoa(i + 2), Width: 240, Height: 320, FileSize: 17212},
-						{FileID: "a", FileUniqueID: strconv.Itoa(i + 3), Width: 371, Height: 495, FileSize: 28548},
+		go func(i int) {
+			bot.handleUpdate(
+				tgbotapi.Update{
+					Message: &tgbotapi.Message{
+						MessageID: i,
+						From:      &tgbotapi.User{ID: userId},
+						Text:      "",
+						Photo: []tgbotapi.PhotoSize{
+							{FileID: string(rune(i + asciiA)), FileUniqueID: strconv.Itoa(i + 1), Width: 67, Height: 90, FileSize: 1359},
+							{FileID: string(rune(i + asciiA)), FileUniqueID: strconv.Itoa(i + 2), Width: 240, Height: 320, FileSize: 17212},
+							{FileID: string(rune(i + asciiA)), FileUniqueID: strconv.Itoa(i + 3), Width: 371, Height: 495, FileSize: 28548},
+						},
 					},
 				},
-			},
-		)
+			)
+		}(i)
 	}
 
 	assert.Eventually(
 		t,
 		func() bool {
-			return len(session.photos) == 3 &&
-				assert.ObjectsAreEqual(
-					tgbotapi.PhotoSize{
-						FileID:       "a",
-						FileUniqueID: "3",
-						Width:        371,
-						Height:       495,
-						FileSize:     28548,
-					}, session.photos[0])
+			return len(session.photos) == 3
 		},
 		time.Millisecond*100,
 		time.Millisecond,
-		"expected photos in session.photos",
+		"expected 3 photos in session.photos",
+	)
+
+	assert.Equal(t,
+		[]tgbotapi.PhotoSize{
+			{FileID: "a", FileUniqueID: "3", Width: 371, Height: 495, FileSize: 28548},
+			{FileID: "b", FileUniqueID: "4", Width: 371, Height: 495, FileSize: 28548},
+			{FileID: "c", FileUniqueID: "5", Width: 371, Height: 495, FileSize: 28548},
+		},
+		session.photos,
 	)
 
 	tg.AssertExpectations(t)
@@ -468,6 +476,7 @@ func TestHandleUpdate_AddPhotoInSameMessageAsSubject(t *testing.T) {
 	ts, userId, tg, bot, session := setup(t)
 	defer ts.Close()
 
+	tg.On("GetFileDirectURL", "a").Return(ts.URL+"/1.jpg", nil)
 	tg.On("Send", makeMessageWithRemoveReplyKeyboard(userId, "*Ilmoituksen otsikko:* iPhone 12")).Return(tgbotapi.Message{}, nil).Once()
 	tg.On("Send", makeMessage(userId, "Ilmoitusteksti?")).Return(tgbotapi.Message{}, nil).Once()
 	tg.On("Send", makeMessage(userId, "1 kuva lisätty")).Return(tgbotapi.Message{}, nil).Once()
