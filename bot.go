@@ -282,7 +282,7 @@ func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
 			} else {
 				text = listingReadyToBeSentText
 			}
-			session.reply(
+			session.replyAndRemoveCustomKeyboard(
 				fmt.Sprintf("%s\n%s", text, listingReadyCommands),
 			)
 		}
