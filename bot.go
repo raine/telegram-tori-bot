@@ -278,7 +278,7 @@ func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
 		} else {
 			var text string
 			if len(session.photos) == 0 {
-				text = listingReadyToBeSentTextNoImages
+				text = listingReadyToBeSentNoImagesText
 			} else {
 				text = listingReadyToBeSentText
 			}

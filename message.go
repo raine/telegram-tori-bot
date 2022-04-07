@@ -19,7 +19,7 @@ const (
 /laheta - Lähetä ilmoitus
 /peru - Peru ilmoituksen teko`
 	listingReadyToBeSentText         = `Ilmoitus on valmis lähetettäväksi.`
-	listingReadyToBeSentTextNoImages = `Ilmoitus on valmis lähetettäväksi, mutta kuvat puuttuu.`
+	listingReadyToBeSentNoImagesText = `Ilmoitus on valmis lähetettäväksi, mutta *kuvat puuttuu*.`
 	cantFigureOutCategoryText        = "En keksinyt osastoa otsikon perusteella, eli pieleen meni."
 	incompleteListingOnSendText      = "Ilmoituksesta puuttuu kenttiä."
 	noListingOnSendText              = "Ei ole ilmoitusta mitä lähettää."
