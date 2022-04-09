@@ -161,7 +161,7 @@ func strPtr(v string) *string {
 }
 
 var userConfigMap = UserConfigMap{
-	1: UserConfig{
+	1: UserConfigItem{
 		Token:         "foo",
 		ToriAccountId: "123123",
 	},
