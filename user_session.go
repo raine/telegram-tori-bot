@@ -40,7 +40,7 @@ func (s *UserSession) reset() {
 }
 
 func (s *UserSession) replyWithError(err error) tgbotapi.Message {
-	log.Error().Err(err).Send()
+	log.Error().Stack().Err(errors.WithStack(err)).Send()
 	return s._reply(formatReplyText(unexpectedErrorText, err), false)
 }
 
