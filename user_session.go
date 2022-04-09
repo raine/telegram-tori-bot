@@ -51,6 +51,8 @@ func (s *UserSession) replyWithMessage(msg tgbotapi.MessageConfig) tgbotapi.Mess
 		log.Error().Stack().
 			Interface("msg", msg).
 			Err(errors.Wrap(err, "failed to send reply message")).Send()
+	} else {
+		log.Info().Interface("msg", msg).Interface("sent", sent).Msg("sent message")
 	}
 
 	return sent
