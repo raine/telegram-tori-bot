@@ -6,7 +6,16 @@ features like Custom Reply Keyboards and Inline Keyboards.
 
 <video src="https://user-images.githubusercontent.com/11027/161634069-6462e726-bfe6-4340-8bec-1ae41a21ae6c.mp4"></video>
 
+## features
+
+- Determines the listing category from subject, instead of having to browse
+  through endless list of nested categories
+- Add photos to listing by dragging them to chat at any point
+- Edit listing subject and body by editing the original message
+
 ## install
+
+The Go Toolchain is required.
 
 ```sh
 go install github.com/raine/telegram-tori-bot
@@ -25,8 +34,6 @@ go install github.com/raine/telegram-tori-bot
   will disregard your message. **required**
 
 ## development
-
-The Go Toolchain is required for development.
 
 The project uses [`just`](https://github.com/casey/just) as a command runner (or
 make alternative).
