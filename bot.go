@@ -199,10 +199,6 @@ func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
 		// listing creation that did not finish
 		sent := session.replyAndRemoveCustomKeyboard(listingSubjectIsText, session.listing.Subject)
 		session.botSubjectMessageId = sent.MessageID
-		if session.listing.Body != "" {
-			sent = session.reply(listingBodyIsText, session.listing.Body)
-			session.botBodyMessageId = sent.MessageID
-		}
 		categories, err := getCategoriesForSubject(session.client, session.listing.Subject)
 		if err != nil {
 			session.replyWithError(err)
