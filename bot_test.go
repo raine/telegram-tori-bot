@@ -177,7 +177,7 @@ func TestHandleUpdate_ListingStart(t *testing.T) {
 	defer ts.Close()
 	update := makeUpdateWithMessageText(userId, "iPhone 12")
 
-	tg.On("Send", makeMessageWithRemoveReplyKeyboard(userId, "*Ilmoituksen otsikko:* iPhone 12")).Return(tgbotapi.Message{}, nil).Once()
+	tg.On("Send", makeMessage(userId, "*Ilmoituksen otsikko:* iPhone 12")).Return(tgbotapi.Message{}, nil).Once()
 	tg.On("Send", makeMessageWithFn(userId, "*Osasto:* Puhelimet\n", func(msg *tgbotapi.MessageConfig) {
 		msg.ReplyMarkup = tgbotapi.InlineKeyboardMarkup{
 			InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{
@@ -477,7 +477,7 @@ func TestHandleUpdate_AddPhotoInSameMessageAsSubject(t *testing.T) {
 	defer ts.Close()
 
 	tg.On("GetFileDirectURL", "a").Return(ts.URL+"/1.jpg", nil)
-	tg.On("Send", makeMessageWithRemoveReplyKeyboard(userId, "*Ilmoituksen otsikko:* iPhone 12")).Return(tgbotapi.Message{}, nil).Once()
+	tg.On("Send", makeMessage(userId, "*Ilmoituksen otsikko:* iPhone 12")).Return(tgbotapi.Message{}, nil).Once()
 	tg.On("Send", makeMessage(userId, "Ilmoitusteksti?")).Return(tgbotapi.Message{}, nil).Once()
 	tg.On("Send", makeMessage(userId, "1 kuva lisätty")).Return(tgbotapi.Message{}, nil).Once()
 	tg.On("Send", makeMessageWithFn(userId, "*Osasto:* Puhelimet\n", func(msg *tgbotapi.MessageConfig) {
