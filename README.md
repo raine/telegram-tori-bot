@@ -18,7 +18,7 @@ features like Custom Reply Keyboards and Inline Keyboards.
 The Go Toolchain is required.
 
 ```sh
-go install github.com/raine/telegram-tori-bot
+go install github.com/raine/telegram-tori-bot@latest
 ```
 
 ## usage
