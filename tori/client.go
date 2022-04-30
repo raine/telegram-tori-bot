@@ -178,6 +178,7 @@ func handleError(res *resty.Response, err error) (*resty.Response, error) {
 		log.Error().
 			Str("url", res.Request.URL).
 			Str("method", res.Request.Method).
+			Int("status_code", res.StatusCode()).
 			Interface("request", res.Request.Body).
 			Bytes("response", res.Body()).
 			Send()
