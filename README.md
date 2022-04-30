@@ -26,12 +26,38 @@ go install github.com/raine/telegram-tori-bot@latest
 1. Run `telegram-tori-bot` with env variables and user config set up
 2. Tell your bot what you want to sell
 
-### env vars
+## env vars
 
 - `BOT_TOKEN`: Telegram bot's token. You get this from @botfather. **required**
 - `USER_CONFIG_PATH`: Path to user config. See `user_config.toml.example` for an
   example. If your telegram user id is not found in the user config, the bot
   will disregard your message. **required**
+
+## user config
+
+No login mechanism with tori.fi (or whatever schibsted it is thesedays)
+credentials is implemented as of yet.
+
+Here's a JavaScript snippet to get the access token and tori account id for
+`user_config.toml`. Run it in browser developer tools on tori.fi with active
+session. It will works as long as the cookie is readable in JS.
+
+```js
+const { access_token, token_type, account_id } = JSON.parse(
+  atob(
+    Object.fromEntries(
+      document.cookie
+        .split('; ')
+        .map((v) => v.split(/=(.*)/s).map(decodeURIComponent))
+    )['sessioninfo']
+  )
+)
+console.log(
+  `token = '${token_type} ${access_token}'\ntoriAccountId = '${
+    account_id.split('/')[3]
+  }'`
+)
+```
 
 ## development
 
