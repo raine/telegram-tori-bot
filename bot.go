@@ -188,6 +188,15 @@ func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
 
 	// Start a new listing from message
 	if session.listing == nil {
+		// Do the best we can to ensure listing can be eventually sent
+		// successfully, instead of failing after user has input all details and
+		// bot tries to POST the listing to Tori
+		msgText := checkUserPreconditions(session)
+		if msgText != "" {
+			session.reply(msgText)
+			return
+		}
+
 		listing := newListingFromMessage(text)
 		session.userSubjectMessageId = update.Message.MessageID
 		session.listing = &listing
@@ -483,4 +492,21 @@ func fetchNewadFilters(get func() (tori.NewadFilters, error)) (tori.NewadFilters
 	} else {
 		return cachedNewadFilters, nil
 	}
+}
+
+func checkUserPreconditions(session *UserSession) string {
+	// Check that access token is valid
+	account, err := session.client.GetAccount(session.toriAccountId)
+	if err != nil {
+		log.Error().Err(err).Msg("precondition check failed: could not get account from tori")
+		return sessionMaybeExpiredText
+	}
+
+	// Tori account needs to have location set so that it can be added to listing
+	if len(account.Locations) == 0 {
+		log.Error().Msg("precondition check failed: account does not have locations set")
+		return noLocationsInToriAccountText
+	}
+
+	return "" // OK
 }
