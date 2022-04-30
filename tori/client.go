@@ -77,11 +77,11 @@ func (c *Client) req(result any) *resty.Request {
 func (c *Client) GetAccount(accountId string) (Account, error) {
 	result := &AccountResponse{}
 
-	_, err := c.req(result).
+	_, err := handleError(c.req(result).
 		SetPathParams(map[string]string{
 			"accountId": accountId,
 		}).
-		Get("/v1.2/private/accounts/{accountId}")
+		Get("/v1.2/private/accounts/{accountId}"))
 
 	return result.Account, err
 }
