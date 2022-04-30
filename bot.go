@@ -188,10 +188,6 @@ func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
 
 	// Start a new listing from message
 	if session.listing == nil {
-		if err != nil {
-			session.replyWithError(err)
-			return
-		}
 		listing := newListingFromMessage(text)
 		session.userSubjectMessageId = update.Message.MessageID
 		session.listing = &listing
