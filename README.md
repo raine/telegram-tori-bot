@@ -46,9 +46,7 @@ session. It will works as long as the cookie is readable in JS.
 const { access_token, token_type, account_id } = JSON.parse(
   atob(
     Object.fromEntries(
-      document.cookie
-        .split('; ')
-        .map((v) => v.split(/=(.*)/s).map(decodeURIComponent))
+      document.cookie.split('; ').map((v) => v.split(/=(.*)/s))
     )['sessioninfo']
   )
 )
