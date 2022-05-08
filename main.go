@@ -23,7 +23,7 @@ func main() {
 
 	tg, err := tgbotapi.NewBotAPI(botToken)
 	if err != nil {
-		log.Fatal().Err(err).Send()
+		log.Fatal().Err(err).Msg("failed to initialize telegram bot; bad token?")
 		os.Exit(1)
 	}
 	tg.Debug = false
