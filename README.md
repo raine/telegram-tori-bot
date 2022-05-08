@@ -1,8 +1,9 @@
 # telegram-tori-bot
 
 Telegram bot created with the intent of making selling stuff on tori.fi as
-streamlined as possible. Takes advantage of Telegram's photo sending and bot
-features like Custom Reply Keyboards and Inline Keyboards.
+streamlined as possible. Putting stuff for sale with this thing is actually a
+joy. Takes advantage of Telegram's photo sending and bot features like Custom
+Reply Keyboards and Inline Keyboards.
 
 <video src="https://user-images.githubusercontent.com/11027/161634069-6462e726-bfe6-4340-8bec-1ae41a21ae6c.mp4"></video>
 
@@ -23,8 +24,18 @@ go install github.com/raine/telegram-tori-bot@latest
 
 ## usage
 
-1. Run `telegram-tori-bot` with env variables and user config set up
-2. Tell your bot what you want to sell
+1. Create a bot on Telegram by talking to [@botfather](https://t.me/botfather)
+   - https://core.telegram.org/bots#creating-a-new-bot
+2. Run `telegram-tori-bot` with env variables and [user config](#env-vars) set
+   up:
+
+   ```sh
+   BOT_TOKEN=bottoken \
+   USER_CONFIG_PATH=path/to/user_config.toml \
+      telegram-tori-bot
+   ```
+
+3. Tell your bot what you want to sell
 
 ## env vars
 
@@ -40,7 +51,7 @@ credentials is implemented as of yet.
 
 Here's a JavaScript snippet to get the access token and tori account id for
 `user_config.toml`. Run it in browser developer tools on tori.fi with active
-session. It will works as long as the cookie is readable in JS.
+session. It will work as long as the cookie is readable in JS.
 
 ```js
 const { access_token, token_type, account_id } = JSON.parse(
