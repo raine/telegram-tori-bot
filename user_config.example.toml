@@ -1,3 +1,9 @@
 [123] # telegram user id
 token = 'abc' # tori access token
 toriAccountId = '123123' # tori account id
+
+[456] # another telegram user id
+token = 'abc'
+toriAccountId = '123123'
+
+# etc...

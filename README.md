@@ -68,6 +68,46 @@ console.log(
 )
 ```
 
+## faq
+
+### how do i start over when making some kind of mistake that cannot be reversed?
+
+Use the command `/peru`. It will forget everything from the current listing
+creation. Note that subject and description can be edited by editing the
+original message.
+
+### which of the uploaded photos will be used as primary picture in listing?
+
+The first uploaded picture. When uploading multiple photos in Telegram client,
+photos can be reorded both on desktop and mobile. Or you can just upload them
+separately -- that way works also.
+
+### bot is failing to guess the correct category based on listing subject, what do?
+
+The bot comes up with a subject for your listing based on the subject you enter.
+This works by searching tori.fi for existing listings with parts of the entered
+subject. If none can be found, there is currently no fallback to select the
+category manually. What you can do, however, is enter a noun as the last word in
+the subject. The bot will always search the last word of the subject
+independently if all else fails.
+
+For example,
+
+**Good**: Lake CX 176 maantiekengät
+
+Searching for "maantiekengät" is almost guaranteed to provide a result that we
+can get the correct category from.
+
+**Bad**: Lake CX 176
+
+If no one is currently selling Lake CX 176 road cycling shoes, we can't get a
+category.
+
+### does it add a phone number to listing?
+
+No. Adding phone number to listing is an invitation for annoying Whatsapp scam
+messages.
+
 ## development
 
 The project uses [`just`](https://github.com/casey/just) as a command runner (or
