@@ -38,6 +38,8 @@ func main() {
 		log.Fatal().Err(err).Send()
 	}
 
+	go keepSessionsAlive(tori.ApiBaseUrl, userConfigMap)
+
 	bot := NewBot(tg, userConfigMap, tori.ApiBaseUrl)
 
 	for update := range updates {
