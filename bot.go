@@ -88,7 +88,7 @@ func (b *Bot) handlePhoto(message *tgbotapi.Message) {
 		return
 	}
 
-	log.Info().Interface("photo", largestPhoto).Str("url", url).Int("messageId", message.MessageID).Msg("added photo to listing")
+	log.Info().Interface("photo", largestPhoto).Str("url", url).Int("messageId", message.MessageID).Msg("added photo to pending photos")
 	pendingPhoto := PendingPhoto{
 		messageId: message.MessageID,
 		photoSize: largestPhoto,
