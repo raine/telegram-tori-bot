@@ -26,17 +26,25 @@ go install github.com/raine/telegram-tori-bot@latest
 ## usage
 
 1. Create a bot on Telegram by talking to [@botfather](https://t.me/botfather)
+   and save the bot token it gives you.
    - https://core.telegram.org/bots#creating-a-new-bot
-2. Run `telegram-tori-bot` with env variables and [user config](#env-vars) set
-   up:
+2. Get the [user config](#user-config) template:
+   `curl https://github.com/raine/telegram-tori-bot/blob/master/user_config.example.toml > user_config.toml`.
+3. In `user_config.toml`, fill `token` and `toriAccountId` for your user with
+   the JavaScript snippet in [user config](#user-config). You can figure out
+   what your `telegramUserId` is by sending any message to the bot, so proceed
+   to run the bot with incomplete configuration, if you don't have your user id
+   at this point.
+4. Run `telegram-tori-bot` with the env variables set:
 
    ```sh
-   BOT_TOKEN=bottoken \
-   USER_CONFIG_PATH=path/to/user_config.toml \
+   BOT_TOKEN=<bot_token_from_step_1> \
+   USER_CONFIG_PATH=./user_config.toml \
       telegram-tori-bot
    ```
 
-3. Tell your bot what you want to sell
+5. Search for your bot in telegram with the username you gave to it.
+6. `/start` a conversation with the bot and tell what you're selling.
 
 ## env vars
 
@@ -84,6 +92,11 @@ console.log(
 ```
 
 ## faq
+
+### how to create "annetaan" type listings?
+
+Start the message with the listing subject with the word "annetaan". For
+example: "Annetaan Kylpyhuoneen matto".
 
 ### how do i start over when making some kind of mistake that cannot be reversed?
 
