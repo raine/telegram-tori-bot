@@ -47,6 +47,20 @@ go install github.com/raine/telegram-tori-bot@latest
 
 ## user config
 
+The program expects a TOML config file that contains telegram user to tori user
+-pairs. The format is as follow:
+
+```toml
+[[users]]
+telegramUserId = 123
+token = 'abc'
+toriAccountId = '123123'
+
+[[users]]
+telegramUserId = 124
+# etc...
+```
+
 No login mechanism with tori.fi (or whatever schibsted it is thesedays)
 credentials is implemented as of yet.
 
