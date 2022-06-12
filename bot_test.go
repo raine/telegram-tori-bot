@@ -570,6 +570,8 @@ func TestHandleUpdate_SendListing(t *testing.T) {
 		Category: "5012",
 		Type:     tori.ListingTypeSell,
 		Price:    50,
+		// Needs to be set true because the archive is created from this listing
+		PhoneHidden: true,
 		AdDetails: tori.AdDetails{
 			"general_condition": "new",
 			"cell_phone":        "apple",
@@ -584,6 +586,18 @@ func TestHandleUpdate_SendListing(t *testing.T) {
 	tg.On("GetFileDirectURL", "1").Return(ts.URL+"/1.jpg", nil).Once()
 	tg.On("GetFileDirectURL", "2").Return(ts.URL+"/2.jpg", nil).Once()
 	tg.On("Send", makeMessageWithRemoveReplyKeyboard(userId, "Ilmoitus lähetetty!")).Return(tgbotapi.Message{}, nil).Once()
+
+	archive := NewListingArchive(*session.listing, session.photos)
+	archiveBytes, err := json.Marshal(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document := tgbotapi.NewDocument(session.userId, tgbotapi.FileBytes{
+		Name:  "archive.json",
+		Bytes: archiveBytes,
+	})
+	document.Caption = session.listing.Subject
+	tg.On("Send", document).Return(tgbotapi.Message{}, nil).Once()
 
 	bot.handleUpdate(update)
 	tg.AssertExpectations(t)

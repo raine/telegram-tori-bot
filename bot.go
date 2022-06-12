@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -346,9 +347,29 @@ func (b *Bot) sendListingCommand(update tgbotapi.Update) {
 		session.replyWithError(err)
 		return
 	}
+	session.replyAndRemoveCustomKeyboard(listingSentText)
+
+	// Create a JSON archive of listing and photos. The archive can be used
+	// later to resend the same listing, perhaps with minor modifications.
+	archive := NewListingArchive(*session.listing, session.photos)
+	archiveBytes, err := json.Marshal(archive)
+	if err != nil {
+		session.replyWithError(err)
+		return
+	}
+	document := tgbotapi.NewDocument(session.userId, tgbotapi.FileBytes{
+		Name:  "archive.json",
+		Bytes: archiveBytes,
+	})
+	document.Caption = session.listing.Subject
+
+	_, err = b.tg.Send(document)
+	if err != nil {
+		session.replyWithError(err)
+		return
+	}
 
 	log.Info().Interface("listing", session.listing).Msg("listing posted successfully")
-	session.replyAndRemoveCustomKeyboard(listingSentText)
 	session.reset()
 }
 
