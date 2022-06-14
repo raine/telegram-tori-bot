@@ -131,6 +131,9 @@ can get the correct category from.
 If no one is currently selling Lake CX 176 road cycling shoes, we can't get a
 category.
 
+Another strategy is entering something that is guaranteed to be found, and then
+replacing the whole subject by editing the message.
+
 ### does it add a phone number to listing?
 
 No. Adding phone number to listing is an invitation for annoying Whatsapp scam
