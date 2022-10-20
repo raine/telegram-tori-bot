@@ -13,9 +13,9 @@ type ListingArchive struct {
 func NewListingArchive(listing tori.Listing, photos []tgbotapi.PhotoSize) ListingArchive {
 	// Images will be uploaded again from `photos` that are stored in Telegram
 	listing.Images = nil
-	// Location is queried again whenl the listing is sent so not needed in the archive
+	// Location is queried again when the listing is sent so not needed in the archive
 	listing.Location = nil
-	// AccountId is queried again whenl the listing is sent so not needed in the archive
+	// AccountId is queried again when the listing is sent so not needed in the archive
 	listing.AccountId = ""
 
 	archive := ListingArchive{
