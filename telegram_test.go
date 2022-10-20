@@ -34,7 +34,7 @@ func TestDownloadPhotoSize(t *testing.T) {
 		FileSize:     28548,
 	}
 
-	bytes, err := downloadPhotoSize(getFileDirectUrl, photoSize)
+	bytes, err := downloadFileID(getFileDirectUrl, photoSize.FileID)
 	if err != nil {
 		t.Fatal(err)
 	}

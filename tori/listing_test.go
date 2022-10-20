@@ -162,3 +162,58 @@ func TestListingMarshalJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestListingUnmarshalJSON(t *testing.T) {
+	tests := map[string]struct {
+		json string
+		want Listing
+	}{
+		"basic": {
+			json: `
+{
+    "subject": "Hansket hehe",
+    "body": "Tetsetst",
+    "price": { "currency": "€", "value": 60 },
+    "type": "s",
+    "ad_details": {
+      "clothing_kind": { "single": { "code": "7" } },
+      "clothing_sex": { "single": { "code": "2" } },
+      "clothing_size": { "single": { "code": "21" } },
+      "delivery_options": { "multiple": [{ "code": "delivery_send" }] },
+      "general_condition": { "single": { "code": "new" } }
+    },
+    "category": "3050",
+    "phone_hidden": true,
+    "account_id": ""
+}`,
+
+			want: Listing{
+				Subject:     "Hansket hehe",
+				Body:        "Tetsetst",
+				Price:       60,
+				Type:        ListingTypeSell,
+				PhoneHidden: true,
+				Category:    "3050",
+				AdDetails: map[string]any{
+					"clothing_kind":     "7",
+					"clothing_size":     "21",
+					"clothing_sex":      "2",
+					"delivery_options":  []string{"delivery_send"},
+					"general_condition": "new",
+				},
+			},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			var listing Listing
+			err := json.Unmarshal([]byte(tc.json), &listing)
+			if err != nil {
+				t.Fatalf("%s", err)
+			}
+
+			assert.Equal(t, tc.want, listing)
+		})
+	}
+}

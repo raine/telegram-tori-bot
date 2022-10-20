@@ -143,6 +143,13 @@ func makeTestServerWithOnReqFn(t *testing.T, onReq func(r *http.Request)) *httpt
 			w.Write(responseJson)
 		case "GET /1.jpg", "GET /2.jpg":
 			w.Write([]byte("123"))
+		// For testing JSON archive import
+		case "GET /archive.json":
+			b, err := ioutil.ReadFile("testdata/archive.json")
+			if err != nil {
+				t.Fatal(err)
+			}
+			w.Write(b)
 		default:
 			t.Fatal(fmt.Sprintf("invalid request to test server: %s %s", r.Method, r.URL.Path))
 		}
@@ -763,4 +770,57 @@ func TestHandleUpdate_UnauthorizedAccess(t *testing.T) {
 
 	// The test will fail if bot sends any messages
 	tg.AssertExpectations(t)
+}
+
+func TestHandleUpdate_ImportJson(t *testing.T) {
+	ts, userId, tg, bot, session := setup(t)
+	defer ts.Close()
+
+	update := tgbotapi.Update{
+		Message: &tgbotapi.Message{
+			From: &tgbotapi.User{ID: userId},
+			Text: "/tuojson",
+			ReplyToMessage: &tgbotapi.Message{
+				Document: &tgbotapi.Document{
+					FileID:       "a",
+					FileUniqueID: "1",
+					Thumbnail:    (*tgbotapi.PhotoSize)(nil),
+					FileName:     "archive.json",
+					MimeType:     "application/json",
+					FileSize:     589,
+				},
+			},
+		},
+	}
+
+	tg.On("GetFileDirectURL", "a").Return(ts.URL+"/archive.json", nil)
+	tg.On("Send", makeMessage(userId, "Ilmoitus tuotu arkistosta: Hansket hehe")).Return(tgbotapi.Message{}, nil).Once()
+
+	bot.handleUpdate(update)
+	tg.AssertExpectations(t)
+
+	assert.Equal(t, &tori.Listing{
+		Subject:     "Hansket hehe",
+		Body:        "Tetsetst",
+		Price:       60,
+		Type:        tori.ListingTypeSell,
+		PhoneHidden: true,
+		Category:    "3050",
+		AdDetails: map[string]any{
+			"clothing_kind":     "7",
+			"clothing_size":     "21",
+			"clothing_sex":      "2",
+			"delivery_options":  []string{"delivery_send"},
+			"general_condition": "new",
+		},
+	}, session.listing)
+
+	assert.Equal(t,
+		[]tgbotapi.PhotoSize([]tgbotapi.PhotoSize{{
+			FileID:       "AgACAgQAAxkBAAIIsWKlqfScWYoKP5x6M6qvPSJd_HWYAAJOuDEbsPUxUSs-WymgTtxjAQADAgADeQADJAQ",
+			FileUniqueID: "AQADTrgxG7D1MVF-",
+			Width:        1280,
+			Height:       960,
+			FileSize:     291525,
+		}}), session.photos)
 }

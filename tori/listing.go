@@ -46,6 +46,16 @@ func (t ListingType) MarshalJSON() ([]byte, error) {
 	}
 }
 
+func (t *ListingType) UnmarshalJSON(data []byte) error {
+	var v string
+	if err := json.Unmarshal(data, &v); err != nil {
+		return err
+	}
+
+	*t = listingTypeMap[v]
+	return nil
+}
+
 type (
 	Price       int
 	AdDetails   map[string]any
@@ -95,6 +105,37 @@ func (a AdDetails) MarshalJSON() ([]byte, error) {
 	return json.Marshal(obj)
 }
 
+func (a *AdDetails) UnmarshalJSON(data []byte) error {
+	var obj map[string]any
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return err
+	}
+
+	for k, v := range obj {
+		if v, ok := v.(map[string]any); ok {
+			if v["single"] != nil {
+				if single, ok := v["single"].(map[string]any); ok {
+					obj[k] = single["code"]
+				}
+			} else if v["multiple"] != nil {
+				if multiple, ok := v["multiple"].([]any); ok {
+					var codes []string
+					for _, m := range multiple {
+						if m, ok := m.(map[string]any); ok {
+							code := m["code"].(string)
+							codes = append(codes, code)
+						}
+					}
+					obj[k] = codes
+				}
+			}
+		}
+	}
+
+	*a = obj
+	return nil
+}
+
 func (s SingleValue) MarshalJSON() ([]byte, error) {
 	return json.Marshal(map[string]any{
 		"single": map[string]any{
@@ -123,4 +164,14 @@ func (p Price) MarshalJSON() ([]byte, error) {
 		"value":    int(p),
 		"currency": "€",
 	})
+}
+
+func (p *Price) UnmarshalJSON(data []byte) error {
+	var v map[string]any
+	if err := json.Unmarshal(data, &v); err != nil {
+		return err
+	}
+	price, _ := v["value"].(float64)
+	*p = Price(price)
+	return nil
 }

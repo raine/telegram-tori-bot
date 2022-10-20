@@ -31,6 +31,8 @@ const (
 	startText                        = "Aloita ilmoituksen teko kirjoittamalla tavaran otsikko"
 	sessionMaybeExpiredText          = "Ilmoituksen tekoa ei voi aloittaa, koska tori-käyttäjäsi tiliä ei voitu hakea - sessio vanhentunut?"
 	noLocationsInToriAccountText     = "Tori-käyttäjäsi tiedoista puuttuu paikkakunta ja postinumero.\n\nAseta ne täällä: https://login.schibsted.fi/account/summary"
+	importJsonInputError             = "Komento toimii vain vastauksena JSON-arkistoon."
+	importJsonSuccessful             = "Ilmoitus tuotu arkistosta: %s"
 )
 
 func makeCategoriesInlineKeyboard(categories []tori.Category) tgbotapi.InlineKeyboardMarkup {

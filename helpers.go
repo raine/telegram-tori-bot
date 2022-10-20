@@ -18,7 +18,7 @@ func uploadListingPhotos(
 	for i := range photoSizes {
 		i := i
 		g.Go(func() error {
-			photo, err := downloadPhotoSize(getFileDirectURL, photoSizes[i])
+			photo, err := downloadFileID(getFileDirectURL, photoSizes[i].FileID)
 			if err != nil {
 				log.Error().Err(err).Msg("failed to download photo size")
 				return err

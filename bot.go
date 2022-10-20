@@ -373,6 +373,40 @@ func (b *Bot) sendListingCommand(update tgbotapi.Update) {
 	session.reset()
 }
 
+func (b *Bot) handleImportJson(update tgbotapi.Update) {
+	userId := update.Message.From.ID
+	session, err := b.state.getUserSession(userId)
+	if err != nil {
+		log.Error().Err(err).Send()
+		return
+	}
+
+	replyToMessage := update.Message.ReplyToMessage
+	if replyToMessage == nil || replyToMessage.Document == nil || replyToMessage.Document.MimeType != "application/json" {
+		session.reply(importJsonInputError)
+		return
+	}
+
+	archiveBytes, err := downloadFileID(b.tg.GetFileDirectURL, replyToMessage.Document.FileID)
+	if err != nil {
+		session.replyWithError(err)
+		return
+	}
+
+	var archive ListingArchive
+	err = json.Unmarshal(archiveBytes, &archive)
+
+	if err != nil {
+		session.replyWithError(err)
+		return
+	}
+
+	session.photos = archive.Photos
+	session.listing = &archive.Listing
+
+	session.reply(importJsonSuccessful, session.listing.Subject)
+}
+
 func (b *Bot) handleMessageEdit(update tgbotapi.Update) {
 	userId := update.EditedMessage.From.ID
 	session, err := b.state.getUserSession(userId)
@@ -469,6 +503,8 @@ func (b *Bot) handleUpdate(update tgbotapi.Update) {
 		session.photos = nil
 		session.pendingPhotos = nil
 		session.reply(photosRemoved)
+	case "/tuojson":
+		b.handleImportJson(update)
 	default:
 		b.handleFreetextReply(update)
 	}
