@@ -404,6 +404,17 @@ func (b *Bot) handleImportJson(update tgbotapi.Update) {
 	session.photos = archive.Photos
 	session.listing = &archive.Listing
 
+	// When the listing is marshalled for the json archive, empty
+	// delivery_options won't exist in the output json. This is because in the
+	// json sent to tori, omitting delivery_options means that only pickup is
+	// possible. When importing listing to session, we need to set
+	// delivery_options to an empty array in the pickup case so that bot knows
+	// the field has been asked.
+	// See also "empty multi value in AdDetails is not marshaled" test.
+	if session.listing.AdDetails["delivery_options"] == nil {
+		session.listing.AdDetails["delivery_options"] = []string{}
+	}
+
 	session.reply(importJsonSuccessful, session.listing.Subject)
 }
 
