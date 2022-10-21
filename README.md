@@ -13,7 +13,8 @@ Reply Keyboards and Inline Keyboards.
   through endless list of nested categories
 - Add photos to listing by dragging them to chat at any point
 - Edit listing subject and body by editing the original message
-- Uploads a sent listing as an archive that can be relisted later
+- Uploads a sent listing as an archive that can be relisted later by replying
+  `/tuojson` on the archive file
 
 ## install
 
