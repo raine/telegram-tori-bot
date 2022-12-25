@@ -428,6 +428,10 @@ func (b *Bot) handleForget(update tgbotapi.Update, args []string) {
 	switch args[0] {
 	case "hinta":
 		session.listing.Price = 0
+	case "kunto":
+		delete(session.listing.AdDetails, "general_condition")
+	case "lisätiedot":
+		session.listing.AdDetails = tori.AdDetails{}
 	default:
 		session.reply(forgetInvalidField)
 		return
