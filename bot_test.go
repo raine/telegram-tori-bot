@@ -824,3 +824,40 @@ func TestHandleUpdate_ImportJson(t *testing.T) {
 			FileSize:     291525,
 		}}), session.photos)
 }
+
+func TestHandleUpdate_ForgetPrice(t *testing.T) {
+	ts, userId, tg, bot, session := setup(t)
+	defer ts.Close()
+
+	update := tgbotapi.Update{
+		Message: &tgbotapi.Message{
+			MessageID: 10,
+			From:      &tgbotapi.User{ID: userId},
+			Text:      "/unohda hinta",
+		},
+	}
+
+	session.listing = &tori.Listing{
+		Subject:  "iPhone 12",
+		Body:     "Myydään käytetty iPhone 12",
+		Category: "5012",
+		Type:     tori.ListingTypeSell,
+		Price:    50,
+		// Needs to be set true because the archive is created from this listing
+		PhoneHidden: true,
+		AdDetails: tori.AdDetails{
+			"general_condition": "new",
+			"cell_phone":        "apple",
+			"delivery_options":  []string{},
+		},
+	}
+
+	// Bot asks price as it was forgotten just now
+	tg.On("Send", makeMessage(userId, "Hinta?")).
+		Return(tgbotapi.Message{}, nil).Once()
+
+	bot.handleUpdate(update)
+	tg.AssertExpectations(t)
+
+	assert.Equal(t, tori.Price(0), session.listing.Price)
+}

@@ -5,8 +5,9 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/pkg/errors"
-	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/rs/zerolog/log"
+
+	"github.com/raine/telegram-tori-bot/tori"
 )
 
 type PendingPhoto struct {

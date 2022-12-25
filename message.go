@@ -33,6 +33,7 @@ const (
 	noLocationsInToriAccountText     = "Tori-käyttäjäsi tiedoista puuttuu paikkakunta ja postinumero.\n\nAseta ne täällä: https://login.schibsted.fi/account/summary"
 	importJsonInputError             = "Komento toimii vain vastauksena JSON-arkistoon."
 	importJsonSuccessful             = "Ilmoitus tuotu arkistosta: %s"
+	forgetInvalidField               = "En osaa unohtaa pyydettyä kenttää. Vaihtoehdot: hinta"
 )
 
 func makeCategoriesInlineKeyboard(categories []tori.Category) tgbotapi.InlineKeyboardMarkup {
@@ -164,4 +165,9 @@ func parsePriceMessage(message string) (tori.Price, error) {
 
 func formatReplyText(text string, a ...any) string {
 	return fmt.Sprintf(strings.TrimSpace(dedent.Dedent(text)), a...)
+}
+
+func parseCommand(s string) (string, []string) {
+	parts := strings.Split(s, " ")
+	return parts[0], parts[1:]
 }

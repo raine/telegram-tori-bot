@@ -418,6 +418,29 @@ func (b *Bot) handleImportJson(update tgbotapi.Update) {
 	session.reply(importJsonSuccessful, session.listing.Subject)
 }
 
+func (b *Bot) handleForget(update tgbotapi.Update, args []string) {
+	userId := update.Message.From.ID
+	session, err := b.state.getUserSession(userId)
+	if err != nil {
+		log.Error().Err(err).Send()
+		return
+	}
+	switch args[0] {
+	case "hinta":
+		session.listing.Price = 0
+	default:
+		session.reply(forgetInvalidField)
+		return
+	}
+
+	msg, _, err := makeNextFieldPrompt(session.client.GetFiltersSectionNewad, *session.listing)
+	if err != nil {
+		session.replyWithError(err)
+		return
+	}
+	session.replyWithMessage(msg)
+}
+
 func (b *Bot) handleMessageEdit(update tgbotapi.Update) {
 	userId := update.EditedMessage.From.ID
 	session, err := b.state.getUserSession(userId)
@@ -500,7 +523,8 @@ func (b *Bot) handleUpdate(update tgbotapi.Update) {
 	defer session.mu.Unlock()
 
 	log.Info().Str("text", update.Message.Text).Str("caption", update.Message.Caption).Msg("got message")
-	switch text := update.Message.Text; text {
+	command, args := parseCommand(update.Message.Text)
+	switch command {
 	// /start is the command telegram client prompts user to send to a
 	// bot when there are no prior messages
 	case "/start":
@@ -516,6 +540,8 @@ func (b *Bot) handleUpdate(update tgbotapi.Update) {
 		session.reply(photosRemoved)
 	case "/tuojson":
 		b.handleImportJson(update)
+	case "/unohda":
+		b.handleForget(update, args)
 	default:
 		b.handleFreetextReply(update)
 	}
