@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -14,7 +15,7 @@ import (
 )
 
 func TestUploadListingPhotos(t *testing.T) {
-	var mediaId int
+	var mediaId atomic.Int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/a.jpg", "/b.jpg", "/c.jpg":
@@ -22,8 +23,8 @@ func TestUploadListingPhotos(t *testing.T) {
 			w.Write([]byte("123"))
 		case "/v2.2/media":
 			w.Header().Set("Content-Type", "plain/text") // Yes, really
-			mediaId++
-			json := fmt.Sprintf(`{"image":{"url":"https://images.tori.fi/api/v1/imagestori/images/%d.jpg?rule=images","id":"%d"}}`, mediaId, mediaId)
+			id := mediaId.Add(1)
+			json := fmt.Sprintf(`{"image":{"url":"https://images.tori.fi/api/v1/imagestori/images/%d.jpg?rule=images","id":"%d"}}`, id, id)
 			io.WriteString(w, json)
 		}
 	}))
@@ -46,8 +47,8 @@ func TestUploadListingPhotos(t *testing.T) {
 	got, _ := uploadListingPhotos(context.Background(), getFileDirectUrl, client.UploadMedia, photoSizes)
 	want := []tori.Media{
 		{Id: "1", Url: "https://images.tori.fi/api/v1/imagestori/images/1.jpg?rule=images"},
-		{Id: "3", Url: "https://images.tori.fi/api/v1/imagestori/images/3.jpg?rule=images"},
 		{Id: "2", Url: "https://images.tori.fi/api/v1/imagestori/images/2.jpg?rule=images"},
+		{Id: "3", Url: "https://images.tori.fi/api/v1/imagestori/images/3.jpg?rule=images"},
 	}
 	assert.ElementsMatch(t, want, got)
 }

@@ -1,4 +1,4 @@
-package main
+package tori
 
 import (
 	"context"
@@ -8,7 +8,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -30,9 +29,9 @@ func (t *urlTracker) get() []string {
 	return append([]string{}, t.urls...)
 }
 
-func makeListingResponse(t *testing.T, id string, category tori.Category) []byte {
-	listingResponse := tori.GetListingResponse{
-		Ad: tori.Ad{
+func makeListingResponse(t *testing.T, id string, category Category) []byte {
+	listingResponse := GetListingResponse{
+		Ad: Ad{
 			ListIdCode: id,
 			Category:   category,
 		},
@@ -46,8 +45,8 @@ func makeListingResponse(t *testing.T, id string, category tori.Category) []byte
 	return bytes
 }
 
-func makeListingsSearchResponse(t *testing.T, listAds []tori.ListAdItem) []byte {
-	listingsSearchResponse := tori.SearchListingsResponse{
+func makeListingsSearchResponse(t *testing.T, listAds []ListAdItem) []byte {
+	listingsSearchResponse := SearchListingsResponse{
 		ListAds: listAds,
 	}
 
@@ -59,10 +58,10 @@ func makeListingsSearchResponse(t *testing.T, listAds []tori.ListAdItem) []byte 
 	return bytes
 }
 
-func makeListAdItem(listIdCode string, sptMetadataCategory string) tori.ListAdItem {
-	return tori.ListAdItem{
-		ListAd:      tori.ListAd{ListIdCode: listIdCode},
-		SptMetadata: tori.SptMetadata{Category: sptMetadataCategory},
+func makeListAdItem(listIdCode string, sptMetadataCategory string) ListAdItem {
+	return ListAdItem{
+		ListAd:      ListAd{ListIdCode: listIdCode},
+		SptMetadata: SptMetadata{Category: sptMetadataCategory},
 	}
 }
 
@@ -78,28 +77,28 @@ func TestGetCategoriesForSubject(t *testing.T) {
 			switch url {
 			case "/v2/listings/search?q=nintendo+switch+horipad+peliohjain":
 				// Full subject does not return any results
-				w.Write(makeListingsSearchResponse(t, []tori.ListAdItem{}))
+				w.Write(makeListingsSearchResponse(t, []ListAdItem{}))
 			case "/v2/listings/search?q=switch+horipad+peliohjain":
-				w.Write(makeListingsSearchResponse(t, []tori.ListAdItem{
+				w.Write(makeListingsSearchResponse(t, []ListAdItem{
 					makeListAdItem("1", "Pelikonsolit ja pelaaminen"),
 				}))
 			case "/v2/listings/search?q=horipad+peliohjain":
-				w.Write(makeListingsSearchResponse(t, []tori.ListAdItem{
+				w.Write(makeListingsSearchResponse(t, []ListAdItem{
 					makeListAdItem("2", "Muu viihde-elektroniikka"),
 					makeListAdItem("3", "Oheislaitteet"),
 				}))
 			case "/v2/listings/search?q=peliohjain":
-				w.Write(makeListingsSearchResponse(t, []tori.ListAdItem{
+				w.Write(makeListingsSearchResponse(t, []ListAdItem{
 					makeListAdItem("4", "Tabletit"),
 				}))
 			case "/v2/listings/1":
-				w.Write(makeListingResponse(t, "1", tori.Category{Code: "5027", Label: "Pelikonsolit ja pelaaminen"}))
+				w.Write(makeListingResponse(t, "1", Category{Code: "5027", Label: "Pelikonsolit ja pelaaminen"}))
 			case "/v2/listings/2":
-				w.Write(makeListingResponse(t, "2", tori.Category{Code: "5029", Label: "Muu viihde-elektroniikka"}))
+				w.Write(makeListingResponse(t, "2", Category{Code: "5029", Label: "Muu viihde-elektroniikka"}))
 			case "/v2/listings/3":
-				w.Write(makeListingResponse(t, "3", tori.Category{Code: "5036", Label: "Oheislaitteet"}))
+				w.Write(makeListingResponse(t, "3", Category{Code: "5036", Label: "Oheislaitteet"}))
 			case "/v2/listings/4":
-				w.Write(makeListingResponse(t, "4", tori.Category{Code: "5031", Label: "Tabletit"}))
+				w.Write(makeListingResponse(t, "4", Category{Code: "5031", Label: "Tabletit"}))
 			default:
 				t.Fatal("invalid url " + url)
 			}
@@ -107,17 +106,17 @@ func TestGetCategoriesForSubject(t *testing.T) {
 
 		defer ts.Close()
 
-		client := tori.NewClient(tori.ClientOpts{
+		client := NewClient(ClientOpts{
 			BaseURL: ts.URL,
 			Auth:    "foo",
 		})
 
-		categories, err := getCategoriesForSubject(context.Background(), client, "nintendo switch horipad peliohjain")
+		categories, err := GetCategoriesForSubject(context.Background(), client, "nintendo switch horipad peliohjain")
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		assert.Equal(t, []tori.Category{
+		assert.Equal(t, []Category{
 			{Code: "5027", Label: "Pelikonsolit ja pelaaminen"},
 			{Code: "5029", Label: "Muu viihde-elektroniikka"},
 			{Code: "5036", Label: "Oheislaitteet"},
@@ -144,7 +143,7 @@ func TestGetCategoriesForSubject(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			switch url {
 			case "/v2/listings/search?q=nintendo+switch+horipad+peliohjain":
-				w.Write(makeListingsSearchResponse(t, []tori.ListAdItem{
+				w.Write(makeListingsSearchResponse(t, []ListAdItem{
 					makeListAdItem("1", "Pelikonsolit ja pelaaminen"),
 					makeListAdItem("2", "Muu viihde-elektroniikka"),
 					makeListAdItem("3", "Oheislaitteet"),
@@ -152,15 +151,15 @@ func TestGetCategoriesForSubject(t *testing.T) {
 					makeListAdItem("5", "Tabletit"),
 				}))
 			case "/v2/listings/1":
-				w.Write(makeListingResponse(t, "1", tori.Category{Code: "5027", Label: "Pelikonsolit ja pelaaminen"}))
+				w.Write(makeListingResponse(t, "1", Category{Code: "5027", Label: "Pelikonsolit ja pelaaminen"}))
 			case "/v2/listings/2":
-				w.Write(makeListingResponse(t, "2", tori.Category{Code: "5029", Label: "Muu viihde-elektroniikka"}))
+				w.Write(makeListingResponse(t, "2", Category{Code: "5029", Label: "Muu viihde-elektroniikka"}))
 			case "/v2/listings/3":
-				w.Write(makeListingResponse(t, "3", tori.Category{Code: "5036", Label: "Oheislaitteet"}))
+				w.Write(makeListingResponse(t, "3", Category{Code: "5036", Label: "Oheislaitteet"}))
 			case "/v2/listings/4":
-				w.Write(makeListingResponse(t, "4", tori.Category{Code: "5022", Label: "Televisiot"}))
+				w.Write(makeListingResponse(t, "4", Category{Code: "5022", Label: "Televisiot"}))
 			case "/v2/listings/5":
-				w.Write(makeListingResponse(t, "5", tori.Category{Code: "5031", Label: "Tabletit"}))
+				w.Write(makeListingResponse(t, "5", Category{Code: "5031", Label: "Tabletit"}))
 			default:
 				t.Fatal("invalid url " + url)
 			}
@@ -168,17 +167,17 @@ func TestGetCategoriesForSubject(t *testing.T) {
 
 		defer ts.Close()
 
-		client := tori.NewClient(tori.ClientOpts{
+		client := NewClient(ClientOpts{
 			BaseURL: ts.URL,
 			Auth:    "foo",
 		})
 
-		categories, err := getCategoriesForSubject(context.Background(), client, "nintendo switch horipad peliohjain")
+		categories, err := GetCategoriesForSubject(context.Background(), client, "nintendo switch horipad peliohjain")
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		assert.Equal(t, []tori.Category{
+		assert.Equal(t, []Category{
 			{Code: "5027", Label: "Pelikonsolit ja pelaaminen"},
 			{Code: "5029", Label: "Muu viihde-elektroniikka"},
 			{Code: "5036", Label: "Oheislaitteet"},
@@ -204,32 +203,32 @@ func TestGetCategoriesForSubject(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			switch url {
 			case "/v2/listings/search?q=nintendo+switch+horipad+peliohjain":
-				w.Write(makeListingsSearchResponse(t, []tori.ListAdItem{
+				w.Write(makeListingsSearchResponse(t, []ListAdItem{
 					makeListAdItem("1", "Pelikonsolit ja pelaaminen"),
 					makeListAdItem("2", "Muu viihde-elektroniikka"),
 					makeListAdItem("3", "Oheislaitteet"),
 				}))
 			case "/v2/listings/search?q=switch+horipad+peliohjain":
-				w.Write(makeListingsSearchResponse(t, []tori.ListAdItem{
+				w.Write(makeListingsSearchResponse(t, []ListAdItem{
 					makeListAdItem("1", "Pelikonsolit ja pelaaminen"),
 					makeListAdItem("2", "Muu viihde-elektroniikka"),
 					makeListAdItem("3", "Oheislaitteet"),
 				}))
 			case "/v2/listings/search?q=horipad+peliohjain":
-				w.Write(makeListingsSearchResponse(t, []tori.ListAdItem{
+				w.Write(makeListingsSearchResponse(t, []ListAdItem{
 					makeListAdItem("4", "Televisiot"),
 					makeListAdItem("5", "Tabletit"),
 				}))
 			case "/v2/listings/1":
-				w.Write(makeListingResponse(t, "1", tori.Category{Code: "5027", Label: "Pelikonsolit ja pelaaminen"}))
+				w.Write(makeListingResponse(t, "1", Category{Code: "5027", Label: "Pelikonsolit ja pelaaminen"}))
 			case "/v2/listings/2":
-				w.Write(makeListingResponse(t, "2", tori.Category{Code: "5029", Label: "Muu viihde-elektroniikka"}))
+				w.Write(makeListingResponse(t, "2", Category{Code: "5029", Label: "Muu viihde-elektroniikka"}))
 			case "/v2/listings/3":
-				w.Write(makeListingResponse(t, "3", tori.Category{Code: "5036", Label: "Oheislaitteet"}))
+				w.Write(makeListingResponse(t, "3", Category{Code: "5036", Label: "Oheislaitteet"}))
 			case "/v2/listings/4":
-				w.Write(makeListingResponse(t, "4", tori.Category{Code: "5022", Label: "Televisiot"}))
+				w.Write(makeListingResponse(t, "4", Category{Code: "5022", Label: "Televisiot"}))
 			case "/v2/listings/5":
-				w.Write(makeListingResponse(t, "5", tori.Category{Code: "5031", Label: "Tabletit"}))
+				w.Write(makeListingResponse(t, "5", Category{Code: "5031", Label: "Tabletit"}))
 			default:
 				t.Fatal("invalid url " + url)
 			}
@@ -237,17 +236,17 @@ func TestGetCategoriesForSubject(t *testing.T) {
 
 		defer ts.Close()
 
-		client := tori.NewClient(tori.ClientOpts{
+		client := NewClient(ClientOpts{
 			BaseURL: ts.URL,
 			Auth:    "foo",
 		})
 
-		categories, err := getCategoriesForSubject(context.Background(), client, "nintendo switch horipad peliohjain")
+		categories, err := GetCategoriesForSubject(context.Background(), client, "nintendo switch horipad peliohjain")
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		assert.Equal(t, []tori.Category{
+		assert.Equal(t, []Category{
 			{Code: "5027", Label: "Pelikonsolit ja pelaaminen"},
 			{Code: "5029", Label: "Muu viihde-elektroniikka"},
 			{Code: "5036", Label: "Oheislaitteet"},
@@ -275,7 +274,7 @@ func TestGetCategoriesForSubject(t *testing.T) {
 			w.Header().Set("Content-Type", "application/json")
 			switch url {
 			case "/v2/listings/search?q=nintendo+switch+horipad+peliohjain":
-				w.Write(makeListingsSearchResponse(t, []tori.ListAdItem{
+				w.Write(makeListingsSearchResponse(t, []ListAdItem{
 					makeListAdItem("1", "Pelikonsolit ja pelaaminen"),
 					makeListAdItem("2", "Muu viihde-elektroniikka"),
 					makeListAdItem("3", "Oheislaitteet"),
@@ -283,15 +282,15 @@ func TestGetCategoriesForSubject(t *testing.T) {
 					makeListAdItem("5", "Tabletit"),
 				}))
 			case "/v2/listings/1":
-				w.Write(makeListingResponse(t, "1", tori.Category{Code: "5027", Label: "Pelikonsolit ja pelaaminen"}))
+				w.Write(makeListingResponse(t, "1", Category{Code: "5027", Label: "Pelikonsolit ja pelaaminen"}))
 			case "/v2/listings/2":
-				w.Write(makeListingResponse(t, "2", tori.Category{Code: "5029", Label: "Muu viihde-elektroniikka"}))
+				w.Write(makeListingResponse(t, "2", Category{Code: "5029", Label: "Muu viihde-elektroniikka"}))
 			case "/v2/listings/3":
-				w.Write(makeListingResponse(t, "3", tori.Category{Code: "5036", Label: "Oheislaitteet"}))
+				w.Write(makeListingResponse(t, "3", Category{Code: "5036", Label: "Oheislaitteet"}))
 			case "/v2/listings/4":
-				w.Write(makeListingResponse(t, "4", tori.Category{Code: "5022", Label: "Televisiot"}))
+				w.Write(makeListingResponse(t, "4", Category{Code: "5022", Label: "Televisiot"}))
 			case "/v2/listings/5":
-				w.Write(makeListingResponse(t, "5", tori.Category{Code: "5031", Label: "Tabletit"}))
+				w.Write(makeListingResponse(t, "5", Category{Code: "5031", Label: "Tabletit"}))
 			default:
 				t.Fatal("invalid url " + url)
 			}
@@ -299,12 +298,12 @@ func TestGetCategoriesForSubject(t *testing.T) {
 
 		defer ts.Close()
 
-		client := tori.NewClient(tori.ClientOpts{
+		client := NewClient(ClientOpts{
 			BaseURL: ts.URL,
 			Auth:    "foo",
 		})
 
-		_, err := getCategoriesForSubject(context.Background(), client, "nintendo switch horipad peliohjain (2 kpl)")
+		_, err := GetCategoriesForSubject(context.Background(), client, "nintendo switch horipad peliohjain (2 kpl)")
 		if err != nil {
 			t.Fatal(err)
 		}

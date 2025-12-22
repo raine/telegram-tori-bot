@@ -47,6 +47,42 @@ func formatJson(b []byte) string {
 	return out.String()
 }
 
+func makeListingResponse(t *testing.T, id string, category tori.Category) []byte {
+	listingResponse := tori.GetListingResponse{
+		Ad: tori.Ad{
+			ListIdCode: id,
+			Category:   category,
+		},
+	}
+
+	bytes, err := json.Marshal(listingResponse)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return bytes
+}
+
+func makeListingsSearchResponse(t *testing.T, listAds []tori.ListAdItem) []byte {
+	listingsSearchResponse := tori.SearchListingsResponse{
+		ListAds: listAds,
+	}
+
+	bytes, err := json.Marshal(listingsSearchResponse)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return bytes
+}
+
+func makeListAdItem(listIdCode string, sptMetadataCategory string) tori.ListAdItem {
+	return tori.ListAdItem{
+		ListAd:      tori.ListAd{ListIdCode: listIdCode},
+		SptMetadata: tori.SptMetadata{Category: sptMetadataCategory},
+	}
+}
+
 type botApiMock struct {
 	mock.Mock
 }

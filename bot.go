@@ -207,7 +207,7 @@ func (b *Bot) handleFreetextReply(ctx context.Context, update tgbotapi.Update) {
 		// listing creation that did not finish
 		sent := session.reply(listingSubjectIsText, session.listing.Subject)
 		session.botSubjectMessageId = sent.MessageID
-		categories, err := getCategoriesForSubject(ctx, session.client, session.listing.Subject)
+		categories, err := tori.GetCategoriesForSubject(ctx, session.client, session.listing.Subject)
 		if err != nil {
 			session.replyWithError(err)
 			session.reset()
@@ -254,7 +254,7 @@ func (b *Bot) handleFreetextReply(ctx context.Context, update tgbotapi.Update) {
 		newListing, err := setListingFieldFromMessage(paramMap, *session.listing, repliedField, text)
 		if err != nil {
 			var noLabelFoundError *NoLabelFoundError
-			label, _ := getLabelForField(paramMap, repliedField) // can't error in this case
+			label, _ := tori.GetLabelForField(paramMap, repliedField) // can't error in this case
 			if errors.As(err, &noLabelFoundError) {
 				session.reply(invalidReplyToField, label)
 			} else {

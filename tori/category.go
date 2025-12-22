@@ -1,12 +1,10 @@
-package main
+package tori
 
 import (
 	"context"
-	"fmt"
 	"regexp"
 	"strings"
 
-	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/rs/zerolog/log"
 	orderedmap "github.com/wk8/go-ordered-map"
 	"golang.org/x/sync/errgroup"
@@ -14,7 +12,7 @@ import (
 
 const maxCategoryCount = 5
 
-func getListingsCategoryMap(listings []tori.ListAdItem) *orderedmap.OrderedMap {
+func getListingsCategoryMap(listings []ListAdItem) *orderedmap.OrderedMap {
 	sptMetadataCategoryToListIdCode := orderedmap.New()
 
 	// Get unique categories from listings with help of a ordered map
@@ -25,7 +23,9 @@ func getListingsCategoryMap(listings []tori.ListAdItem) *orderedmap.OrderedMap {
 	return sptMetadataCategoryToListIdCode
 }
 
-func getCategoriesForSubject(ctx context.Context, client *tori.Client, subject string) ([]tori.Category, error) {
+// GetCategoriesForSubject finds relevant categories for a given listing subject
+// by searching existing listings and extracting their categories.
+func GetCategoriesForSubject(ctx context.Context, client *Client, subject string) ([]Category, error) {
 	log.Info().Str("subject", subject).Msg("getting categories for subject")
 
 	// Remove parenthesis blocks from subject. This could be something
@@ -65,7 +65,7 @@ func getCategoriesForSubject(ctx context.Context, client *tori.Client, subject s
 	}
 
 	g, ctx := errgroup.WithContext(ctx)
-	listings := make([]tori.Ad, len(listingIds))
+	listings := make([]Ad, len(listingIds))
 	for i := range listingIds {
 		i := i
 		g.Go(func() error {
@@ -85,27 +85,10 @@ func getCategoriesForSubject(ctx context.Context, client *tori.Client, subject s
 		return nil, err
 	}
 
-	categories := make([]tori.Category, 0)
+	categories := make([]Category, 0)
 	for _, listing := range listings {
 		categories = append(categories, listing.Category)
 	}
 
 	return categories, nil
-}
-
-func getLabelForField(
-	paramMap tori.ParamMap,
-	field string,
-) (string, error) {
-	param := paramMap[field]
-	switch {
-	case param.SingleSelection != nil:
-		return (*param.SingleSelection).Label, nil
-	case param.MultiSelection != nil:
-		return param.MultiSelection.ValuesList[0].Label, nil
-	case param.Text != nil:
-		return (*param.Text).Label, nil
-	default:
-		return "", fmt.Errorf("could not find param for field '%s'", field)
-	}
 }
