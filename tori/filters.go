@@ -30,8 +30,8 @@ type SingleSelection struct {
 }
 
 type ValuesDatabase struct {
-	Code string        `json:"code"`
-	Keys []any `json:"keys"`
+	Code string `json:"code"`
+	Keys []any  `json:"keys"`
 }
 
 type MultiSelection struct {
