@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/go-resty/resty/v2"
-	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -175,11 +174,6 @@ func handleError(res *resty.Response, err error) (*resty.Response, error) {
 		return res, err
 	}
 	if res.IsError() {
-		log.Error().
-			Str("url", res.Request.URL).
-			Str("method", res.Request.Method).
-			Int("status_code", res.StatusCode()).
-			Msg("request failed")
 		return res, fmt.Errorf("request failed: %s %s (status: %d)", res.Request.Method, res.Request.URL, res.StatusCode())
 	}
 

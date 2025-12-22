@@ -49,6 +49,7 @@ func (b *Bot) handlePhoto(message *tgbotapi.Message) {
 		return
 	}
 
+	// Note: The caller (handleUpdate) already holds session.mu.Lock()
 	// When photos are sent as a "media group" that appear like a single message
 	// with multiple photos, the photos are in fact sent one by one in separate
 	// messages. To give feedback like "n photos added", we have to wait a bit
@@ -66,6 +67,15 @@ func (b *Bot) handlePhoto(message *tgbotapi.Message) {
 				time.Sleep(1000 * time.Microsecond)
 			} else {
 				time.Sleep(1 * time.Second)
+			}
+
+			// Lock here because we're running after handleUpdate released the lock
+			session.mu.Lock()
+			defer session.mu.Unlock()
+
+			// Guard against nil in case it was cleared (e.g., via /poistakuvat) while sleeping
+			if session.pendingPhotos == nil {
+				return
 			}
 
 			// Order pending photos batch based on message id, which is the
@@ -98,8 +108,7 @@ func (b *Bot) handlePhoto(message *tgbotapi.Message) {
 		messageId: message.MessageID,
 		photoSize: largestPhoto,
 	}
-	pendingPhotos := append(*session.pendingPhotos, pendingPhoto)
-	session.pendingPhotos = &pendingPhotos
+	*session.pendingPhotos = append(*session.pendingPhotos, pendingPhoto)
 }
 
 // handleCallback is called when a tgbotapi.update with CallbackQuery is
