@@ -84,7 +84,7 @@ func runBot(ctx context.Context, tg *tgbotapi.BotAPI, userConfigMap UserConfigMa
 			wg.Add(1)
 			go func(u tgbotapi.Update) {
 				defer wg.Done()
-				bot.handleUpdate(u)
+				bot.handleUpdate(ctx, u)
 			}(update)
 		}
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -24,7 +25,7 @@ func getListingsCategoryMap(listings []tori.ListAdItem) *orderedmap.OrderedMap {
 	return sptMetadataCategoryToListIdCode
 }
 
-func getCategoriesForSubject(client *tori.Client, subject string) ([]tori.Category, error) {
+func getCategoriesForSubject(ctx context.Context, client *tori.Client, subject string) ([]tori.Category, error) {
 	log.Info().Str("subject", subject).Msg("getting categories for subject")
 
 	// Remove parenthesis blocks from subject. This could be something
@@ -39,7 +40,7 @@ func getCategoriesForSubject(client *tori.Client, subject string) ([]tori.Catego
 		parts := allSubjectParts[i:]
 		query := strings.Join(parts, " ")
 		log.Info().Str("query", query).Msg("searching listings with query")
-		ads, err := client.SearchListings(query)
+		ads, err := client.SearchListings(ctx, query)
 		if err != nil {
 			return nil, err
 		}
@@ -63,13 +64,13 @@ func getCategoriesForSubject(client *tori.Client, subject string) ([]tori.Catego
 		listingIds = append(listingIds, pair.Value.(string))
 	}
 
-	g := new(errgroup.Group)
+	g, ctx := errgroup.WithContext(ctx)
 	listings := make([]tori.Ad, len(listingIds))
 	for i := range listingIds {
 		i := i
 		g.Go(func() error {
 			id := listingIds[i]
-			listing, err := client.GetListing(id)
+			listing, err := client.GetListing(ctx, id)
 			if err != nil {
 				log.Error().Str("listIdCode", id).Err(err).Msg("error when fetching listing")
 				return err

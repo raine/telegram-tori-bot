@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -42,7 +43,7 @@ func TestUploadListingPhotos(t *testing.T) {
 		Auth:    "foo",
 	})
 
-	got, _ := uploadListingPhotos(getFileDirectUrl, client.UploadMedia, photoSizes)
+	got, _ := uploadListingPhotos(context.Background(), getFileDirectUrl, client.UploadMedia, photoSizes)
 	want := []tori.Media{
 		{Id: "1", Url: "https://images.tori.fi/api/v1/imagestori/images/1.jpg?rule=images"},
 		{Id: "3", Url: "https://images.tori.fi/api/v1/imagestori/images/3.jpg?rule=images"},

@@ -1,5 +1,7 @@
 package tori
 
+import "context"
+
 type SptMetadata struct {
 	Category  string `json:"category"`
 	Contentid string `json:"contentid"`
@@ -18,9 +20,9 @@ type SearchListingsResponse struct {
 	ListAds []ListAdItem `json:"list_ads"`
 }
 
-func (c *Client) SearchListings(query string) ([]ListAdItem, error) {
+func (c *Client) SearchListings(ctx context.Context, query string) ([]ListAdItem, error) {
 	result := &SearchListingsResponse{}
-	_, err := c.req(result).
+	_, err := c.req(ctx, result).
 		SetQueryParam("q", query).
 		Get("/v2/listings/search")
 

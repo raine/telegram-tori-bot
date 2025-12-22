@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -200,7 +201,7 @@ func TestHandleUpdate_ListingStart(t *testing.T) {
 	tg.On("Send", makeMessage(userId, "Ilmoitusteksti?")).
 		Return(tgbotapi.Message{}, nil).Once()
 
-	bot.handleUpdate(update)
+	bot.handleUpdate(context.Background(), update)
 	tg.AssertExpectations(t)
 
 	// Skip these fields as they are difficult and not very fruitful to assert
@@ -242,7 +243,7 @@ func TestHandleUpdate_EnterBody(t *testing.T) {
 	tg.On("Send", makeMessage(userId, "Hinta?")).
 		Return(tgbotapi.Message{}, nil).Once()
 
-	bot.handleUpdate(update)
+	bot.handleUpdate(context.Background(), update)
 	tg.AssertExpectations(t)
 
 	assert.Equal(t, &tori.Listing{
@@ -283,7 +284,7 @@ func TestHandleUpdate_EnterPrice(t *testing.T) {
 	)).
 		Return(tgbotapi.Message{}, nil).Once()
 
-	bot.handleUpdate(update)
+	bot.handleUpdate(context.Background(), update)
 	tg.AssertExpectations(t)
 
 	assert.Equal(t, &tori.Listing{
@@ -322,7 +323,7 @@ func TestHandleUpdate_EnterCondition(t *testing.T) {
 		})).
 		Return(tgbotapi.Message{}, nil).Once()
 
-	bot.handleUpdate(update)
+	bot.handleUpdate(context.Background(), update)
 
 	assert.Equal(t, &tori.Listing{
 		Subject:  "iPhone 12",
@@ -366,7 +367,7 @@ func TestHandleUpdate_EnterManufacturer(t *testing.T) {
 		})).
 		Return(tgbotapi.Message{}, nil).Once()
 
-	bot.handleUpdate(update)
+	bot.handleUpdate(context.Background(), update)
 	tg.AssertExpectations(t)
 
 	assert.Equal(t, &tori.Listing{
@@ -406,7 +407,7 @@ func TestHandleUpdate_EnterDeliveryOptions(t *testing.T) {
     /peru - Peru ilmoituksen teko`)),
 	)).Return(tgbotapi.Message{}, nil).Once()
 
-	bot.handleUpdate(update)
+	bot.handleUpdate(context.Background(), update)
 	tg.AssertExpectations(t)
 	assert.Equal(t, &tori.Listing{
 		Subject:  "iPhone 12",
@@ -441,6 +442,7 @@ func TestHandleUpdate_AddPhoto(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		go func(i int) {
 			bot.handleUpdate(
+				context.Background(),
 				tgbotapi.Update{
 					Message: &tgbotapi.Message{
 						MessageID: i,
@@ -511,7 +513,7 @@ func TestHandleUpdate_AddPhotoInSameMessageAsSubject(t *testing.T) {
 		},
 	}
 
-	bot.handleUpdate(update)
+	bot.handleUpdate(context.Background(), update)
 
 	assert.Eventually(
 		t,
@@ -553,7 +555,7 @@ func TestHandleUpdate_SendListingWithIncompleteListing(t *testing.T) {
 	tg.On("Send", makeMessage(userId, "Ilmoituksesta puuttuu kenttiä.")).
 		Return(tgbotapi.Message{}, nil).Once()
 
-	bot.handleUpdate(update)
+	bot.handleUpdate(context.Background(), update)
 	tg.AssertExpectations(t)
 }
 
@@ -606,7 +608,7 @@ func TestHandleUpdate_SendListing(t *testing.T) {
 	document.Caption = session.listing.Subject
 	tg.On("Send", document).Return(tgbotapi.Message{}, nil).Once()
 
-	bot.handleUpdate(update)
+	bot.handleUpdate(context.Background(), update)
 	tg.AssertExpectations(t)
 
 	wantPostListingJson := `{
@@ -671,7 +673,7 @@ func TestHandleUpdate_RemovePhotosCommand(t *testing.T) {
 
 	tg.On("Send", makeMessage(userId, "Kuvat poistettu.")).Return(tgbotapi.Message{}, nil).Once()
 
-	bot.handleUpdate(update)
+	bot.handleUpdate(context.Background(), update)
 	tg.AssertExpectations(t)
 
 	assert.Empty(t, session.photos)
@@ -702,7 +704,7 @@ func TestHandleUpdate_EditSubject(t *testing.T) {
 	editMsg.ParseMode = tgbotapi.ModeMarkdown
 	tg.On("Send", editMsg).Return(tgbotapi.Message{}, nil).Once()
 
-	bot.handleUpdate(update)
+	bot.handleUpdate(context.Background(), update)
 	tg.AssertExpectations(t)
 
 	assert.Equal(t, &tori.Listing{
@@ -738,7 +740,7 @@ func TestHandleUpdate_EditBody(t *testing.T) {
 	editMsg.ParseMode = tgbotapi.ModeMarkdown
 	tg.On("Send", editMsg).Return(tgbotapi.Message{}, nil).Once()
 
-	bot.handleUpdate(update)
+	bot.handleUpdate(context.Background(), update)
 	tg.AssertExpectations(t)
 
 	assert.Equal(t, &tori.Listing{
@@ -766,7 +768,7 @@ func TestHandleUpdate_UnauthorizedAccess(t *testing.T) {
 		},
 	}
 
-	bot.handleUpdate(update)
+	bot.handleUpdate(context.Background(), update)
 
 	// The test will fail if bot sends any messages
 	tg.AssertExpectations(t)
@@ -796,7 +798,7 @@ func TestHandleUpdate_ImportJson(t *testing.T) {
 	tg.On("GetFileDirectURL", "a").Return(ts.URL+"/archive.json", nil)
 	tg.On("Send", makeMessage(userId, "Ilmoitus tuotu arkistosta: Hansket hehe")).Return(tgbotapi.Message{}, nil).Once()
 
-	bot.handleUpdate(update)
+	bot.handleUpdate(context.Background(), update)
 	tg.AssertExpectations(t)
 
 	assert.Equal(t, &tori.Listing{
@@ -856,7 +858,7 @@ func TestHandleUpdate_ForgetPrice(t *testing.T) {
 	tg.On("Send", makeMessage(userId, "Hinta?")).
 		Return(tgbotapi.Message{}, nil).Once()
 
-	bot.handleUpdate(update)
+	bot.handleUpdate(context.Background(), update)
 	tg.AssertExpectations(t)
 
 	assert.Equal(t, tori.Price(0), session.listing.Price)

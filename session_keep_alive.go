@@ -8,7 +8,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func refreshUserConfigAccountToken(toriApiBaseUrl string, cfg UserConfigItem) {
+func refreshUserConfigAccountToken(ctx context.Context, toriApiBaseUrl string, cfg UserConfigItem) {
 	client := tori.NewClient(tori.ClientOpts{
 		Auth:    cfg.Token,
 		BaseURL: toriApiBaseUrl,
@@ -17,7 +17,7 @@ func refreshUserConfigAccountToken(toriApiBaseUrl string, cfg UserConfigItem) {
 	log.Info().Str("toriAccountId", cfg.ToriAccountId).
 		Msg("getting tori account to refresh session")
 
-	_, err := client.GetAccount(cfg.ToriAccountId)
+	_, err := client.GetAccount(ctx, cfg.ToriAccountId)
 	if err != nil {
 		log.Info().Str("toriAccountId", cfg.ToriAccountId).
 			Msg("could not get tori account to refresh session")
@@ -30,7 +30,7 @@ func refreshUserConfigAccountToken(toriApiBaseUrl string, cfg UserConfigItem) {
 func keepSessionsAlive(ctx context.Context, toriApiBaseUrl string, userConfigMap UserConfigMap) error {
 	refresh := func() {
 		for _, cfg := range userConfigMap {
-			refreshUserConfigAccountToken(toriApiBaseUrl, cfg)
+			refreshUserConfigAccountToken(ctx, toriApiBaseUrl, cfg)
 		}
 	}
 

@@ -1,6 +1,7 @@
 package tori
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -23,7 +24,7 @@ func TestGetAccount(t *testing.T) {
 		BaseURL: ts.URL,
 		Auth:    "foo",
 	})
-	acc, err := client.GetAccount("123123")
+	acc, err := client.GetAccount(context.Background(), "123123")
 	assert.Nil(t, err)
 	assert.Equal(t, acc, Account{
 		AccountId: "/private/accounts/123123 ",
@@ -69,7 +70,7 @@ func TestUploadMedia(t *testing.T) {
 		BaseURL: ts.URL,
 		Auth:    "foo",
 	})
-	media, err := client.UploadMedia(data)
+	media, err := client.UploadMedia(context.Background(), data)
 	assert.Nil(t, err)
 	assert.Equal(t, Media{
 		Url: "https://images.tori.fi/api/v1/imagestori/images/100094050777.jpg?rule=images",
@@ -98,7 +99,7 @@ func TestGetListing(t *testing.T) {
 		BaseURL: ts.URL,
 		Auth:    "foo",
 	})
-	listing, err := client.GetListing("95194022")
+	listing, err := client.GetListing(context.Background(), "95194022")
 	assert.Equal(t, "/v2/listings/95194022", req.URL.Path)
 	assert.Nil(t, err)
 	assert.Equal(t, Ad{
@@ -127,7 +128,7 @@ func TestGetCategories(t *testing.T) {
 		BaseURL: ts.URL,
 		Auth:    "foo",
 	})
-	categories, err := client.GetCategories()
+	categories, err := client.GetCategories(context.Background())
 	assert.Equal(t, "/v1.2/public/categories/insert", req.URL.Path)
 	assert.Nil(t, err)
 	assert.Len(t, categories.Categories, 7)
@@ -151,7 +152,7 @@ func TestGetFiltersSectionNewad(t *testing.T) {
 		BaseURL: ts.URL,
 		Auth:    "foo",
 	})
-	_, err = client.GetFiltersSectionNewad()
+	_, err = client.GetFiltersSectionNewad(context.Background())
 	assert.Equal(t, "/v1.2/public/filters", req.URL.Path)
 	assert.Equal(t, "section=newad", req.URL.RawQuery)
 	assert.Nil(t, err)
@@ -240,7 +241,7 @@ func TestPostListing(t *testing.T) {
 		PhoneHidden: true,
 	}
 
-	err := client.PostListing(listing)
+	err := client.PostListing(context.Background(), listing)
 	if err != nil {
 		t.Fatal(err)
 	}

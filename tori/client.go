@@ -1,6 +1,7 @@
 package tori
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -60,9 +61,10 @@ func NewClient(opts ClientOpts) *Client {
 	return &c
 }
 
-func (c *Client) req(result any) *resty.Request {
+func (c *Client) req(ctx context.Context, result any) *resty.Request {
 	request := c.httpClient.
 		NewRequest().
+		SetContext(ctx).
 		SetHeader("Authorization", c.auth)
 
 	if result != nil {
@@ -72,10 +74,10 @@ func (c *Client) req(result any) *resty.Request {
 	return request
 }
 
-func (c *Client) GetAccount(accountId string) (Account, error) {
+func (c *Client) GetAccount(ctx context.Context, accountId string) (Account, error) {
 	result := &AccountResponse{}
 
-	_, err := handleError(c.req(result).
+	_, err := handleError(c.req(ctx, result).
 		SetPathParams(map[string]string{
 			"accountId": accountId,
 		}).
@@ -93,11 +95,11 @@ type Media struct {
 	Url string `json:"url"`
 }
 
-func (c *Client) UploadMedia(data []byte) (Media, error) {
+func (c *Client) UploadMedia(ctx context.Context, data []byte) (Media, error) {
 	media := Media{}
 
 	res, err := handleError(
-		c.req(nil).SetHeaders(
+		c.req(ctx, nil).SetHeaders(
 			map[string]string{
 				"Content-Type":   "application/x-www-form-urlencoded",
 				"User-Agent":     "Tori/12.1.16 (com.tori.tori; build:190; iOS 15.3.1) Alamofire/5.4.4",
@@ -129,37 +131,37 @@ type GetListingResponse struct {
 	Ad Ad `json:"ad"`
 }
 
-func (c *Client) GetListing(id string) (Ad, error) {
+func (c *Client) GetListing(ctx context.Context, id string) (Ad, error) {
 	result := &GetListingResponse{}
 	_, err := handleError(
-		c.req(result).
+		c.req(ctx, result).
 			SetPathParam("id", id).
 			Get("/v2/listings/{id}"))
 
 	return result.Ad, err
 }
 
-func (c *Client) GetCategories() (Categories, error) {
+func (c *Client) GetCategories(ctx context.Context) (Categories, error) {
 	result := &Categories{}
 	_, err := handleError(
-		c.req(result).Get("/v1.2/public/categories/insert"))
+		c.req(ctx, result).Get("/v1.2/public/categories/insert"))
 
 	return *result, err
 }
 
-func (c *Client) GetFiltersSectionNewad() (NewadFilters, error) {
+func (c *Client) GetFiltersSectionNewad(ctx context.Context) (NewadFilters, error) {
 	result := &NewadFilters{}
 	_, err := handleError(
-		c.req(result).
+		c.req(ctx, result).
 			SetQueryParam("section", "newad").
 			Get("/v1.2/public/filters"))
 
 	return *result, err
 }
 
-func (c *Client) PostListing(listing Listing) error {
+func (c *Client) PostListing(ctx context.Context, listing Listing) error {
 	_, err := handleError(
-		c.req(nil).
+		c.req(ctx, nil).
 			SetBody(listing).
 			Post("/v2/listings"))
 

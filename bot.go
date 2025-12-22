@@ -2,6 +2,7 @@ package main
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -102,7 +103,7 @@ func (b *Bot) handlePhoto(message *tgbotapi.Message) {
 // handleCallback is called when a tgbotapi.update with CallbackQuery is
 // received. That happens when user interacts with an inline keyboard with
 // callback data.
-func (b *Bot) handleCallback(update tgbotapi.Update) {
+func (b *Bot) handleCallback(ctx context.Context, update tgbotapi.Update) {
 	log.Info().Msg("got callback")
 
 	session, err := b.state.getUserSession(update.CallbackQuery.From.ID)
@@ -121,7 +122,7 @@ func (b *Bot) handleCallback(update tgbotapi.Update) {
 		}
 	}
 
-	newadFilters, err := fetchNewadFilters(session.client.GetFiltersSectionNewad)
+	newadFilters, err := fetchNewadFilters(ctx, session.client.GetFiltersSectionNewad)
 	if err != nil {
 		session.replyWithError(err)
 		return
@@ -153,7 +154,7 @@ func (b *Bot) handleCallback(update tgbotapi.Update) {
 	}
 
 	// Prompt user for next field because category has changed and AdDetails has been cleared
-	msg, missingFieldNow, err := makeNextFieldPrompt(session.client.GetFiltersSectionNewad, *session.listing)
+	msg, missingFieldNow, err := makeNextFieldPrompt(ctx, session.client.GetFiltersSectionNewad, *session.listing)
 	if err != nil {
 		session.replyWithError(err)
 		return
@@ -165,7 +166,7 @@ func (b *Bot) handleCallback(update tgbotapi.Update) {
 	}
 }
 
-func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
+func (b *Bot) handleFreetextReply(ctx context.Context, update tgbotapi.Update) {
 	var text string
 	if update.Message.Caption != "" {
 		text = update.Message.Caption
@@ -193,7 +194,7 @@ func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
 		// Do the best we can to ensure listing can be eventually sent
 		// successfully, instead of failing after user has input all details and
 		// bot tries to POST the listing to Tori
-		msgText := checkUserPreconditions(session)
+		msgText := checkUserPreconditions(ctx, session)
 		if msgText != "" {
 			session.reply(msgText)
 			return
@@ -206,7 +207,7 @@ func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
 		// listing creation that did not finish
 		sent := session.reply(listingSubjectIsText, session.listing.Subject)
 		session.botSubjectMessageId = sent.MessageID
-		categories, err := getCategoriesForSubject(session.client, session.listing.Subject)
+		categories, err := getCategoriesForSubject(ctx, session.client, session.listing.Subject)
 		if err != nil {
 			session.replyWithError(err)
 			session.reset()
@@ -225,7 +226,7 @@ func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
 		session.replyWithMessage(msg)
 		log.Info().Interface("listing", session.listing).Msg("started a new listing")
 
-		msg, _, err = makeNextFieldPrompt(session.client.GetFiltersSectionNewad, *session.listing)
+		msg, _, err = makeNextFieldPrompt(ctx, session.client.GetFiltersSectionNewad, *session.listing)
 		if err != nil {
 			session.replyWithError(err)
 			return
@@ -233,7 +234,7 @@ func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
 		session.replyWithMessage(msg)
 	} else {
 		// Augment a previously started listing with user's message
-		newadFilters, err := fetchNewadFilters(session.client.GetFiltersSectionNewad)
+		newadFilters, err := fetchNewadFilters(ctx, session.client.GetFiltersSectionNewad)
 		if err != nil {
 			session.replyWithError(err)
 			return
@@ -271,7 +272,7 @@ func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
 			session.botBodyMessageId = sent.MessageID
 		}
 
-		msg, missingField, err := makeNextFieldPrompt(session.client.GetFiltersSectionNewad, *session.listing)
+		msg, missingField, err := makeNextFieldPrompt(ctx, session.client.GetFiltersSectionNewad, *session.listing)
 		if missingField != "" {
 			if err != nil {
 				session.replyWithError(err)
@@ -292,7 +293,7 @@ func (b *Bot) handleFreetextReply(update tgbotapi.Update) {
 	}
 }
 
-func (b *Bot) sendListingCommand(update tgbotapi.Update) {
+func (b *Bot) sendListingCommand(ctx context.Context, update tgbotapi.Update) {
 	userId := update.Message.From.ID
 	session, err := b.state.getUserSession(userId)
 	if err != nil {
@@ -305,7 +306,7 @@ func (b *Bot) sendListingCommand(update tgbotapi.Update) {
 		return
 	}
 
-	_, missingField, err := makeNextFieldPrompt(session.client.GetFiltersSectionNewad, *session.listing)
+	_, missingField, err := makeNextFieldPrompt(ctx, session.client.GetFiltersSectionNewad, *session.listing)
 	if err != nil {
 		log.Error().Stack().Err(err).Send()
 		return
@@ -317,7 +318,7 @@ func (b *Bot) sendListingCommand(update tgbotapi.Update) {
 	}
 
 	// Add location to listing based on logged in user's location
-	account, err := session.client.GetAccount(session.toriAccountId)
+	account, err := session.client.GetAccount(ctx, session.toriAccountId)
 	if err != nil {
 		session.replyWithError(err)
 		return
@@ -329,7 +330,7 @@ func (b *Bot) sendListingCommand(update tgbotapi.Update) {
 	// Phone number hidden implicitly
 	session.listing.PhoneHidden = true
 
-	medias, err := uploadListingPhotos(b.tg.GetFileDirectURL, session.client.UploadMedia, session.photos)
+	medias, err := uploadListingPhotos(ctx, b.tg.GetFileDirectURL, session.client.UploadMedia, session.photos)
 	if err != nil {
 		session.replyWithError(err)
 		return
@@ -343,7 +344,7 @@ func (b *Bot) sendListingCommand(update tgbotapi.Update) {
 	}
 	session.listing.Images = &listingImages
 
-	err = session.client.PostListing(*session.listing)
+	err = session.client.PostListing(ctx, *session.listing)
 	if err != nil {
 		session.replyWithError(err)
 		return
@@ -419,7 +420,7 @@ func (b *Bot) handleImportJson(update tgbotapi.Update) {
 	session.reply(importJsonSuccessful, session.listing.Subject)
 }
 
-func (b *Bot) handleForget(update tgbotapi.Update, args []string) {
+func (b *Bot) handleForget(ctx context.Context, update tgbotapi.Update, args []string) {
 	userId := update.Message.From.ID
 	session, err := b.state.getUserSession(userId)
 	if err != nil {
@@ -438,7 +439,7 @@ func (b *Bot) handleForget(update tgbotapi.Update, args []string) {
 		return
 	}
 
-	msg, _, err := makeNextFieldPrompt(session.client.GetFiltersSectionNewad, *session.listing)
+	msg, _, err := makeNextFieldPrompt(ctx, session.client.GetFiltersSectionNewad, *session.listing)
 	if err != nil {
 		session.replyWithError(err)
 		return
@@ -501,10 +502,10 @@ func (b *Bot) handleMessageEdit(update tgbotapi.Update) {
 	}
 }
 
-func (b *Bot) handleUpdate(update tgbotapi.Update) {
+func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	// Update is user interacting with inline keyboard
 	if update.CallbackQuery != nil {
-		b.handleCallback(update)
+		b.handleCallback(ctx, update)
 		return
 	}
 
@@ -538,7 +539,7 @@ func (b *Bot) handleUpdate(update tgbotapi.Update) {
 		session.reset()
 		session.replyAndRemoveCustomKeyboard(okText)
 	case "/laheta":
-		b.sendListingCommand(update)
+		b.sendListingCommand(ctx, update)
 	case "/poistakuvat":
 		session.photos = nil
 		session.pendingPhotos = nil
@@ -546,21 +547,22 @@ func (b *Bot) handleUpdate(update tgbotapi.Update) {
 	case "/tuojson":
 		b.handleImportJson(update)
 	case "/unohda":
-		b.handleForget(update, args)
+		b.handleForget(ctx, update, args)
 	default:
-		b.handleFreetextReply(update)
+		b.handleFreetextReply(ctx, update)
 	}
 }
 
 func makeNextFieldPrompt(
-	getNewadFilters func() (tori.NewadFilters, error),
+	ctx context.Context,
+	getNewadFilters func(context.Context) (tori.NewadFilters, error),
 	listing tori.Listing,
 ) (
 	tgbotapi.MessageConfig,
 	string,
 	error,
 ) {
-	newadFilters, err := fetchNewadFilters(getNewadFilters)
+	newadFilters, err := fetchNewadFilters(ctx, getNewadFilters)
 	if err != nil {
 		return tgbotapi.MessageConfig{}, "", err
 	}
@@ -579,10 +581,10 @@ func makeNextFieldPrompt(
 	return msg, missingField, nil
 }
 
-func fetchNewadFilters(get func() (tori.NewadFilters, error)) (tori.NewadFilters, error) {
+func fetchNewadFilters(ctx context.Context, get func(context.Context) (tori.NewadFilters, error)) (tori.NewadFilters, error) {
 	cachedNewadFilters, ok := getCachedNewadFilters()
 	if !ok {
-		newadFilters, err := get()
+		newadFilters, err := get(ctx)
 		if err != nil {
 			return newadFilters, err
 		}
@@ -593,9 +595,9 @@ func fetchNewadFilters(get func() (tori.NewadFilters, error)) (tori.NewadFilters
 	}
 }
 
-func checkUserPreconditions(session *UserSession) string {
+func checkUserPreconditions(ctx context.Context, session *UserSession) string {
 	// Check that access token is valid
-	account, err := session.client.GetAccount(session.toriAccountId)
+	account, err := session.client.GetAccount(ctx, session.toriAccountId)
 	if err != nil {
 		log.Error().Err(err).Msg("precondition check failed: could not get account from tori")
 		return sessionMaybeExpiredText

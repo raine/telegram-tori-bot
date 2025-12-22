@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -111,7 +112,7 @@ func TestGetCategoriesForSubject(t *testing.T) {
 			Auth:    "foo",
 		})
 
-		categories, err := getCategoriesForSubject(client, "nintendo switch horipad peliohjain")
+		categories, err := getCategoriesForSubject(context.Background(), client, "nintendo switch horipad peliohjain")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -172,7 +173,7 @@ func TestGetCategoriesForSubject(t *testing.T) {
 			Auth:    "foo",
 		})
 
-		categories, err := getCategoriesForSubject(client, "nintendo switch horipad peliohjain")
+		categories, err := getCategoriesForSubject(context.Background(), client, "nintendo switch horipad peliohjain")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -241,7 +242,7 @@ func TestGetCategoriesForSubject(t *testing.T) {
 			Auth:    "foo",
 		})
 
-		categories, err := getCategoriesForSubject(client, "nintendo switch horipad peliohjain")
+		categories, err := getCategoriesForSubject(context.Background(), client, "nintendo switch horipad peliohjain")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -303,7 +304,7 @@ func TestGetCategoriesForSubject(t *testing.T) {
 			Auth:    "foo",
 		})
 
-		_, err := getCategoriesForSubject(client, "nintendo switch horipad peliohjain (2 kpl)")
+		_, err := getCategoriesForSubject(context.Background(), client, "nintendo switch horipad peliohjain (2 kpl)")
 		if err != nil {
 			t.Fatal(err)
 		}

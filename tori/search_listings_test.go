@@ -1,6 +1,7 @@
 package tori
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -26,7 +27,7 @@ func TestSearchListings(t *testing.T) {
 		BaseURL: ts.URL,
 		Auth:    "foo",
 	})
-	listings, err := client.SearchListings("test")
+	listings, err := client.SearchListings(context.Background(), "test")
 	assert.Equal(t, "/v2/listings/search", req.URL.Path)
 	assert.Nil(t, err)
 	assert.Len(t, listings, 40)
