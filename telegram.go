@@ -1,8 +1,9 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/go-resty/resty/v2"
-	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 )
 
@@ -21,7 +22,7 @@ func downloadFileID(
 		return nil, err
 	}
 	if res.IsError() {
-		return nil, errors.Errorf("request failed: %v", res)
+		return nil, fmt.Errorf("request failed: %v", res)
 	}
 
 	return res.Body(), nil

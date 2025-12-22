@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/go-resty/resty/v2"
-	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 )
 
@@ -182,7 +181,7 @@ func handleError(res *resty.Response, err error) (*resty.Response, error) {
 			Interface("request", res.Request.Body).
 			Bytes("response", res.Body()).
 			Send()
-		return res, errors.Errorf("request failed: %s %s", res.Request.Method, res.Request.URL)
+		return res, fmt.Errorf("request failed: %s %s", res.Request.Method, res.Request.URL)
 	}
 
 	return res, nil

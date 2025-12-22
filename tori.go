@@ -1,10 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
-	"github.com/pkg/errors"
 	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/rs/zerolog/log"
 	orderedmap "github.com/wk8/go-ordered-map"
@@ -117,6 +117,6 @@ func getLabelForField(
 	case param.Text != nil:
 		return (*param.Text).Label, nil
 	default:
-		return "", errors.Errorf("could not find param for field '%s'", field)
+		return "", fmt.Errorf("could not find param for field '%s'", field)
 	}
 }

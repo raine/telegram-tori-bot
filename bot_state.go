@@ -1,9 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"sync"
 
-	"github.com/pkg/errors"
 	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/rs/zerolog/log"
 )
@@ -17,7 +17,7 @@ type BotState struct {
 func (bs *BotState) newUserSession(userId int64) (*UserSession, error) {
 	cfg, ok := bs.bot.userConfigMap[userId]
 	if !ok {
-		return nil, errors.Errorf("user %d has no config; if this is you, add user with telegramUserId = %d to user_config.toml", userId, userId)
+		return nil, fmt.Errorf("user %d has no config; if this is you, add user with telegramUserId = %d to user_config.toml", userId, userId)
 	}
 
 	session := UserSession{

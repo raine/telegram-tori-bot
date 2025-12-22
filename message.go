@@ -8,7 +8,6 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/lithammer/dedent"
-	"github.com/pkg/errors"
 	"github.com/raine/telegram-tori-bot/tori"
 )
 
@@ -139,11 +138,11 @@ func makeMissingFieldPromptMessage(
 			})
 			return msg, nil
 		}
-		return msg, errors.Errorf("multi selection param %s not implemented", missingField)
+		return msg, fmt.Errorf("multi selection param %s not implemented", missingField)
 	case param.Text != nil:
 		msg.Text = fmt.Sprintf("%s?", (*param.Text).Label)
 	default:
-		return msg, errors.Errorf("could not find param for missing field '%s'", missingField)
+		return msg, fmt.Errorf("could not find param for missing field '%s'", missingField)
 	}
 	return msg, nil
 }
@@ -153,7 +152,7 @@ func parsePriceMessage(message string) (tori.Price, error) {
 	re := regexp.MustCompile(`(\d+)€?`)
 	m := re.FindStringSubmatch(message)
 	if m == nil {
-		return price, errors.Errorf("failed to parse price from message")
+		return price, fmt.Errorf("failed to parse price from message")
 	} else {
 		n, err := strconv.Atoi(m[1])
 		if err != nil {

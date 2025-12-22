@@ -1,10 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/pelletier/go-toml/v2"
-	"github.com/pkg/errors"
 )
 
 type (
@@ -22,18 +22,18 @@ type (
 func readUserConfigMap() (UserConfigMap, error) {
 	userConfigPath, ok := os.LookupEnv("USER_CONFIG_PATH")
 	if !ok {
-		return nil, errors.Errorf("USER_CONFIG_PATH env var not defined")
+		return nil, fmt.Errorf("USER_CONFIG_PATH env var not defined")
 	}
 
 	bytes, err := os.ReadFile(userConfigPath)
 	if err != nil {
-		return nil, errors.Wrap(err, "could not read auth config")
+		return nil, fmt.Errorf("could not read auth config: %w", err)
 	}
 
 	var userConfig UserConfig
 
 	if err := toml.Unmarshal(bytes, &userConfig); err != nil {
-		return nil, errors.Wrap(err, "failed to unmarshal user config")
+		return nil, fmt.Errorf("failed to unmarshal user config: %w", err)
 	}
 
 	userConfigMap := make(UserConfigMap)

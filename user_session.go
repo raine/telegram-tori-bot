@@ -1,10 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"sync"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 
 	"github.com/raine/telegram-tori-bot/tori"
@@ -41,7 +41,7 @@ func (s *UserSession) reset() {
 }
 
 func (s *UserSession) replyWithError(err error) tgbotapi.Message {
-	log.Error().Stack().Err(errors.WithStack(err)).Send()
+	log.Error().Stack().Err(err).Send()
 	return s._reply(formatReplyText(unexpectedErrorText, err), false)
 }
 
@@ -51,7 +51,7 @@ func (s *UserSession) replyWithMessage(msg tgbotapi.MessageConfig) tgbotapi.Mess
 	if err != nil {
 		log.Error().Stack().
 			Interface("msg", msg).
-			Err(errors.Wrap(err, "failed to send reply message")).Send()
+			Err(fmt.Errorf("failed to send reply message: %w", err)).Send()
 	} else {
 		log.Info().Interface("msg", msg).Interface("sent", sent).Msg("sent message")
 	}
