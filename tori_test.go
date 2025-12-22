@@ -4,11 +4,30 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/stretchr/testify/assert"
 )
+
+// urlTracker provides thread-safe tracking of called URLs in tests
+type urlTracker struct {
+	mu   sync.Mutex
+	urls []string
+}
+
+func (t *urlTracker) add(url string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.urls = append(t.urls, url)
+}
+
+func (t *urlTracker) get() []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return append([]string{}, t.urls...)
+}
 
 func makeListingResponse(t *testing.T, id string, category tori.Category) []byte {
 	listingResponse := tori.GetListingResponse{
@@ -50,10 +69,10 @@ func makeListAdItem(listIdCode string, sptMetadataCategory string) tori.ListAdIt
 // category labels for simplicity.
 func TestGetCategoriesForSubject(t *testing.T) {
 	t.Run("generic test", func(t *testing.T) {
-		calledUrls := make([]string, 0)
+		tracker := &urlTracker{}
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			url := r.URL.RequestURI()
-			calledUrls = append(calledUrls, url)
+			tracker.add(url)
 			w.Header().Set("Content-Type", "application/json")
 			switch url {
 			case "/v2/listings/search?q=nintendo+switch+horipad+peliohjain":
@@ -113,14 +132,14 @@ func TestGetCategoriesForSubject(t *testing.T) {
 			"/v2/listings/2",
 			"/v2/listings/3",
 			"/v2/listings/4",
-		}, calledUrls)
+		}, tracker.get())
 	})
 
 	t.Run("no additional queries are made if the initial query provides enough results", func(t *testing.T) {
-		calledUrls := make([]string, 0)
+		tracker := &urlTracker{}
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			url := r.URL.RequestURI()
-			calledUrls = append(calledUrls, url)
+			tracker.add(url)
 			w.Header().Set("Content-Type", "application/json")
 			switch url {
 			case "/v2/listings/search?q=nintendo+switch+horipad+peliohjain":
@@ -173,14 +192,14 @@ func TestGetCategoriesForSubject(t *testing.T) {
 			"/v2/listings/3",
 			"/v2/listings/4",
 			"/v2/listings/5",
-		}, calledUrls)
+		}, tracker.get())
 	})
 
 	t.Run("no duplicate categories", func(t *testing.T) {
-		calledUrls := make([]string, 0)
+		tracker := &urlTracker{}
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			url := r.URL.RequestURI()
-			calledUrls = append(calledUrls, url)
+			tracker.add(url)
 			w.Header().Set("Content-Type", "application/json")
 			switch url {
 			case "/v2/listings/search?q=nintendo+switch+horipad+peliohjain":
@@ -244,14 +263,14 @@ func TestGetCategoriesForSubject(t *testing.T) {
 			"/v2/listings/3",
 			"/v2/listings/4",
 			"/v2/listings/5",
-		}, calledUrls)
+		}, tracker.get())
 	})
 
 	t.Run("parenthesis blocks are ignored", func(t *testing.T) {
-		calledUrls := make([]string, 0)
+		tracker := &urlTracker{}
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			url := r.URL.RequestURI()
-			calledUrls = append(calledUrls, url)
+			tracker.add(url)
 			w.Header().Set("Content-Type", "application/json")
 			switch url {
 			case "/v2/listings/search?q=nintendo+switch+horipad+peliohjain":
@@ -296,6 +315,6 @@ func TestGetCategoriesForSubject(t *testing.T) {
 			"/v2/listings/3",
 			"/v2/listings/4",
 			"/v2/listings/5",
-		}, calledUrls)
+		}, tracker.get())
 	})
 }

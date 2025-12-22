@@ -62,7 +62,6 @@ func NewClient(opts ClientOpts) *Client {
 
 func (c *Client) req(result any) *resty.Request {
 	request := c.httpClient.
-		SetBaseURL(c.baseURL).
 		NewRequest().
 		SetHeader("Authorization", c.auth)
 
@@ -178,10 +177,8 @@ func handleError(res *resty.Response, err error) (*resty.Response, error) {
 			Str("url", res.Request.URL).
 			Str("method", res.Request.Method).
 			Int("status_code", res.StatusCode()).
-			Interface("request", res.Request.Body).
-			Bytes("response", res.Body()).
-			Send()
-		return res, fmt.Errorf("request failed: %s %s", res.Request.Method, res.Request.URL)
+			Msg("request failed")
+		return res, fmt.Errorf("request failed: %s %s (status: %d)", res.Request.Method, res.Request.URL, res.StatusCode())
 	}
 
 	return res, nil
