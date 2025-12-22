@@ -12,6 +12,9 @@ import (
 
 const maxCategoryCount = 5
 
+// parenthesisRegex matches parenthesis blocks like "(2 kpl)" or "(M-koko)"
+var parenthesisRegex = regexp.MustCompile(`\(.+\)`)
+
 func getListingsCategoryMap(listings []ListAdItem) *orderedmap.OrderedMap {
 	sptMetadataCategoryToListIdCode := orderedmap.New()
 
@@ -28,10 +31,8 @@ func getListingsCategoryMap(listings []ListAdItem) *orderedmap.OrderedMap {
 func GetCategoriesForSubject(ctx context.Context, client *Client, subject string) ([]Category, error) {
 	log.Info().Str("subject", subject).Msg("getting categories for subject")
 
-	// Remove parenthesis blocks from subject. This could be something
-	// like "(2 kpl)" or "(M-koko)"
-	re := regexp.MustCompile(`\(.+\)`)
-	subject = strings.TrimSpace(re.ReplaceAllString(subject, ""))
+	// Remove parenthesis blocks from subject
+	subject = strings.TrimSpace(parenthesisRegex.ReplaceAllString(subject, ""))
 
 	allSubjectParts := strings.Split(subject, " ")
 	accCategoryMap := orderedmap.New()
