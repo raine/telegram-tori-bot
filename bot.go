@@ -166,6 +166,111 @@ func (b *Bot) handleCallback(ctx context.Context, update tgbotapi.Update) {
 	}
 }
 
+// handleNewListing starts a new listing from the user's message
+func (b *Bot) handleNewListing(ctx context.Context, session *UserSession, text string, messageId int) {
+	// Do the best we can to ensure listing can be eventually sent
+	// successfully, instead of failing after user has input all details and
+	// bot tries to POST the listing to Tori
+	msgText := checkUserPreconditions(ctx, session)
+	if msgText != "" {
+		session.reply(msgText)
+		return
+	}
+
+	listing := newListingFromMessage(text)
+	session.userSubjectMessageId = messageId
+	session.listing = &listing
+	// Remove custom keyboard just in case there was one from previous
+	// listing creation that did not finish
+	sent := session.reply(listingSubjectIsText, session.listing.Subject)
+	session.botSubjectMessageId = sent.MessageID
+	categories, err := tori.GetCategoriesForSubject(ctx, session.client, session.listing.Subject)
+	if err != nil {
+		session.replyWithError(err)
+		session.reset()
+		return
+	}
+	log.Info().Str("subject", session.listing.Subject).Interface("categories", categories).Msg("found categories for subject")
+	if len(categories) == 0 {
+		// TODO: add fallback mechanism for selecting category
+		session.reply(cantFigureOutCategoryText)
+		session.reset()
+		return
+	}
+	session.categories = categories
+	session.listing.Category = categories[0].Code
+	msg := makeCategoryMessage(categories, session.listing.Category)
+	session.replyWithMessage(msg)
+	log.Info().Interface("listing", session.listing).Msg("started a new listing")
+
+	msg, _, err = makeNextFieldPrompt(ctx, session.client.GetFiltersSectionNewad, *session.listing)
+	if err != nil {
+		session.replyWithError(err)
+		return
+	}
+	session.replyWithMessage(msg)
+}
+
+// handleListingFieldReply augments an existing listing with user's message
+func (b *Bot) handleListingFieldReply(ctx context.Context, session *UserSession, text string, messageId int) {
+	newadFilters, err := fetchNewadFilters(ctx, session.client.GetFiltersSectionNewad)
+	if err != nil {
+		session.replyWithError(err)
+		return
+	}
+	settingsParams := newadFilters.Newad.SettingsParams
+	paramMap := newadFilters.Newad.ParamMap
+
+	// User is replying to bot's question, and we can determine what, by
+	// getting the next missing field from Listing
+	repliedField := tori.GetMissingListingField(paramMap, settingsParams, *session.listing)
+	if repliedField == "" {
+		log.Info().Msg("not expecting a reply")
+		return
+	}
+
+	log.Info().Str("field", repliedField).Msg("user is replying to field")
+	newListing, err := setListingFieldFromMessage(paramMap, *session.listing, repliedField, text)
+	if err != nil {
+		var noLabelFoundError *NoLabelFoundError
+		label, _ := tori.GetLabelForField(paramMap, repliedField) // can't error in this case
+		if errors.As(err, &noLabelFoundError) {
+			session.reply(invalidReplyToField, label)
+		} else {
+			session.replyWithError(err)
+		}
+
+		return
+	}
+	session.listing = &newListing
+	log.Info().Interface("listing", newListing).Msg("updated listing")
+
+	if repliedField == "body" {
+		session.userBodyMessageId = messageId
+		sent := session.reply(listingBodyIsText, session.listing.Body)
+		session.botBodyMessageId = sent.MessageID
+	}
+
+	msg, missingField, err := makeNextFieldPrompt(ctx, session.client.GetFiltersSectionNewad, *session.listing)
+	if missingField != "" {
+		if err != nil {
+			session.replyWithError(err)
+			return
+		}
+		session.replyWithMessage(msg)
+	} else {
+		var text string
+		if len(session.photos) == 0 {
+			text = listingReadyToBeSentNoImagesText
+		} else {
+			text = listingReadyToBeSentText
+		}
+		session.replyAndRemoveCustomKeyboard(
+			fmt.Sprintf("%s\n%s", text, listingReadyCommands),
+		)
+	}
+}
+
 func (b *Bot) handleFreetextReply(ctx context.Context, update tgbotapi.Update) {
 	var text string
 	if update.Message.Caption != "" {
@@ -189,107 +294,10 @@ func (b *Bot) handleFreetextReply(ctx context.Context, update tgbotapi.Update) {
 		return
 	}
 
-	// Start a new listing from message
 	if session.listing == nil {
-		// Do the best we can to ensure listing can be eventually sent
-		// successfully, instead of failing after user has input all details and
-		// bot tries to POST the listing to Tori
-		msgText := checkUserPreconditions(ctx, session)
-		if msgText != "" {
-			session.reply(msgText)
-			return
-		}
-
-		listing := newListingFromMessage(text)
-		session.userSubjectMessageId = update.Message.MessageID
-		session.listing = &listing
-		// Remove custom keyboard just in case there was one from previous
-		// listing creation that did not finish
-		sent := session.reply(listingSubjectIsText, session.listing.Subject)
-		session.botSubjectMessageId = sent.MessageID
-		categories, err := tori.GetCategoriesForSubject(ctx, session.client, session.listing.Subject)
-		if err != nil {
-			session.replyWithError(err)
-			session.reset()
-			return
-		}
-		log.Info().Str("subject", session.listing.Subject).Interface("categories", categories).Msg("found categories for subject")
-		if len(categories) == 0 {
-			// TODO: add fallback mechanism for selecting category
-			session.reply(cantFigureOutCategoryText)
-			session.reset()
-			return
-		}
-		session.categories = categories
-		session.listing.Category = categories[0].Code
-		msg := makeCategoryMessage(categories, session.listing.Category)
-		session.replyWithMessage(msg)
-		log.Info().Interface("listing", session.listing).Msg("started a new listing")
-
-		msg, _, err = makeNextFieldPrompt(ctx, session.client.GetFiltersSectionNewad, *session.listing)
-		if err != nil {
-			session.replyWithError(err)
-			return
-		}
-		session.replyWithMessage(msg)
+		b.handleNewListing(ctx, session, text, update.Message.MessageID)
 	} else {
-		// Augment a previously started listing with user's message
-		newadFilters, err := fetchNewadFilters(ctx, session.client.GetFiltersSectionNewad)
-		if err != nil {
-			session.replyWithError(err)
-			return
-		}
-		settingsParams := newadFilters.Newad.SettingsParams
-		paramMap := newadFilters.Newad.ParamMap
-
-		// User is replying to bot's question, and we can determine what, by
-		// getting the next missing field from Listing
-		repliedField := tori.GetMissingListingField(paramMap, settingsParams, *session.listing)
-		if repliedField == "" {
-			log.Info().Msg("not expecting a reply")
-			return
-		}
-
-		log.Info().Str("field", repliedField).Msg("user is replying to field")
-		newListing, err := setListingFieldFromMessage(paramMap, *session.listing, repliedField, text)
-		if err != nil {
-			var noLabelFoundError *NoLabelFoundError
-			label, _ := tori.GetLabelForField(paramMap, repliedField) // can't error in this case
-			if errors.As(err, &noLabelFoundError) {
-				session.reply(invalidReplyToField, label)
-			} else {
-				session.replyWithError(err)
-			}
-
-			return
-		}
-		session.listing = &newListing
-		log.Info().Interface("listing", newListing).Msg("updated listing")
-
-		if repliedField == "body" {
-			session.userBodyMessageId = update.Message.MessageID
-			sent := session.reply(listingBodyIsText, session.listing.Body)
-			session.botBodyMessageId = sent.MessageID
-		}
-
-		msg, missingField, err := makeNextFieldPrompt(ctx, session.client.GetFiltersSectionNewad, *session.listing)
-		if missingField != "" {
-			if err != nil {
-				session.replyWithError(err)
-				return
-			}
-			session.replyWithMessage(msg)
-		} else {
-			var text string
-			if len(session.photos) == 0 {
-				text = listingReadyToBeSentNoImagesText
-			} else {
-				text = listingReadyToBeSentText
-			}
-			session.replyAndRemoveCustomKeyboard(
-				fmt.Sprintf("%s\n%s", text, listingReadyCommands),
-			)
-		}
+		b.handleListingFieldReply(ctx, session, text, update.Message.MessageID)
 	}
 }
 
