@@ -85,10 +85,15 @@ func getCategoriesForSubject(client *tori.Client, subject string) ([]tori.Catego
 		return nil, err
 	}
 
-	slices.SortStableFunc(listings, func(a tori.Ad, b tori.Ad) bool {
+	slices.SortStableFunc(listings, func(a tori.Ad, b tori.Ad) int {
 		aPos := slices.Index(listingIds, a.ListIdCode)
 		bPos := slices.Index(listingIds, b.ListIdCode)
-		return aPos < bPos
+		if aPos < bPos {
+			return -1
+		} else if aPos > bPos {
+			return 1
+		}
+		return 0
 	})
 
 	categories := make([]tori.Category, 0)

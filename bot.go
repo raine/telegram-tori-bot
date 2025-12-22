@@ -67,8 +67,13 @@ func (b *Bot) handlePhoto(message *tgbotapi.Message) {
 			// Order pending photos batch based on message id, which is the
 			// order in which message were sent, but not necessary the order
 			// they are processed by the program
-			slices.SortStableFunc(*session.pendingPhotos, func(a PendingPhoto, b PendingPhoto) bool {
-				return a.messageId < b.messageId
+			slices.SortStableFunc(*session.pendingPhotos, func(a PendingPhoto, b PendingPhoto) int {
+				if a.messageId < b.messageId {
+					return -1
+				} else if a.messageId > b.messageId {
+					return 1
+				}
+				return 0
 			})
 
 			for _, pendingPhoto := range *session.pendingPhotos {
