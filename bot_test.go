@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -125,10 +125,10 @@ func makeTestServerWithOnReqFn(t *testing.T, onReq func(r *http.Request)) *httpt
 		case "GET /v2/listings/4":
 			w.Write(makeListingResponse(t, "4", tori.Category{Code: "5031", Label: "Tabletit"}))
 		case "GET /v1.2/public/filters":
-			b, err = ioutil.ReadFile("tori/testdata/v1_2_public_filters_section_newad.json")
+			b, err = os.ReadFile("tori/testdata/v1_2_public_filters_section_newad.json")
 			w.Write(b)
 		case "GET /v1.2/private/accounts/123123":
-			b, err = ioutil.ReadFile("tori/testdata/v1_2_private_accounts_123123.json")
+			b, err = os.ReadFile("tori/testdata/v1_2_private_accounts_123123.json")
 			w.Write(b)
 		case "POST /v2/listings":
 			w.Write([]byte("{}"))
@@ -145,7 +145,7 @@ func makeTestServerWithOnReqFn(t *testing.T, onReq func(r *http.Request)) *httpt
 			w.Write([]byte("123"))
 		// For testing JSON archive import
 		case "GET /archive.json":
-			b, err := ioutil.ReadFile("testdata/archive.json")
+			b, err := os.ReadFile("testdata/archive.json")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -561,7 +561,7 @@ func TestHandleUpdate_SendListing(t *testing.T) {
 	var postListingJson []byte
 	ts := makeTestServerWithOnReqFn(t, func(r *http.Request) {
 		if r.Method == "POST" && r.URL.Path == "/v2/listings" {
-			if b, err := ioutil.ReadAll(r.Body); err == nil {
+			if b, err := io.ReadAll(r.Body); err == nil {
 				postListingJson = b
 			} else {
 				t.Fatal(err)

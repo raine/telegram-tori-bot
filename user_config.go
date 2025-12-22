@@ -1,7 +1,6 @@
 package main
 
 import (
-	"io/ioutil"
 	"os"
 
 	"github.com/pelletier/go-toml/v2"
@@ -26,7 +25,7 @@ func readUserConfigMap() (UserConfigMap, error) {
 		return nil, errors.Errorf("USER_CONFIG_PATH env var not defined")
 	}
 
-	bytes, err := ioutil.ReadFile(userConfigPath)
+	bytes, err := os.ReadFile(userConfigPath)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not read auth config")
 	}

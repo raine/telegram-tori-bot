@@ -2,9 +2,9 @@ package tori
 
 import (
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -82,7 +82,7 @@ func TestUploadMedia(t *testing.T) {
 }
 
 func TestGetListing(t *testing.T) {
-	b, err := ioutil.ReadFile("testdata/v2_listings_95194022.json")
+	b, err := os.ReadFile("testdata/v2_listings_95194022.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestGetListing(t *testing.T) {
 }
 
 func TestGetCategories(t *testing.T) {
-	b, err := ioutil.ReadFile("testdata/v1_2_public_categories_insert.json")
+	b, err := os.ReadFile("testdata/v1_2_public_categories_insert.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestGetCategories(t *testing.T) {
 }
 
 func TestGetFiltersSectionNewad(t *testing.T) {
-	b, err := ioutil.ReadFile("testdata/v1_2_public_filters_section_newad.json")
+	b, err := os.ReadFile("testdata/v1_2_public_filters_section_newad.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestPostListing(t *testing.T) {
 	var handlerCalled bool
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handlerCalled = true
-		body, err := ioutil.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatal(err)
 		}

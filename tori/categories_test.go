@@ -1,14 +1,14 @@
 package tori
 
 import (
-	"io/ioutil"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestGetCategoryLabel(t *testing.T) {
-	b, err := ioutil.ReadFile("testdata/v1_2_public_categories_insert.json")
+	b, err := os.ReadFile("testdata/v1_2_public_categories_insert.json")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,16 +1,16 @@
 package tori
 
 import (
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestSearchListings(t *testing.T) {
-	b, err := ioutil.ReadFile("testdata/v2_listings_search.json")
+	b, err := os.ReadFile("testdata/v2_listings_search.json")
 	if err != nil {
 		t.Fatal(err)
 	}
