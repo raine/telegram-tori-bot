@@ -27,6 +27,7 @@ type Bot struct {
 	state          BotState
 	toriApiBaseUrl string
 	userConfigMap  UserConfigMap
+	filterCache    *FilterCache
 }
 
 func NewBot(tg BotAPI, userConfigMap UserConfigMap, toriApiBaseUrl string) *Bot {
@@ -34,6 +35,7 @@ func NewBot(tg BotAPI, userConfigMap UserConfigMap, toriApiBaseUrl string) *Bot 
 		tg:             tg,
 		userConfigMap:  userConfigMap,
 		toriApiBaseUrl: toriApiBaseUrl,
+		filterCache:    NewFilterCache(time.Hour),
 	}
 
 	bot.state = bot.NewBotState()
@@ -122,7 +124,7 @@ func (b *Bot) handleCallback(ctx context.Context, update tgbotapi.Update) {
 		}
 	}
 
-	newadFilters, err := fetchNewadFilters(ctx, session.client.GetFiltersSectionNewad)
+	newadFilters, err := b.fetchNewadFilters(ctx, session.client.GetFiltersSectionNewad)
 	if err != nil {
 		session.replyWithError(err)
 		return
@@ -154,7 +156,7 @@ func (b *Bot) handleCallback(ctx context.Context, update tgbotapi.Update) {
 	}
 
 	// Prompt user for next field because category has changed and AdDetails has been cleared
-	msg, missingFieldNow, err := makeNextFieldPrompt(ctx, session.client.GetFiltersSectionNewad, *session.listing)
+	msg, missingFieldNow, err := makeNextFieldPrompt(ctx, b.filterCache, session.client.GetFiltersSectionNewad, *session.listing)
 	if err != nil {
 		session.replyWithError(err)
 		return
@@ -203,7 +205,7 @@ func (b *Bot) handleNewListing(ctx context.Context, session *UserSession, text s
 	session.replyWithMessage(msg)
 	log.Info().Interface("listing", session.listing).Msg("started a new listing")
 
-	msg, _, err = makeNextFieldPrompt(ctx, session.client.GetFiltersSectionNewad, *session.listing)
+	msg, _, err = makeNextFieldPrompt(ctx, b.filterCache, session.client.GetFiltersSectionNewad, *session.listing)
 	if err != nil {
 		session.replyWithError(err)
 		return
@@ -213,7 +215,7 @@ func (b *Bot) handleNewListing(ctx context.Context, session *UserSession, text s
 
 // handleListingFieldReply augments an existing listing with user's message
 func (b *Bot) handleListingFieldReply(ctx context.Context, session *UserSession, text string, messageId int) {
-	newadFilters, err := fetchNewadFilters(ctx, session.client.GetFiltersSectionNewad)
+	newadFilters, err := b.fetchNewadFilters(ctx, session.client.GetFiltersSectionNewad)
 	if err != nil {
 		session.replyWithError(err)
 		return
@@ -251,7 +253,7 @@ func (b *Bot) handleListingFieldReply(ctx context.Context, session *UserSession,
 		session.botBodyMessageId = sent.MessageID
 	}
 
-	msg, missingField, err := makeNextFieldPrompt(ctx, session.client.GetFiltersSectionNewad, *session.listing)
+	msg, missingField, err := makeNextFieldPrompt(ctx, b.filterCache, session.client.GetFiltersSectionNewad, *session.listing)
 	if missingField != "" {
 		if err != nil {
 			session.replyWithError(err)
@@ -314,7 +316,7 @@ func (b *Bot) sendListingCommand(ctx context.Context, update tgbotapi.Update) {
 		return
 	}
 
-	_, missingField, err := makeNextFieldPrompt(ctx, session.client.GetFiltersSectionNewad, *session.listing)
+	_, missingField, err := makeNextFieldPrompt(ctx, b.filterCache, session.client.GetFiltersSectionNewad, *session.listing)
 	if err != nil {
 		log.Error().Stack().Err(err).Send()
 		return
@@ -447,7 +449,7 @@ func (b *Bot) handleForget(ctx context.Context, update tgbotapi.Update, args []s
 		return
 	}
 
-	msg, _, err := makeNextFieldPrompt(ctx, session.client.GetFiltersSectionNewad, *session.listing)
+	msg, _, err := makeNextFieldPrompt(ctx, b.filterCache, session.client.GetFiltersSectionNewad, *session.listing)
 	if err != nil {
 		session.replyWithError(err)
 		return
@@ -563,6 +565,7 @@ func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 
 func makeNextFieldPrompt(
 	ctx context.Context,
+	cache *FilterCache,
 	getNewadFilters func(context.Context) (tori.NewadFilters, error),
 	listing tori.Listing,
 ) (
@@ -570,7 +573,7 @@ func makeNextFieldPrompt(
 	string,
 	error,
 ) {
-	newadFilters, err := fetchNewadFilters(ctx, getNewadFilters)
+	newadFilters, err := fetchNewadFiltersWithCache(ctx, cache, getNewadFilters)
 	if err != nil {
 		return tgbotapi.MessageConfig{}, "", err
 	}
@@ -589,14 +592,18 @@ func makeNextFieldPrompt(
 	return msg, missingField, nil
 }
 
-func fetchNewadFilters(ctx context.Context, get func(context.Context) (tori.NewadFilters, error)) (tori.NewadFilters, error) {
-	cachedNewadFilters, ok := getCachedNewadFilters()
+func (b *Bot) fetchNewadFilters(ctx context.Context, get func(context.Context) (tori.NewadFilters, error)) (tori.NewadFilters, error) {
+	return fetchNewadFiltersWithCache(ctx, b.filterCache, get)
+}
+
+func fetchNewadFiltersWithCache(ctx context.Context, cache *FilterCache, get func(context.Context) (tori.NewadFilters, error)) (tori.NewadFilters, error) {
+	cachedNewadFilters, ok := cache.Get()
 	if !ok {
 		newadFilters, err := get(ctx)
 		if err != nil {
 			return newadFilters, err
 		}
-		setCachedNewadFilters(newadFilters)
+		cache.Set(newadFilters)
 		return newadFilters, nil
 	} else {
 		return cachedNewadFilters, nil

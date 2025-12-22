@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestCachedNewadFilters(t *testing.T) {
+func TestFilterCacheBasic(t *testing.T) {
 	filtersSectionNewadJson, err := os.ReadFile("tori/testdata/v1_2_public_filters_section_newad.json")
 	if err != nil {
 		t.Fatal(err)
@@ -19,11 +19,15 @@ func TestCachedNewadFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	clearCachedNewadFilters()
-	_, ok := getCachedNewadFilters()
+	cache := NewFilterCache(time.Hour)
+
+	// Initially empty
+	_, ok := cache.Get()
 	assert.False(t, ok)
-	setCachedNewadFilters(newadFilters)
-	result, ok := getCachedNewadFilters()
+
+	// Set and retrieve
+	cache.Set(newadFilters)
+	result, ok := cache.Get()
 	assert.True(t, ok)
 	assert.NotEqual(t, tori.NewadFilters{}, result)
 }

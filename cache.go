@@ -49,19 +49,3 @@ func (c *FilterCache) Clear() {
 
 	c.data = nil
 }
-
-// Default cache instance with 1 hour TTL
-var filterCache = NewFilterCache(time.Hour)
-
-// Convenience functions for backward compatibility
-func getCachedNewadFilters() (tori.NewadFilters, bool) {
-	return filterCache.Get()
-}
-
-func setCachedNewadFilters(filters tori.NewadFilters) {
-	filterCache.Set(filters)
-}
-
-func clearCachedNewadFilters() {
-	filterCache.Clear()
-}
