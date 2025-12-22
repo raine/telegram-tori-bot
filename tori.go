@@ -8,7 +8,6 @@ import (
 	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/rs/zerolog/log"
 	orderedmap "github.com/wk8/go-ordered-map"
-	"golang.org/x/exp/slices"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -84,17 +83,6 @@ func getCategoriesForSubject(client *tori.Client, subject string) ([]tori.Catego
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
-
-	slices.SortStableFunc(listings, func(a tori.Ad, b tori.Ad) int {
-		aPos := slices.Index(listingIds, a.ListIdCode)
-		bPos := slices.Index(listingIds, b.ListIdCode)
-		if aPos < bPos {
-			return -1
-		} else if aPos > bPos {
-			return 1
-		}
-		return 0
-	})
 
 	categories := make([]tori.Category, 0)
 	for _, listing := range listings {

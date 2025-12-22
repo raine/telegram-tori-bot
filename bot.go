@@ -1,17 +1,18 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/rs/zerolog/log"
-	"golang.org/x/exp/slices"
 )
 
 type BotAPI interface {
@@ -67,13 +68,8 @@ func (b *Bot) handlePhoto(message *tgbotapi.Message) {
 			// Order pending photos batch based on message id, which is the
 			// order in which message were sent, but not necessary the order
 			// they are processed by the program
-			slices.SortStableFunc(*session.pendingPhotos, func(a PendingPhoto, b PendingPhoto) int {
-				if a.messageId < b.messageId {
-					return -1
-				} else if a.messageId > b.messageId {
-					return 1
-				}
-				return 0
+			slices.SortStableFunc(*session.pendingPhotos, func(a, b PendingPhoto) int {
+				return cmp.Compare(a.messageId, b.messageId)
 			})
 
 			for _, pendingPhoto := range *session.pendingPhotos {
