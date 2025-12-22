@@ -10,6 +10,13 @@ import (
 	"github.com/raine/telegram-tori-bot/tori"
 )
 
+// MessageSender abstracts the ability to send Telegram messages.
+// This interface decouples UserSession from the full Bot struct,
+// improving testability.
+type MessageSender interface {
+	Send(c tgbotapi.Chattable) (tgbotapi.Message, error)
+}
+
 type PendingPhoto struct {
 	messageId int
 	photoSize tgbotapi.PhotoSize
@@ -20,7 +27,7 @@ type UserSession struct {
 	client               *tori.Client
 	listing              *tori.Listing
 	toriAccountId        string
-	bot                  *Bot
+	sender               MessageSender
 	mu                   sync.Mutex
 	pendingPhotos        *[]PendingPhoto
 	photos               []tgbotapi.PhotoSize
@@ -47,7 +54,7 @@ func (s *UserSession) replyWithError(err error) tgbotapi.Message {
 
 func (s *UserSession) replyWithMessage(msg tgbotapi.MessageConfig) tgbotapi.Message {
 	msg.ChatID = s.userId
-	sent, err := s.bot.tg.Send(msg)
+	sent, err := s.sender.Send(msg)
 	if err != nil {
 		log.Error().Stack().
 			Interface("msg", msg).

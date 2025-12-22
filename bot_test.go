@@ -206,7 +206,7 @@ func TestHandleUpdate_ListingStart(t *testing.T) {
 
 	// Skip these fields as they are difficult and not very fruitful to assert
 	session.client = nil
-	session.bot = nil
+	session.sender = nil
 
 	assert.Equal(t, &UserSession{
 		userId: 1,

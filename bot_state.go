@@ -27,7 +27,7 @@ func (bs *BotState) newUserSession(userId int64) (*UserSession, error) {
 			Auth:    cfg.Token,
 			BaseURL: bs.bot.toriApiBaseUrl,
 		}),
-		bot: bs.bot,
+		sender: bs.bot.tg,
 	}
 	log.Info().Int64("userId", userId).Msg("new user session created")
 	return &session, nil
