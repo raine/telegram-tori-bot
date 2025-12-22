@@ -1,19 +1,18 @@
-package main
+package tori
 
 import (
 	"os"
 	"testing"
 
-	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestGetMissingUnsetListingFieldWithSettingsParamBasic(t *testing.T) {
-	filtersSectionNewadJson, err := os.ReadFile("tori/testdata/v1_2_public_filters_section_newad.json")
+	filtersSectionNewadJson, err := os.ReadFile("testdata/v1_2_public_filters_section_newad.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	newadFilters, err := tori.ParseNewadFilters(filtersSectionNewadJson)
+	newadFilters, err := ParseNewadFilters(filtersSectionNewadJson)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,34 +33,34 @@ func TestGetMissingUnsetListingFieldWithSettingsParamBasic(t *testing.T) {
   ]
 }`)
 
-	settingsParam, err := tori.ParseOneSettingsParam(json)
+	settingsParam, err := ParseOneSettingsParam(json)
 	if err != nil {
 		panic(err)
 	}
 	tests := map[string]struct {
-		listing tori.Listing
+		listing Listing
 		want    string
 	}{
 		"price": {
-			listing: tori.Listing{
-				Type:     tori.ListingTypeSell,
+			listing: Listing{
+				Type:     ListingTypeSell,
 				Category: "3030",
 			},
 			want: "general_condition",
 		},
 		"general condition": {
-			listing: tori.Listing{
-				Type:     tori.ListingTypeSell,
+			listing: Listing{
+				Type:     ListingTypeSell,
 				Category: "3030",
 				Price:    10,
 			},
 			want: "general_condition",
 		},
 		"no missing fields": {
-			listing: tori.Listing{
-				Type:     tori.ListingTypeSell,
+			listing: Listing{
+				Type:     ListingTypeSell,
 				Category: "3030",
-				AdDetails: tori.AdDetails{
+				AdDetails: AdDetails{
 					"general_condition": "fair",
 				},
 				Price: 10,
@@ -69,8 +68,8 @@ func TestGetMissingUnsetListingFieldWithSettingsParamBasic(t *testing.T) {
 			want: "",
 		},
 		"category does not match": {
-			listing: tori.Listing{
-				Type:     tori.ListingTypeSell,
+			listing: Listing{
+				Type:     ListingTypeSell,
 				Category: "3031",
 			},
 			want: "",
@@ -86,26 +85,26 @@ func TestGetMissingUnsetListingFieldWithSettingsParamBasic(t *testing.T) {
 }
 
 func TestGetMissingUnsetListingFieldWithSettingsParamPeripheral(t *testing.T) {
-	filtersSectionNewadJson, err := os.ReadFile("tori/testdata/v1_2_public_filters_section_newad.json")
+	filtersSectionNewadJson, err := os.ReadFile("testdata/v1_2_public_filters_section_newad.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	newadFilters, err := tori.ParseNewadFilters(filtersSectionNewadJson)
+	newadFilters, err := ParseNewadFilters(filtersSectionNewadJson)
 	if err != nil {
 		t.Fatal(err)
 	}
 	paramMap := newadFilters.Newad.ParamMap
 
 	tests := map[string]struct {
-		listing tori.Listing
+		listing Listing
 		json    []byte
 		want    string
 	}{
 		"asterisk matches any value": {
-			listing: tori.Listing{
-				Type:     tori.ListingTypeSell,
+			listing: Listing{
+				Type:     ListingTypeSell,
 				Category: "3030",
-				AdDetails: tori.AdDetails{
+				AdDetails: AdDetails{
 					"peripheral": "printer",
 				},
 			},
@@ -122,10 +121,10 @@ func TestGetMissingUnsetListingFieldWithSettingsParamPeripheral(t *testing.T) {
 			want: "general_condition",
 		},
 		"returns inchlist_3": {
-			listing: tori.Listing{
-				Type:     tori.ListingTypeSell,
+			listing: Listing{
+				Type:     ListingTypeSell,
 				Category: "3030",
-				AdDetails: tori.AdDetails{
+				AdDetails: AdDetails{
 					"peripheral":        "monitor",
 					"general_condition": "fair",
 				},
@@ -146,7 +145,7 @@ func TestGetMissingUnsetListingFieldWithSettingsParamPeripheral(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			settingsParam, err := tori.ParseOneSettingsParam(tc.json)
+			settingsParam, err := ParseOneSettingsParam(tc.json)
 			if err != nil {
 				panic(err)
 			}
@@ -157,26 +156,26 @@ func TestGetMissingUnsetListingFieldWithSettingsParamPeripheral(t *testing.T) {
 }
 
 func TestGetMissingUnsetListingFieldWithSettingsParamClothing(t *testing.T) {
-	filtersSectionNewadJson, err := os.ReadFile("tori/testdata/v1_2_public_filters_section_newad.json")
+	filtersSectionNewadJson, err := os.ReadFile("testdata/v1_2_public_filters_section_newad.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	newadFilters, err := tori.ParseNewadFilters(filtersSectionNewadJson)
+	newadFilters, err := ParseNewadFilters(filtersSectionNewadJson)
 	if err != nil {
 		t.Fatal(err)
 	}
 	paramMap := newadFilters.Newad.ParamMap
 
 	tests := map[string]struct {
-		listing tori.Listing
+		listing Listing
 		json    []byte
 		want    string
 	}{
 		"clothing_sex_0 matches clothing_sex in ad details": {
-			listing: tori.Listing{
-				Type:     tori.ListingTypeSell,
+			listing: Listing{
+				Type:     ListingTypeSell,
 				Category: "3030",
-				AdDetails: tori.AdDetails{
+				AdDetails: AdDetails{
 					"clothing_sex": "2",
 				},
 			},
@@ -194,10 +193,10 @@ func TestGetMissingUnsetListingFieldWithSettingsParamClothing(t *testing.T) {
 			want: "clothing_kind_2",
 		},
 		"clothing sex and kind": {
-			listing: tori.Listing{
-				Type:     tori.ListingTypeSell,
+			listing: Listing{
+				Type:     ListingTypeSell,
 				Category: "3030",
-				AdDetails: tori.AdDetails{
+				AdDetails: AdDetails{
 					"clothing_sex":  "2",
 					"clothing_kind": "9",
 				},
@@ -219,7 +218,7 @@ func TestGetMissingUnsetListingFieldWithSettingsParamClothing(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			settingsParam, err := tori.ParseOneSettingsParam(tc.json)
+			settingsParam, err := ParseOneSettingsParam(tc.json)
 			if err != nil {
 				panic(err)
 			}
@@ -230,11 +229,11 @@ func TestGetMissingUnsetListingFieldWithSettingsParamClothing(t *testing.T) {
 }
 
 func TestGetMissingListingField(t *testing.T) {
-	filtersSectionNewadJson, err := os.ReadFile("tori/testdata/v1_2_public_filters_section_newad.json")
+	filtersSectionNewadJson, err := os.ReadFile("testdata/v1_2_public_filters_section_newad.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	newadFilters, err := tori.ParseNewadFilters(filtersSectionNewadJson)
+	newadFilters, err := ParseNewadFilters(filtersSectionNewadJson)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,59 +271,59 @@ func TestGetMissingListingField(t *testing.T) {
 ]
 `)
 
-	settingsParam, err := tori.ParseMultipleSettingsParams(json)
+	settingsParam, err := ParseMultipleSettingsParams(json)
 	if err != nil {
 		panic(err)
 	}
 	tests := map[string]struct {
-		listing tori.Listing
+		listing Listing
 		want    string
 	}{
 		"body": {
-			listing: tori.Listing{
-				Type:     tori.ListingTypeSell,
+			listing: Listing{
+				Type:     ListingTypeSell,
 				Category: "3050",
 			},
 			want: "body",
 		},
 		"general_condition": {
-			listing: tori.Listing{
+			listing: Listing{
 				Body:     "asdf",
-				Type:     tori.ListingTypeSell,
+				Type:     ListingTypeSell,
 				Category: "3050",
 			},
 			want: "general_condition",
 		},
 		"price": {
-			listing: tori.Listing{
+			listing: Listing{
 				Body:     "asdf",
-				Type:     tori.ListingTypeSell,
+				Type:     ListingTypeSell,
 				Category: "3050",
-				AdDetails: tori.AdDetails{
+				AdDetails: AdDetails{
 					"general_condition": "fair",
 				},
 			},
 			want: "price",
 		},
 		"clothing_sex": {
-			listing: tori.Listing{
+			listing: Listing{
 				Body:     "asdf",
-				Type:     tori.ListingTypeSell,
+				Type:     ListingTypeSell,
 				Category: "3050",
 				Price:    1,
-				AdDetails: tori.AdDetails{
+				AdDetails: AdDetails{
 					"general_condition": "fair",
 				},
 			},
 			want: "clothing_sex_0",
 		},
 		"clothing_kind matches after clothing_sex is set": {
-			listing: tori.Listing{
+			listing: Listing{
 				Body:     "asdf",
-				Type:     tori.ListingTypeSell,
+				Type:     ListingTypeSell,
 				Category: "3050",
 				Price:    1,
-				AdDetails: tori.AdDetails{
+				AdDetails: AdDetails{
 					"general_condition": "fair",
 					"clothing_sex":      "1",
 				},
@@ -332,12 +331,12 @@ func TestGetMissingListingField(t *testing.T) {
 			want: "clothing_kind_1",
 		},
 		"clothing_size matches after clothing_kind is set": {
-			listing: tori.Listing{
+			listing: Listing{
 				Body:     "asdf",
-				Type:     tori.ListingTypeSell,
+				Type:     ListingTypeSell,
 				Category: "3050",
 				Price:    1,
-				AdDetails: tori.AdDetails{
+				AdDetails: AdDetails{
 					"general_condition": "fair",
 					"clothing_sex":      "1",
 					"clothing_kind":     "1",
@@ -346,12 +345,12 @@ func TestGetMissingListingField(t *testing.T) {
 			want: "clothing_size_2",
 		},
 		"delivery_options": {
-			listing: tori.Listing{
+			listing: Listing{
 				Body:     "asdf",
-				Type:     tori.ListingTypeSell,
+				Type:     ListingTypeSell,
 				Category: "3050",
 				Price:    1,
-				AdDetails: tori.AdDetails{
+				AdDetails: AdDetails{
 					"general_condition": "fair",
 					"clothing_sex":      "1",
 					"clothing_kind":     "1",
@@ -361,12 +360,12 @@ func TestGetMissingListingField(t *testing.T) {
 			want: "delivery_options",
 		},
 		"no fields after delivery_options": {
-			listing: tori.Listing{
+			listing: Listing{
 				Body:     "asdf",
-				Type:     tori.ListingTypeSell,
+				Type:     ListingTypeSell,
 				Category: "3050",
 				Price:    1,
-				AdDetails: tori.AdDetails{
+				AdDetails: AdDetails{
 					"general_condition": "fair",
 					"clothing_sex":      "1",
 					"clothing_kind":     "1",
@@ -380,7 +379,7 @@ func TestGetMissingListingField(t *testing.T) {
 
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			got := getMissingListingField(paramMap, settingsParam, tc.listing)
+			got := GetMissingListingField(paramMap, settingsParam, tc.listing)
 			assert.Equal(t, tc.want, got)
 		})
 	}

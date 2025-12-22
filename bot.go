@@ -127,7 +127,7 @@ func (b *Bot) handleCallback(ctx context.Context, update tgbotapi.Update) {
 		session.replyWithError(err)
 		return
 	}
-	missingFieldBefore := getMissingListingField(newadFilters.Newad.ParamMap, newadFilters.Newad.SettingsParams, *session.listing)
+	missingFieldBefore := tori.GetMissingListingField(newadFilters.Newad.ParamMap, newadFilters.Newad.SettingsParams, *session.listing)
 
 	session.listing.Category = newCategoryCode
 	// Clear the AdDetails, since category has changed
@@ -244,7 +244,7 @@ func (b *Bot) handleFreetextReply(ctx context.Context, update tgbotapi.Update) {
 
 		// User is replying to bot's question, and we can determine what, by
 		// getting the next missing field from Listing
-		repliedField := getMissingListingField(paramMap, settingsParams, *session.listing)
+		repliedField := tori.GetMissingListingField(paramMap, settingsParams, *session.listing)
 		if repliedField == "" {
 			log.Info().Msg("not expecting a reply")
 			return
@@ -566,7 +566,7 @@ func makeNextFieldPrompt(
 	if err != nil {
 		return tgbotapi.MessageConfig{}, "", err
 	}
-	missingField := getMissingListingField(
+	missingField := tori.GetMissingListingField(
 		newadFilters.Newad.ParamMap,
 		newadFilters.Newad.SettingsParams,
 		listing,

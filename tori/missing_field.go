@@ -1,20 +1,19 @@
-package main
+package tori
 
 import (
 	"fmt"
 	"strings"
-
-	"github.com/raine/telegram-tori-bot/tori"
 )
 
-func doesListingMatchValue(listing tori.Listing, key string, value string) bool {
+// doesListingMatchValue checks if a listing matches a specific key-value pair
+func doesListingMatchValue(listing Listing, key string, value string) bool {
 	switch key {
 	case "category":
 		if listing.Category != value {
 			return false
 		}
 	case "type":
-		if listing.Type != tori.ListingType(tori.ParseListingType(value)) {
+		if listing.Type != ListingType(ParseListingType(value)) {
 			return false
 		}
 	default:
@@ -39,7 +38,8 @@ func doesListingMatchValue(listing tori.Listing, key string, value string) bool 
 	return true
 }
 
-func doesListingMatchAllValues(listing tori.Listing, keys []string, values []string) bool {
+// doesListingMatchAllValues checks if a listing matches all key-value pairs
+func doesListingMatchAllValues(listing Listing, keys []string, values []string) bool {
 	for i, key := range keys {
 		if m := doesListingMatchValue(listing, key, values[i]); !m {
 			return false
@@ -49,7 +49,8 @@ func doesListingMatchAllValues(listing tori.Listing, keys []string, values []str
 	return true
 }
 
-func getMissingFieldFromSettingsResult(paramMap tori.ParamMap, listing tori.Listing, settingsResult []string) string {
+// getMissingFieldFromSettingsResult finds the first missing field from a settings result
+func getMissingFieldFromSettingsResult(paramMap ParamMap, listing Listing, settingsResult []string) string {
 	for _, sr := range settingsResult {
 		// Type and zipcode are always set so skip them
 		if strings.HasPrefix(sr, "type") || sr == "zipcode" {
@@ -88,10 +89,11 @@ func getMissingFieldFromSettingsResult(paramMap tori.ParamMap, listing tori.List
 	return ""
 }
 
+// getMissingListingFieldWithSettingsParam finds missing field using a specific settings param
 func getMissingListingFieldWithSettingsParam(
-	paramMap tori.ParamMap,
-	settingsParam tori.SettingsParam,
-	listing tori.Listing,
+	paramMap ParamMap,
+	settingsParam SettingsParam,
+	listing Listing,
 ) string {
 	for _, setting := range settingsParam.Settings {
 		if doesListingMatchAllValues(listing, settingsParam.Keys, setting.Values) {
@@ -101,7 +103,9 @@ func getMissingListingFieldWithSettingsParam(
 	return ""
 }
 
-func getMissingListingField(paramMap tori.ParamMap, settingsParams []tori.SettingsParam, listing tori.Listing) string {
+// GetMissingListingField determines which field needs to be filled next for a listing.
+// Returns an empty string if all required fields are present.
+func GetMissingListingField(paramMap ParamMap, settingsParams []SettingsParam, listing Listing) string {
 	// body is not specified in tori's settings_param list so we check it separately
 	if listing.Body == "" {
 		return "body"
