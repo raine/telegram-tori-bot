@@ -7,21 +7,21 @@ import (
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/raine/telegram-tori-bot/llm"
 	"github.com/raine/telegram-tori-bot/storage"
 	"github.com/raine/telegram-tori-bot/tori"
-	"github.com/raine/telegram-tori-bot/vision"
 	"github.com/rs/zerolog/log"
 )
 
 // ListingHandler handles ad creation flow for the bot.
 type ListingHandler struct {
 	tg             BotAPI
-	visionAnalyzer vision.Analyzer
+	visionAnalyzer llm.Analyzer
 	sessionStore   storage.SessionStore
 }
 
 // NewListingHandler creates a new listing handler.
-func NewListingHandler(tg BotAPI, visionAnalyzer vision.Analyzer, sessionStore storage.SessionStore) *ListingHandler {
+func NewListingHandler(tg BotAPI, visionAnalyzer llm.Analyzer, sessionStore storage.SessionStore) *ListingHandler {
 	return &ListingHandler{
 		tg:             tg,
 		visionAnalyzer: visionAnalyzer,
@@ -52,6 +52,11 @@ func (h *ListingHandler) HandleInput(ctx context.Context, session *UserSession, 
 		session.replyAndRemoveCustomKeyboard(okText)
 		session.mu.Unlock()
 		return true
+	}
+
+	// Let /osasto pass through to command handler during input states
+	if message.Text == "/osasto" && (state == AdFlowStateAwaitingAttribute || state == AdFlowStateAwaitingPrice) {
+		return false
 	}
 
 	// Handle attribute input
@@ -120,7 +125,7 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 	}
 
 	// If this is the first photo, analyze with Gemini and create draft
-	var result *vision.AnalysisResult
+	var result *llm.AnalysisResult
 	var categories []tori.CategoryPrediction
 
 	if !existingDraft {
@@ -216,8 +221,18 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 		sentDesc := session.replyWithMessage(descMsg)
 		session.currentDraft.DescriptionMessageID = sentDesc.MessageID
 
-		// Send category selection
+		// Auto-select category using LLM if possible
 		if len(categories) > 0 {
+			// Try LLM-based category selection
+			autoSelectedID := h.tryAutoSelectCategory(ctx, result.Item.Title, result.Item.Description, categories)
+			if autoSelectedID > 0 {
+				// Release lock and process category selection
+				session.mu.Unlock()
+				h.processCategorySelection(ctx, session, autoSelectedID)
+				return
+			}
+
+			// Fall back to manual selection
 			msg := tgbotapi.NewMessage(session.userId, "Valitse osasto")
 			msg.ParseMode = tgbotapi.ModeMarkdown
 			msg.ReplyMarkup = makeCategoryPredictionKeyboard(categories)
@@ -244,7 +259,7 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 	}
 }
 
-// HandleCategorySelection processes category selection and fetches attributes.
+// HandleCategorySelection processes category selection from callback query.
 func (h *ListingHandler) HandleCategorySelection(ctx context.Context, session *UserSession, query *tgbotapi.CallbackQuery) {
 	categoryIDStr := strings.TrimPrefix(query.Data, "cat:")
 	categoryID, err := strconv.Atoi(categoryIDStr)
@@ -260,6 +275,25 @@ func (h *ListingHandler) HandleCategorySelection(ctx context.Context, session *U
 		return
 	}
 
+	// Edit the original message to remove keyboard
+	if query.Message != nil {
+		edit := tgbotapi.NewEditMessageReplyMarkup(
+			query.Message.Chat.ID,
+			query.Message.MessageID,
+			tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}},
+		)
+		h.tg.Request(edit)
+	}
+	session.mu.Unlock()
+
+	h.processCategorySelection(ctx, session, categoryID)
+}
+
+// processCategorySelection handles the common category selection logic.
+// It sets category, fetches attributes, and prompts for next step.
+func (h *ListingHandler) processCategorySelection(ctx context.Context, session *UserSession, categoryID int) {
+	session.mu.Lock()
+
 	// Find category label for logging
 	var categoryLabel string
 	for _, cat := range session.currentDraft.CategoryPredictions {
@@ -271,16 +305,6 @@ func (h *ListingHandler) HandleCategorySelection(ctx context.Context, session *U
 
 	session.currentDraft.CategoryID = categoryID
 	log.Info().Int("categoryId", categoryID).Str("label", categoryLabel).Msg("category selected")
-
-	// Edit the original message to remove keyboard
-	if query.Message != nil {
-		edit := tgbotapi.NewEditMessageReplyMarkup(
-			query.Message.Chat.ID,
-			query.Message.MessageID,
-			tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}},
-		)
-		h.tg.Request(edit)
-	}
 
 	session.reply(fmt.Sprintf("Osasto: *%s*", categoryLabel))
 
@@ -542,6 +566,24 @@ func (h *ListingHandler) HandleTitleDescriptionReply(session *UserSession, messa
 }
 
 // --- Helper methods ---
+
+// tryAutoSelectCategory attempts to auto-select category using LLM.
+// Returns the selected category ID or 0 if auto-selection failed.
+func (h *ListingHandler) tryAutoSelectCategory(ctx context.Context, title, description string, predictions []tori.CategoryPrediction) int {
+	// Check if the analyzer supports category selection
+	gemini, ok := h.visionAnalyzer.(*llm.GeminiAnalyzer)
+	if !ok {
+		return 0
+	}
+
+	categoryID, err := gemini.SelectCategory(ctx, title, description, predictions)
+	if err != nil {
+		log.Warn().Err(err).Msg("LLM category selection failed, falling back to manual")
+		return 0
+	}
+
+	return categoryID
+}
 
 // promptForAttribute shows a keyboard to select an attribute value.
 func (h *ListingHandler) promptForAttribute(session *UserSession, attr tori.Attribute) {

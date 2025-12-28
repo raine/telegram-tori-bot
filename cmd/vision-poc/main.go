@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/raine/telegram-tori-bot/vision"
+	"github.com/raine/telegram-tori-bot/llm"
 )
 
 func main() {
@@ -40,7 +40,7 @@ func main() {
 func runGemini(ctx context.Context, imageData []byte, mimeType string) {
 	fmt.Println("=== GEMINI ===")
 
-	analyzer, err := vision.NewGeminiAnalyzer(ctx)
+	analyzer, err := llm.NewGeminiAnalyzer(ctx)
 	if err != nil {
 		fmt.Printf("Error creating Gemini analyzer: %v\n", err)
 		return
@@ -55,7 +55,7 @@ func runGemini(ctx context.Context, imageData []byte, mimeType string) {
 	printResult(result)
 }
 
-func printResult(result *vision.AnalysisResult) {
+func printResult(result *llm.AnalysisResult) {
 	fmt.Printf("Title:       %s\n", result.Item.Title)
 	fmt.Printf("Brand:       %s\n", result.Item.Brand)
 	fmt.Printf("Model:       %s\n", result.Item.Model)

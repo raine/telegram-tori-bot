@@ -8,8 +8,8 @@ import (
 	"syscall"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/raine/telegram-tori-bot/llm"
 	"github.com/raine/telegram-tori-bot/storage"
-	"github.com/raine/telegram-tori-bot/vision"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
@@ -65,7 +65,7 @@ func main() {
 	if os.Getenv("GEMINI_API_KEY") == "" {
 		log.Fatal().Msg("GEMINI_API_KEY environment variable is required")
 	}
-	visionAnalyzer, err := vision.NewGeminiAnalyzer(ctx)
+	visionAnalyzer, err := llm.NewGeminiAnalyzer(ctx)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to initialize Gemini vision analyzer")
 	}
@@ -85,7 +85,7 @@ func main() {
 	}
 }
 
-func runBot(ctx context.Context, tg *tgbotapi.BotAPI, sessionStore storage.SessionStore, visionAnalyzer vision.Analyzer) error {
+func runBot(ctx context.Context, tg *tgbotapi.BotAPI, sessionStore storage.SessionStore, visionAnalyzer llm.Analyzer) error {
 	updateConfig := tgbotapi.NewUpdate(0)
 	updateConfig.Timeout = 60
 	updates := tg.GetUpdatesChan(updateConfig)

@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/raine/telegram-tori-bot/llm"
 	"github.com/raine/telegram-tori-bot/storage"
-	"github.com/raine/telegram-tori-bot/vision"
 	"github.com/rs/zerolog/log"
 )
 
@@ -24,7 +24,7 @@ type Bot struct {
 	tg             BotAPI
 	state          BotState
 	sessionStore   storage.SessionStore
-	visionAnalyzer vision.Analyzer
+	visionAnalyzer llm.Analyzer
 
 	// Handlers
 	authHandler    *AuthHandler
@@ -45,7 +45,7 @@ func NewBot(tg BotAPI, sessionStore storage.SessionStore) *Bot {
 }
 
 // SetVisionAnalyzer sets the vision analyzer for image analysis.
-func (b *Bot) SetVisionAnalyzer(analyzer vision.Analyzer) {
+func (b *Bot) SetVisionAnalyzer(analyzer llm.Analyzer) {
 	b.visionAnalyzer = analyzer
 	b.listingHandler = NewListingHandler(b.tg, analyzer, b.sessionStore)
 }
@@ -130,6 +130,8 @@ func (b *Bot) handleCommand(ctx context.Context, session *UserSession, message *
 		session.pendingPhotos = nil
 		session.currentDraft = nil
 		session.reply(photosRemoved)
+	case "/osasto":
+		b.handleOsastoCommand(session)
 	case "/malli":
 		b.handleTemplateCommand(session, message.Text)
 	case "/poistamalli":
@@ -210,6 +212,32 @@ func (b *Bot) handleDeleteTemplate(session *UserSession) {
 		return
 	}
 	session.reply("🗑 Malli poistettu.")
+}
+
+// handleOsastoCommand handles /osasto command - re-select category
+func (b *Bot) handleOsastoCommand(session *UserSession) {
+	if session.currentDraft == nil {
+		session.reply("Ei aktiivista ilmoitusta. Lähetä ensin kuva.")
+		return
+	}
+
+	if len(session.currentDraft.CategoryPredictions) == 0 {
+		session.reply("Ei osastoehdotuksia saatavilla.")
+		return
+	}
+
+	// Reset to category selection state and clear collected attributes
+	session.currentDraft.State = AdFlowStateAwaitingCategory
+	session.currentDraft.CategoryID = 0
+	session.currentDraft.CollectedAttrs = make(map[string]string)
+	session.currentDraft.RequiredAttrs = nil
+	session.currentDraft.CurrentAttrIndex = 0
+
+	// Show category selection keyboard
+	msg := tgbotapi.NewMessage(session.userId, "Valitse osasto")
+	msg.ParseMode = tgbotapi.ModeMarkdown
+	msg.ReplyMarkup = makeCategoryPredictionKeyboard(session.currentDraft.CategoryPredictions)
+	session.replyWithMessage(msg)
 }
 
 // --- Template expansion ---

@@ -11,10 +11,10 @@ import (
 	"testing"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/raine/telegram-tori-bot/llm"
 	"github.com/raine/telegram-tori-bot/storage"
 	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/raine/telegram-tori-bot/tori/auth"
-	"github.com/raine/telegram-tori-bot/vision"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -121,17 +121,17 @@ func (m *botApiMock) GetFileDirectURL(fileID string) (string, error) {
 	return args.Get(0).(string), args.Error(1)
 }
 
-// mockVisionAnalyzer implements vision.Analyzer for testing
+// mockVisionAnalyzer implements llm.Analyzer for testing
 type mockVisionAnalyzer struct {
 	mock.Mock
 }
 
-func (m *mockVisionAnalyzer) AnalyzeImage(ctx context.Context, data []byte, mimeType string) (*vision.AnalysisResult, error) {
+func (m *mockVisionAnalyzer) AnalyzeImage(ctx context.Context, data []byte, mimeType string) (*llm.AnalysisResult, error) {
 	args := m.Called(ctx, data, mimeType)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*vision.AnalysisResult), args.Error(1)
+	return args.Get(0).(*llm.AnalysisResult), args.Error(1)
 }
 
 func makeUpdateWithMessageText(userId int64, text string) tgbotapi.Update {
@@ -662,5 +662,112 @@ func TestHandleUpdate_PeruDuringPriceInput(t *testing.T) {
 	// Verify session was reset
 	if session.currentDraft != nil {
 		t.Errorf("expected currentDraft to be nil after /peru")
+	}
+}
+
+func TestHandleOsastoCommand_NoDraft(t *testing.T) {
+	_, userId, tg, bot, session := setupAdInputSession(t, makeAdInputTestServer(t))
+
+	// No current draft
+	session.currentDraft = nil
+
+	tg.On("Send", makeMessage(userId, "Ei aktiivista ilmoitusta. Lähetä ensin kuva.")).
+		Return(tgbotapi.Message{}, nil).Once()
+
+	session.mu.Lock()
+	bot.handleOsastoCommand(session)
+	session.mu.Unlock()
+
+	tg.AssertExpectations(t)
+}
+
+func TestHandleOsastoCommand_NoPredictions(t *testing.T) {
+	_, userId, tg, bot, session := setupAdInputSession(t, makeAdInputTestServer(t))
+
+	// Draft exists but no category predictions
+	session.currentDraft = &AdInputDraft{
+		State:               AdFlowStateAwaitingPrice,
+		CategoryPredictions: []tori.CategoryPrediction{},
+	}
+
+	tg.On("Send", makeMessage(userId, "Ei osastoehdotuksia saatavilla.")).
+		Return(tgbotapi.Message{}, nil).Once()
+
+	session.mu.Lock()
+	bot.handleOsastoCommand(session)
+	session.mu.Unlock()
+
+	tg.AssertExpectations(t)
+}
+
+func TestHandleOsastoCommand_ShowsCategoryKeyboard(t *testing.T) {
+	_, _, tg, bot, session := setupAdInputSession(t, makeAdInputTestServer(t))
+
+	// Draft exists with predictions and we're past category selection
+	session.currentDraft = &AdInputDraft{
+		State:      AdFlowStateAwaitingPrice,
+		CategoryID: 5012,
+		CategoryPredictions: []tori.CategoryPrediction{
+			{ID: 5012, Label: "Tietokoneen oheislaitteet"},
+			{ID: 5013, Label: "Näytöt"},
+		},
+		CollectedAttrs:   map[string]string{"condition": "2"},
+		RequiredAttrs:    []tori.Attribute{{Name: "condition"}},
+		CurrentAttrIndex: 1,
+	}
+
+	// Expect category selection message with inline keyboard
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		return msg.Text == "Valitse osasto" && msg.ReplyMarkup != nil
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	session.mu.Lock()
+	bot.handleOsastoCommand(session)
+	session.mu.Unlock()
+
+	tg.AssertExpectations(t)
+
+	// Verify state was reset
+	if session.currentDraft.State != AdFlowStateAwaitingCategory {
+		t.Errorf("expected state AwaitingCategory, got %v", session.currentDraft.State)
+	}
+	if session.currentDraft.CategoryID != 0 {
+		t.Errorf("expected CategoryID to be reset to 0, got %d", session.currentDraft.CategoryID)
+	}
+	if len(session.currentDraft.CollectedAttrs) != 0 {
+		t.Errorf("expected CollectedAttrs to be cleared, got %v", session.currentDraft.CollectedAttrs)
+	}
+	if session.currentDraft.RequiredAttrs != nil {
+		t.Errorf("expected RequiredAttrs to be nil")
+	}
+}
+
+func TestHandleUpdate_OsastoDuringPriceInput(t *testing.T) {
+	ts := makeAdInputTestServer(t)
+	defer ts.Close()
+	_, userId, tg, bot, session := setupAdInputSession(t, ts)
+
+	// Set up session with draft awaiting price
+	session.currentDraft = &AdInputDraft{
+		State:      AdFlowStateAwaitingPrice,
+		CategoryID: 5012,
+		CategoryPredictions: []tori.CategoryPrediction{
+			{ID: 5012, Label: "Tietokoneen oheislaitteet"},
+		},
+	}
+
+	update := makeUpdateWithMessageText(userId, "/osasto")
+
+	// Expect category selection message
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		return msg.Text == "Valitse osasto" && msg.ReplyMarkup != nil
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	bot.handleUpdate(context.Background(), update)
+	tg.AssertExpectations(t)
+
+	// Verify state changed to awaiting category
+	if session.currentDraft.State != AdFlowStateAwaitingCategory {
+		t.Errorf("expected state AwaitingCategory, got %v", session.currentDraft.State)
 	}
 }
