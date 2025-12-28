@@ -159,16 +159,7 @@ func makeMessage(userId int64, text string) tgbotapi.MessageConfig {
 func makeTestServer(t *testing.T) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/v1.2/private/accounts/123123":
-			b, err := os.ReadFile("tori/testdata/v1_2_private_accounts_123123.json")
-			if err != nil {
-				t.Fatal(err)
-			}
-			w.Write(b)
-		default:
-			w.Write([]byte("{}"))
-		}
+		w.Write([]byte("{}"))
 	}))
 }
 
