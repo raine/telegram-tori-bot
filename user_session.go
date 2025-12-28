@@ -36,6 +36,9 @@ type UserSession struct {
 	userBodyMessageId    int
 	botSubjectMessageId  int
 	botBodyMessageId     int
+
+	// Auth flow state for login
+	authFlow *AuthFlow
 }
 
 func (s *UserSession) reset() {
@@ -45,6 +48,9 @@ func (s *UserSession) reset() {
 	s.photos = nil
 	s.categories = nil
 	s.userSubjectMessageId = 0
+	if s.authFlow != nil {
+		s.authFlow.Reset()
+	}
 }
 
 func (s *UserSession) replyWithError(err error) tgbotapi.Message {

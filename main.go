@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/raine/telegram-tori-bot/storage"
 	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -23,6 +24,18 @@ func main() {
 		log.Fatal().Msg("BOT_TOKEN is not set")
 	}
 
+	// Token encryption key (required)
+	tokenKey, ok := os.LookupEnv("TORI_TOKEN_KEY")
+	if !ok {
+		log.Fatal().Msg("TORI_TOKEN_KEY is not set")
+	}
+
+	// Database path (optional, defaults to sessions.db)
+	dbPath := os.Getenv("TORI_DB_PATH")
+	if dbPath == "" {
+		dbPath = "sessions.db"
+	}
+
 	tg, err := tgbotapi.NewBotAPI(botToken)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to initialize telegram bot; bad token?")
@@ -30,10 +43,13 @@ func main() {
 	tg.Debug = false
 	log.Info().Str("username", tg.Self.UserName).Msg("authorized on account")
 
-	userConfigMap, err := readUserConfigMap()
+	// Initialize session store
+	sessionStore, err := storage.NewSQLiteStore(dbPath, storage.DeriveKey(tokenKey))
 	if err != nil {
-		log.Fatal().Err(err).Send()
+		log.Fatal().Err(err).Msg("failed to initialize session store")
 	}
+	defer sessionStore.Close()
+	log.Info().Str("dbPath", dbPath).Msg("session store initialized")
 
 	// Create context that cancels on SIGINT or SIGTERM
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -41,14 +57,9 @@ func main() {
 
 	g, ctx := errgroup.WithContext(ctx)
 
-	// Run session keep-alive in background
-	g.Go(func() error {
-		return keepSessionsAlive(ctx, tori.ApiBaseUrl, userConfigMap)
-	})
-
 	// Run bot update loop
 	g.Go(func() error {
-		return runBot(ctx, tg, userConfigMap)
+		return runBot(ctx, tg, sessionStore)
 	})
 
 	if err := g.Wait(); err != nil && err != context.Canceled {
@@ -58,12 +69,12 @@ func main() {
 	}
 }
 
-func runBot(ctx context.Context, tg *tgbotapi.BotAPI, userConfigMap UserConfigMap) error {
+func runBot(ctx context.Context, tg *tgbotapi.BotAPI, sessionStore storage.SessionStore) error {
 	updateConfig := tgbotapi.NewUpdate(0)
 	updateConfig.Timeout = 60
 	updates := tg.GetUpdatesChan(updateConfig)
 
-	bot := NewBot(tg, userConfigMap, tori.ApiBaseUrl)
+	bot := NewBot(tg, tori.ApiBaseUrl, sessionStore)
 
 	var wg sync.WaitGroup
 

@@ -12,7 +12,9 @@ import (
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/raine/telegram-tori-bot/storage"
 	"github.com/raine/telegram-tori-bot/tori"
+	"github.com/raine/telegram-tori-bot/tori/auth"
 	"github.com/rs/zerolog/log"
 )
 
@@ -26,16 +28,16 @@ type Bot struct {
 	tg             BotAPI
 	state          BotState
 	toriApiBaseUrl string
-	userConfigMap  UserConfigMap
 	filterCache    *FilterCache
+	sessionStore   storage.SessionStore
 }
 
-func NewBot(tg BotAPI, userConfigMap UserConfigMap, toriApiBaseUrl string) *Bot {
+func NewBot(tg BotAPI, toriApiBaseUrl string, sessionStore storage.SessionStore) *Bot {
 	bot := &Bot{
 		tg:             tg,
-		userConfigMap:  userConfigMap,
 		toriApiBaseUrl: toriApiBaseUrl,
 		filterCache:    NewFilterCache(time.Hour),
+		sessionStore:   sessionStore,
 	}
 
 	bot.state = bot.NewBotState()
@@ -548,12 +550,31 @@ func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	defer session.mu.Unlock()
 
 	log.Info().Str("text", update.Message.Text).Str("caption", update.Message.Caption).Msg("got message")
+
+	// Check if auth flow timed out
+	if session.authFlow != nil && session.authFlow.IsTimedOut() {
+		session.authFlow.Reset()
+		session.reply(loginTimeoutText)
+	}
+
+	// Handle auth flow if active
+	if session.authFlow != nil && session.authFlow.IsActive() {
+		b.handleAuthFlowMessage(ctx, session, update.Message.Text)
+		return
+	}
+
 	command, args := parseCommand(update.Message.Text)
 	switch command {
 	// /start is the command telegram client prompts user to send to a
 	// bot when there are no prior messages
 	case "/start":
-		session.reply(startText)
+		if session.client == nil {
+			session.reply(loginRequiredText)
+		} else {
+			session.reply(startText)
+		}
+	case "/login":
+		b.handleLoginCommand(session)
 	case "/peru":
 		session.reset()
 		session.replyAndRemoveCustomKeyboard(okText)
@@ -568,8 +589,148 @@ func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	case "/unohda":
 		b.handleForget(ctx, update, args)
 	default:
+		// Require login for freetext (listing creation)
+		if session.client == nil {
+			session.reply(loginRequiredText)
+			return
+		}
 		b.handleFreetextReply(ctx, update)
 	}
+}
+
+// handleLoginCommand starts the login flow
+func (b *Bot) handleLoginCommand(session *UserSession) {
+	// Check if already logged in
+	if session.client != nil {
+		session.reply(loginAlreadyLoggedInText)
+		return
+	}
+
+	// Initialize auth flow
+	authenticator, err := auth.NewAuthenticator()
+	if err != nil {
+		session.reply(loginFailedText, err)
+		return
+	}
+
+	if err := authenticator.InitSession(); err != nil {
+		session.reply(loginFailedText, err)
+		return
+	}
+
+	session.authFlow.Authenticator = authenticator
+	session.authFlow.State = AuthStateAwaitingEmail
+	session.authFlow.Touch()
+
+	session.reply(loginPromptEmailText)
+}
+
+// handleAuthFlowMessage handles messages during the login flow
+func (b *Bot) handleAuthFlowMessage(ctx context.Context, session *UserSession, text string) {
+	// Handle /peru to cancel login
+	if text == "/peru" {
+		session.authFlow.Reset()
+		session.reply(loginCancelledText)
+		return
+	}
+
+	session.authFlow.Touch()
+
+	switch session.authFlow.State {
+	case AuthStateAwaitingEmail:
+		b.handleAuthEmail(ctx, session, text)
+	case AuthStateAwaitingEmailCode:
+		b.handleAuthEmailCode(ctx, session, text)
+	case AuthStateAwaitingSMSCode:
+		b.handleAuthSMSCode(ctx, session, text)
+	}
+}
+
+func (b *Bot) handleAuthEmail(ctx context.Context, session *UserSession, email string) {
+	session.authFlow.Email = email
+
+	if err := session.authFlow.Authenticator.StartLogin(email); err != nil {
+		log.Error().Err(err).Str("email", email).Msg("login start failed")
+		session.reply(loginFailedText, err)
+		session.authFlow.Reset()
+		return
+	}
+
+	session.authFlow.State = AuthStateAwaitingEmailCode
+	session.reply(loginEmailCodeSentText)
+}
+
+func (b *Bot) handleAuthEmailCode(ctx context.Context, session *UserSession, code string) {
+	mfaRequired, err := session.authFlow.Authenticator.SubmitEmailCode(code)
+	if err != nil {
+		log.Error().Err(err).Msg("email code submission failed")
+		session.reply(loginFailedText, err)
+		session.authFlow.Reset()
+		return
+	}
+
+	if mfaRequired {
+		session.authFlow.MFARequired = true
+		if err := session.authFlow.Authenticator.RequestSMS(); err != nil {
+			log.Error().Err(err).Msg("SMS request failed")
+			session.reply(loginFailedText, err)
+			session.authFlow.Reset()
+			return
+		}
+		session.authFlow.State = AuthStateAwaitingSMSCode
+		session.reply(loginSMSCodeSentText)
+		return
+	}
+
+	// No MFA required, finalize
+	b.finalizeAuth(ctx, session)
+}
+
+func (b *Bot) handleAuthSMSCode(ctx context.Context, session *UserSession, code string) {
+	if err := session.authFlow.Authenticator.SubmitSMSCode(code); err != nil {
+		log.Error().Err(err).Msg("SMS code submission failed")
+		session.reply(loginFailedText, err)
+		session.authFlow.Reset()
+		return
+	}
+
+	b.finalizeAuth(ctx, session)
+}
+
+func (b *Bot) finalizeAuth(ctx context.Context, session *UserSession) {
+	tokens, err := session.authFlow.Authenticator.Finalize()
+	if err != nil {
+		log.Error().Err(err).Msg("auth finalization failed")
+		session.reply(loginFailedText, err)
+		session.authFlow.Reset()
+		return
+	}
+
+	// Save session to store
+	if b.sessionStore != nil {
+		storedSession := &storage.StoredSession{
+			TelegramID: session.userId,
+			ToriUserID: tokens.UserID,
+			Tokens:     *tokens,
+		}
+		if err := b.sessionStore.Save(storedSession); err != nil {
+			log.Error().Err(err).Msg("failed to save session")
+			session.reply(loginFailedText, err)
+			session.authFlow.Reset()
+			return
+		}
+	}
+
+	// Update session with new client
+	session.toriAccountId = tokens.UserID
+	session.client = tori.NewClient(tori.ClientOpts{
+		Auth:    "Bearer " + tokens.BearerToken,
+		BaseURL: b.toriApiBaseUrl,
+	})
+
+	session.authFlow.Reset()
+	session.reply(loginSuccessText)
+	log.Info().Int64("userId", session.userId).Str("toriUserId", tokens.UserID).Msg("user logged in successfully")
 }
 
 func makeNextFieldPrompt(

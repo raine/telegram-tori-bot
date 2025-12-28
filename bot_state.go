@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/raine/telegram-tori-bot/tori"
@@ -15,21 +14,30 @@ type BotState struct {
 }
 
 func (bs *BotState) newUserSession(userId int64) (*UserSession, error) {
-	cfg, ok := bs.bot.userConfigMap[userId]
-	if !ok {
-		return nil, fmt.Errorf("user %d has no config; if this is you, add user with telegramUserId = %d to user_config.toml", userId, userId)
+	session := UserSession{
+		userId:   userId,
+		sender:   bs.bot.tg,
+		authFlow: NewAuthFlow(),
 	}
 
-	session := UserSession{
-		userId:        userId,
-		toriAccountId: cfg.ToriAccountId,
-		client: tori.NewClient(tori.ClientOpts{
-			Auth:    cfg.Token,
-			BaseURL: bs.bot.toriApiBaseUrl,
-		}),
-		sender: bs.bot.tg,
+	// Check if user has stored session in database
+	if bs.bot.sessionStore != nil {
+		storedSession, err := bs.bot.sessionStore.Get(userId)
+		if err != nil {
+			log.Warn().Err(err).Int64("userId", userId).Msg("failed to get stored session")
+		} else if storedSession != nil {
+			session.toriAccountId = storedSession.ToriUserID
+			session.client = tori.NewClient(tori.ClientOpts{
+				Auth:    "Bearer " + storedSession.Tokens.BearerToken,
+				BaseURL: bs.bot.toriApiBaseUrl,
+			})
+			log.Info().Int64("userId", userId).Msg("loaded session from database")
+			return &session, nil
+		}
 	}
-	log.Info().Int64("userId", userId).Msg("new user session created")
+
+	// User has no session - they need to log in
+	log.Info().Int64("userId", userId).Msg("new user session created (no auth)")
 	return &session, nil
 }
 

@@ -16,15 +16,68 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/lithammer/dedent"
+	"github.com/raine/telegram-tori-bot/storage"
 	"github.com/raine/telegram-tori-bot/tori"
+	"github.com/raine/telegram-tori-bot/tori/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
 
+// mockSessionStore implements storage.SessionStore for testing
+type mockSessionStore struct {
+	sessions map[int64]*storage.StoredSession
+}
+
+func newMockSessionStore() *mockSessionStore {
+	return &mockSessionStore{
+		sessions: make(map[int64]*storage.StoredSession),
+	}
+}
+
+func (m *mockSessionStore) Get(telegramID int64) (*storage.StoredSession, error) {
+	if s, ok := m.sessions[telegramID]; ok {
+		return s, nil
+	}
+	return nil, nil
+}
+
+func (m *mockSessionStore) Save(session *storage.StoredSession) error {
+	m.sessions[session.TelegramID] = session
+	return nil
+}
+
+func (m *mockSessionStore) Delete(telegramID int64) error {
+	delete(m.sessions, telegramID)
+	return nil
+}
+
+func (m *mockSessionStore) GetAll() ([]storage.StoredSession, error) {
+	var sessions []storage.StoredSession
+	for _, s := range m.sessions {
+		sessions = append(sessions, *s)
+	}
+	return sessions, nil
+}
+
+func (m *mockSessionStore) Close() error {
+	return nil
+}
+
 func setupWithTestServer(t *testing.T, ts *httptest.Server) (*httptest.Server, int64, *botApiMock, *Bot, *UserSession) {
 	userId := int64(1)
 	tg := new(botApiMock)
-	bot := NewBot(tg, userConfigMap, ts.URL)
+
+	// Create a mock store with a pre-authenticated user
+	store := newMockSessionStore()
+	store.sessions[userId] = &storage.StoredSession{
+		TelegramID: userId,
+		ToriUserID: "123123",
+		Tokens: auth.TokenSet{
+			BearerToken: "test-token",
+		},
+	}
+
+	bot := NewBot(tg, ts.URL, store)
 	session, err := bot.state.getUserSession(userId)
 	if err != nil {
 		t.Fatal(err)
@@ -204,13 +257,6 @@ func strPtr(v string) *string {
 	return &v
 }
 
-var userConfigMap = UserConfigMap{
-	1: UserConfigItem{
-		Token:         "foo",
-		ToriAccountId: "123123",
-	},
-}
-
 func TestMain(m *testing.M) {
 	os.Setenv("GO_ENV", "test")
 	os.Exit(m.Run())
@@ -243,6 +289,7 @@ func TestHandleUpdate_ListingStart(t *testing.T) {
 	// Skip these fields as they are difficult and not very fruitful to assert
 	session.client = nil
 	session.sender = nil
+	session.authFlow = nil
 
 	assert.Equal(t, &UserSession{
 		userId: 1,
@@ -787,26 +834,28 @@ func TestHandleUpdate_EditBody(t *testing.T) {
 	}, session.listing)
 }
 
-func TestHandleUpdate_UnauthorizedAccess(t *testing.T) {
+func TestHandleUpdate_UnauthenticatedUser(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Fatal("no requests expected")
 	}))
 	defer ts.Close()
-	userId := int64(99999) // Not in userConfigMap
+	userId := int64(99999) // Not in session store
 	tg := new(botApiMock)
-	bot := NewBot(tg, userConfigMap, ts.URL)
+	store := newMockSessionStore() // Empty store - no authenticated users
+	bot := NewBot(tg, ts.URL, store)
 
 	update := tgbotapi.Update{
-		EditedMessage: &tgbotapi.Message{
+		Message: &tgbotapi.Message{
 			MessageID: 10,
 			From:      &tgbotapi.User{ID: userId},
 			Text:      "/start",
 		},
 	}
 
-	bot.handleUpdate(context.Background(), update)
+	// Unauthenticated user should get login required message
+	tg.On("Send", makeMessage(userId, loginRequiredText)).Return(tgbotapi.Message{}, nil).Once()
 
-	// The test will fail if bot sends any messages
+	bot.handleUpdate(context.Background(), update)
 	tg.AssertExpectations(t)
 }
 

@@ -33,6 +33,17 @@ const (
 	importJsonInputError             = "Komento toimii vain vastauksena JSON-arkistoon."
 	importJsonSuccessful             = "Ilmoitus tuotu arkistosta: %s"
 	forgetInvalidField               = "En osaa unohtaa pyydettyä kenttää. Vaihtoehdot: hinta"
+
+	// Login flow messages
+	loginPromptEmailText     = "Anna sähköpostiosoitteesi:"
+	loginEmailCodeSentText   = "Koodi lähetetty sähköpostiisi. Anna koodi:"
+	loginSMSCodeSentText     = "SMS-koodi lähetetty. Anna koodi:"
+	loginSuccessText         = "Kirjautuminen onnistui!"
+	loginFailedText          = "Kirjautuminen epäonnistui: %s"
+	loginTimeoutText         = "Kirjautuminen aikakatkaistiin. Aloita uudelleen komennolla /login"
+	loginAlreadyLoggedInText = "Olet jo kirjautunut sisään."
+	loginRequiredText        = "Sinun täytyy kirjautua sisään ensin. Käytä komentoa /login"
+	loginCancelledText       = "Kirjautuminen peruutettu."
 )
 
 func makeCategoriesInlineKeyboard(categories []tori.Category) tgbotapi.InlineKeyboardMarkup {
