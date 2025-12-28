@@ -91,12 +91,22 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 	// Get the largest photo size
 	largestPhoto := message.Photo[len(message.Photo)-1]
 
-	// Check if we have an existing draft (brief lock)
+	// Check state and reserve draft creation if needed
 	session.mu.Lock()
+
+	// If another goroutine is already creating a draft (album race), wait for it
+	if session.isCreatingDraft {
+		session.reply("Odota hetki, luodaan ilmoitusta...")
+		session.mu.Unlock()
+		return
+	}
+
 	existingDraft := session.draftID != ""
 	client := session.adInputClient
 
 	if !existingDraft {
+		// Reserve the right to create the draft (prevents album race)
+		session.isCreatingDraft = true
 		session.reply("Analysoidaan kuvaa...")
 		session.initAdInputClient()
 		client = session.adInputClient
@@ -109,6 +119,7 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 
 	if client == nil {
 		session.mu.Lock()
+		session.isCreatingDraft = false
 		session.reply("Virhe: ei voitu alustaa yhteyttä")
 		session.mu.Unlock()
 		return
@@ -119,6 +130,9 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 	if err != nil {
 		log.Error().Err(err).Msg("failed to download photo")
 		session.mu.Lock()
+		if !existingDraft {
+			session.isCreatingDraft = false
+		}
 		session.replyWithError(err)
 		session.mu.Unlock()
 		return
@@ -132,6 +146,7 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 		// Analyze with Gemini vision (NO LOCK - network I/O)
 		if h.visionAnalyzer == nil {
 			session.mu.Lock()
+			session.isCreatingDraft = false
 			session.reply("Kuva-analyysi ei ole käytettävissä")
 			session.mu.Unlock()
 			return
@@ -141,6 +156,7 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 		if err != nil {
 			log.Error().Err(err).Msg("failed to analyze image")
 			session.mu.Lock()
+			session.isCreatingDraft = false
 			session.replyWithError(err)
 			session.mu.Unlock()
 			return
@@ -155,48 +171,54 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 		draftID, etag, err = h.startNewAdFlow(ctx, client)
 		if err != nil {
 			session.mu.Lock()
+			session.isCreatingDraft = false
 			session.replyWithError(err)
 			session.mu.Unlock()
 			return
 		}
-	}
 
-	// Upload photo to draft (NO LOCK - network I/O)
-	uploaded, err := h.uploadPhotoToAd(ctx, client, draftID, photoData, largestPhoto.Width, largestPhoto.Height)
-	if err != nil {
-		session.mu.Lock()
-		session.replyWithError(err)
-		session.mu.Unlock()
-		return
-	}
+		// Set image on draft (NO LOCK - network I/O)
+		allImages := []UploadedImage{{
+			ImagePath: "", // Will be set after upload
+			Width:     largestPhoto.Width,
+			Height:    largestPhoto.Height,
+		}}
 
-	// Now update session state (LOCK)
-	session.mu.Lock()
-	defer session.mu.Unlock()
-
-	// Add photo to session
-	session.photos = append(session.photos, largestPhoto)
-
-	if !existingDraft {
-		// Update session with draft info
-		session.draftID = draftID
-		session.etag = etag
-
-		// Set image on draft
-		allImages := []UploadedImage{*uploaded}
-		newEtag, err := h.setImageOnDraft(ctx, client, draftID, etag, allImages)
+		// Upload photo to draft (NO LOCK - network I/O)
+		uploaded, err := h.uploadPhotoToAd(ctx, client, draftID, photoData, largestPhoto.Width, largestPhoto.Height)
 		if err != nil {
+			session.mu.Lock()
+			session.isCreatingDraft = false
 			session.replyWithError(err)
+			session.mu.Unlock()
 			return
 		}
-		session.etag = newEtag
+		allImages[0] = *uploaded
 
-		// Get category predictions
+		// Set image on draft (NO LOCK - network I/O)
+		newEtag, err := h.setImageOnDraft(ctx, client, draftID, etag, allImages)
+		if err != nil {
+			session.mu.Lock()
+			session.isCreatingDraft = false
+			session.replyWithError(err)
+			session.mu.Unlock()
+			return
+		}
+		etag = newEtag
+
+		// Get category predictions (NO LOCK - network I/O)
 		categories, err = h.getCategoryPredictions(ctx, client, draftID)
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to get category predictions")
 			categories = []tori.CategoryPrediction{}
 		}
+
+		// Now update session state (LOCK)
+		session.mu.Lock()
+		session.isCreatingDraft = false
+		session.photos = append(session.photos, largestPhoto)
+		session.draftID = draftID
+		session.etag = etag
 
 		// Initialize the draft with vision results
 		session.currentDraft = &AdInputDraft{
@@ -226,7 +248,7 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 			// Try LLM-based category selection
 			autoSelectedID := h.tryAutoSelectCategory(ctx, result.Item.Title, result.Item.Description, categories)
 			if autoSelectedID > 0 {
-				// Release lock and process category selection
+				// Release lock and process category selection (which acquires its own lock)
 				session.mu.Unlock()
 				h.processCategorySelection(ctx, session, autoSelectedID)
 				return
@@ -243,19 +265,39 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 			session.currentDraft.State = AdFlowStateAwaitingPrice
 			session.reply("Ei osastoehdotuksia, käytetään oletusta.\n\nSyötä hinta (esim. 50€)")
 		}
+		session.mu.Unlock()
 	} else {
-		// Adding to existing draft
-		session.currentDraft.Images = append(session.currentDraft.Images, *uploaded)
-
-		// Update images on draft
-		newEtag, err := h.setImageOnDraft(ctx, client, draftID, session.etag, session.currentDraft.Images)
+		// Adding to existing draft - upload photo (NO LOCK - network I/O)
+		uploaded, err := h.uploadPhotoToAd(ctx, client, draftID, photoData, largestPhoto.Width, largestPhoto.Height)
 		if err != nil {
+			session.mu.Lock()
 			session.replyWithError(err)
+			session.mu.Unlock()
 			return
 		}
-		session.etag = newEtag
 
+		// Update session and set images on draft
+		session.mu.Lock()
+		session.photos = append(session.photos, largestPhoto)
+		session.currentDraft.Images = append(session.currentDraft.Images, *uploaded)
+		images := make([]UploadedImage, len(session.currentDraft.Images))
+		copy(images, session.currentDraft.Images)
+		currentEtag := session.etag
+		session.mu.Unlock()
+
+		// Update images on draft (NO LOCK - network I/O)
+		newEtag, err := h.setImageOnDraft(ctx, client, draftID, currentEtag, images)
+		if err != nil {
+			session.mu.Lock()
+			session.replyWithError(err)
+			session.mu.Unlock()
+			return
+		}
+
+		session.mu.Lock()
+		session.etag = newEtag
 		session.reply(fmt.Sprintf("Kuva lisätty! Kuvia yhteensä: %d", len(session.photos)))
+		session.mu.Unlock()
 	}
 }
 
