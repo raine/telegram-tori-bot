@@ -70,7 +70,6 @@ func (g *GeminiAnalyzer) AnalyzeImage(ctx context.Context, imageData []byte, mim
 	}
 
 	text := result.Text()
-	log.Info().Str("response", text).Msg("gemini vision response")
 
 	item, err := parseItemDescription(text)
 	if err != nil {
@@ -85,6 +84,13 @@ func (g *GeminiAnalyzer) AnalyzeImage(ctx context.Context, imageData []byte, mim
 		usage.TotalTokens = int64(result.UsageMetadata.TotalTokenCount)
 		usage.CostUSD = calculateGeminiCost(usage.InputTokens, usage.OutputTokens)
 	}
+
+	log.Info().
+		Str("model", geminiModel).
+		Int64("inputTokens", usage.InputTokens).
+		Int64("outputTokens", usage.OutputTokens).
+		Float64("costUSD", usage.CostUSD).
+		Msg("vision llm call")
 
 	return &AnalysisResult{Item: item, Usage: usage}, nil
 }

@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""
+Fetch LLM model prices from LiteLLM's community-maintained database
+and save Gemini prices to a local JSON file.
+
+Source: https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json
+"""
+
+import json
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+
+LITELLM_PRICES_URL = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json"
+OUTPUT_FILE = Path(__file__).parent.parent / "model_prices.json"
+
+# Models we care about (prefixes to match)
+GEMINI_PREFIXES = ["gemini-3", "gemini-2.5", "gemini-2.0", "gemini-1.5"]
+
+
+def fetch_prices():
+    """Fetch the full pricing JSON from LiteLLM."""
+    print(f"Fetching prices from {LITELLM_PRICES_URL}...")
+
+    req = urllib.request.Request(
+        LITELLM_PRICES_URL,
+        headers={"User-Agent": "telegram-tori-bot/1.0"}
+    )
+
+    with urllib.request.urlopen(req, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def filter_models(all_prices: dict) -> dict:
+    """Filter to only Gemini models we use."""
+    filtered = {}
+
+    for model_name, info in all_prices.items():
+        # Skip if missing cost info
+        if "input_cost_per_token" not in info or "output_cost_per_token" not in info:
+            continue
+
+        # Check if it's a Gemini model we want (litellm uses "gemini/" prefix)
+        is_gemini = any(
+            model_name.startswith(prefix) or model_name.startswith(f"gemini/{prefix}")
+            for prefix in GEMINI_PREFIXES
+        )
+
+        if is_gemini:
+            # Normalize the model name (remove "gemini/" prefix if present)
+            normalized_name = model_name.replace("gemini/", "")
+
+            # Convert per-token cost to per-million-tokens for readability
+            input_per_million = info["input_cost_per_token"] * 1_000_000
+            output_per_million = info["output_cost_per_token"] * 1_000_000
+
+            filtered[normalized_name] = {
+                "input_cost_per_million": round(input_per_million, 4),
+                "output_cost_per_million": round(output_per_million, 4),
+            }
+
+    return filtered
+
+
+def main():
+    try:
+        all_prices = fetch_prices()
+        print(f"Fetched {len(all_prices)} models")
+
+        filtered = filter_models(all_prices)
+        print(f"Filtered to {len(filtered)} Gemini models")
+
+        # Sort by name
+        sorted_prices = dict(sorted(filtered.items()))
+
+        output = {
+            "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "source": LITELLM_PRICES_URL,
+            "models": sorted_prices,
+        }
+
+        # Write to file
+        OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
+        with open(OUTPUT_FILE, "w") as f:
+            json.dump(output, f, indent=2)
+
+        print(f"\nWritten to {OUTPUT_FILE}")
+        print("\nModels included:")
+        for name, info in sorted_prices.items():
+            print(f"  {name}: ${info['input_cost_per_million']:.4f} in / ${info['output_cost_per_million']:.4f} out")
+
+    except urllib.error.URLError as e:
+        print(f"Error fetching prices: {e}")
+        return 1
+    except json.JSONDecodeError as e:
+        print(f"Error parsing JSON: {e}")
+        return 1
+
+    return 0
+
+
+if __name__ == "__main__":
+    exit(main())

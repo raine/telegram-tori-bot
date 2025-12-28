@@ -1,0 +1,206 @@
+{
+  "updated_at": "2025-12-28T17:17:39.151150Z",
+  "source": "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
+  "models": {
+    "gemini-1.5-flash": {
+      "input_cost_per_million": 0.075,
+      "output_cost_per_million": 0.3
+    },
+    "gemini-1.5-flash-001": {
+      "input_cost_per_million": 0.075,
+      "output_cost_per_million": 0.3
+    },
+    "gemini-1.5-flash-002": {
+      "input_cost_per_million": 0.075,
+      "output_cost_per_million": 0.3
+    },
+    "gemini-1.5-flash-8b": {
+      "input_cost_per_million": 0,
+      "output_cost_per_million": 0
+    },
+    "gemini-1.5-flash-8b-exp-0827": {
+      "input_cost_per_million": 0,
+      "output_cost_per_million": 0
+    },
+    "gemini-1.5-flash-8b-exp-0924": {
+      "input_cost_per_million": 0,
+      "output_cost_per_million": 0
+    },
+    "gemini-1.5-flash-exp-0827": {
+      "input_cost_per_million": 0,
+      "output_cost_per_million": 0
+    },
+    "gemini-1.5-flash-latest": {
+      "input_cost_per_million": 0.075,
+      "output_cost_per_million": 0.3
+    },
+    "gemini-1.5-flash-preview-0514": {
+      "input_cost_per_million": 0.075,
+      "output_cost_per_million": 0.0047
+    },
+    "gemini-1.5-pro": {
+      "input_cost_per_million": 3.5,
+      "output_cost_per_million": 10.5
+    },
+    "gemini-1.5-pro-001": {
+      "input_cost_per_million": 3.5,
+      "output_cost_per_million": 10.5
+    },
+    "gemini-1.5-pro-002": {
+      "input_cost_per_million": 3.5,
+      "output_cost_per_million": 10.5
+    },
+    "gemini-1.5-pro-exp-0801": {
+      "input_cost_per_million": 3.5,
+      "output_cost_per_million": 10.5
+    },
+    "gemini-1.5-pro-exp-0827": {
+      "input_cost_per_million": 0,
+      "output_cost_per_million": 0
+    },
+    "gemini-1.5-pro-latest": {
+      "input_cost_per_million": 3.5,
+      "output_cost_per_million": 1.05
+    },
+    "gemini-1.5-pro-preview-0215": {
+      "input_cost_per_million": 0.0781,
+      "output_cost_per_million": 0.3125
+    },
+    "gemini-1.5-pro-preview-0409": {
+      "input_cost_per_million": 0.0781,
+      "output_cost_per_million": 0.3125
+    },
+    "gemini-1.5-pro-preview-0514": {
+      "input_cost_per_million": 0.0781,
+      "output_cost_per_million": 0.3125
+    },
+    "gemini-2.0-flash": {
+      "input_cost_per_million": 0.1,
+      "output_cost_per_million": 0.4
+    },
+    "gemini-2.0-flash-001": {
+      "input_cost_per_million": 0.1,
+      "output_cost_per_million": 0.4
+    },
+    "gemini-2.0-flash-exp": {
+      "input_cost_per_million": 0,
+      "output_cost_per_million": 0
+    },
+    "gemini-2.0-flash-lite": {
+      "input_cost_per_million": 0.075,
+      "output_cost_per_million": 0.3
+    },
+    "gemini-2.0-flash-lite-001": {
+      "input_cost_per_million": 0.075,
+      "output_cost_per_million": 0.3
+    },
+    "gemini-2.0-flash-lite-preview-02-05": {
+      "input_cost_per_million": 0.075,
+      "output_cost_per_million": 0.3
+    },
+    "gemini-2.0-flash-live-001": {
+      "input_cost_per_million": 0.35,
+      "output_cost_per_million": 1.5
+    },
+    "gemini-2.0-flash-live-preview-04-09": {
+      "input_cost_per_million": 0.5,
+      "output_cost_per_million": 2.0
+    },
+    "gemini-2.0-flash-preview-image-generation": {
+      "input_cost_per_million": 0.1,
+      "output_cost_per_million": 0.4
+    },
+    "gemini-2.0-flash-thinking-exp": {
+      "input_cost_per_million": 0,
+      "output_cost_per_million": 0
+    },
+    "gemini-2.0-flash-thinking-exp-01-21": {
+      "input_cost_per_million": 0,
+      "output_cost_per_million": 0
+    },
+    "gemini-2.0-pro-exp-02-05": {
+      "input_cost_per_million": 0,
+      "output_cost_per_million": 0
+    },
+    "gemini-2.5-computer-use-preview-10-2025": {
+      "input_cost_per_million": 1.25,
+      "output_cost_per_million": 10.0
+    },
+    "gemini-2.5-flash": {
+      "input_cost_per_million": 0.3,
+      "output_cost_per_million": 2.5
+    },
+    "gemini-2.5-flash-image": {
+      "input_cost_per_million": 0.3,
+      "output_cost_per_million": 2.5
+    },
+    "gemini-2.5-flash-image-preview": {
+      "input_cost_per_million": 0.3,
+      "output_cost_per_million": 30.0
+    },
+    "gemini-2.5-flash-lite": {
+      "input_cost_per_million": 0.1,
+      "output_cost_per_million": 0.4
+    },
+    "gemini-2.5-flash-lite-preview-06-17": {
+      "input_cost_per_million": 0.1,
+      "output_cost_per_million": 0.4
+    },
+    "gemini-2.5-flash-lite-preview-09-2025": {
+      "input_cost_per_million": 0.1,
+      "output_cost_per_million": 0.4
+    },
+    "gemini-2.5-flash-preview-04-17": {
+      "input_cost_per_million": 0.15,
+      "output_cost_per_million": 0.6
+    },
+    "gemini-2.5-flash-preview-05-20": {
+      "input_cost_per_million": 0.3,
+      "output_cost_per_million": 2.5
+    },
+    "gemini-2.5-flash-preview-09-2025": {
+      "input_cost_per_million": 0.3,
+      "output_cost_per_million": 2.5
+    },
+    "gemini-2.5-flash-preview-tts": {
+      "input_cost_per_million": 0.15,
+      "output_cost_per_million": 0.6
+    },
+    "gemini-2.5-pro": {
+      "input_cost_per_million": 1.25,
+      "output_cost_per_million": 10.0
+    },
+    "gemini-2.5-pro-exp-03-25": {
+      "input_cost_per_million": 0.0,
+      "output_cost_per_million": 0.0
+    },
+    "gemini-2.5-pro-preview-03-25": {
+      "input_cost_per_million": 1.25,
+      "output_cost_per_million": 10.0
+    },
+    "gemini-2.5-pro-preview-05-06": {
+      "input_cost_per_million": 1.25,
+      "output_cost_per_million": 10.0
+    },
+    "gemini-2.5-pro-preview-06-05": {
+      "input_cost_per_million": 1.25,
+      "output_cost_per_million": 10.0
+    },
+    "gemini-2.5-pro-preview-tts": {
+      "input_cost_per_million": 1.25,
+      "output_cost_per_million": 10.0
+    },
+    "gemini-3-flash-preview": {
+      "input_cost_per_million": 0.5,
+      "output_cost_per_million": 3.0
+    },
+    "gemini-3-pro-image-preview": {
+      "input_cost_per_million": 2.0,
+      "output_cost_per_million": 12.0
+    },
+    "gemini-3-pro-preview": {
+      "input_cost_per_million": 2.0,
+      "output_cost_per_million": 12.0
+    }
+  }
+}
