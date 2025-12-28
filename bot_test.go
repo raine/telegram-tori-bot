@@ -513,3 +513,88 @@ func TestHandlePriceInput_InvalidPrice(t *testing.T) {
 		t.Errorf("expected state to remain AwaitingPrice, got %v", session.currentDraft.State)
 	}
 }
+
+func TestHandleUpdate_ReplyToTitleEdits(t *testing.T) {
+	ts := makeAdInputTestServer(t)
+	defer ts.Close()
+	_, userId, tg, bot, session := setupAdInputSession(t, ts)
+
+	// Set up session with draft that has message IDs
+	session.currentDraft = &AdInputDraft{
+		State:                AdFlowStateAwaitingCategory,
+		Title:                "Original title",
+		Description:          "Original description",
+		TitleMessageID:       100,
+		DescriptionMessageID: 101,
+	}
+
+	// Create update with reply to title message
+	update := tgbotapi.Update{
+		Message: &tgbotapi.Message{
+			From: &tgbotapi.User{ID: userId},
+			Text: "New title",
+			ReplyToMessage: &tgbotapi.Message{
+				MessageID: 100,
+			},
+		},
+	}
+
+	// Expect edit of original message
+	tg.On("Request", mock.AnythingOfType("tgbotapi.EditMessageTextConfig")).
+		Return(&tgbotapi.APIResponse{Ok: true}, nil).Once()
+	// Expect confirmation message
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		return strings.Contains(msg.Text, "Otsikko päivitetty") &&
+			strings.Contains(msg.Text, "New title")
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	bot.handleUpdate(context.Background(), update)
+	tg.AssertExpectations(t)
+
+	// Verify title was updated
+	if session.currentDraft.Title != "New title" {
+		t.Errorf("expected title='New title', got '%s'", session.currentDraft.Title)
+	}
+}
+
+func TestHandleUpdate_ReplyToDescriptionEdits(t *testing.T) {
+	ts := makeAdInputTestServer(t)
+	defer ts.Close()
+	_, userId, tg, bot, session := setupAdInputSession(t, ts)
+
+	// Set up session with draft that has message IDs
+	session.currentDraft = &AdInputDraft{
+		State:                AdFlowStateAwaitingCategory,
+		Title:                "Original title",
+		Description:          "Original description",
+		TitleMessageID:       100,
+		DescriptionMessageID: 101,
+	}
+
+	// Create update with reply to description message
+	update := tgbotapi.Update{
+		Message: &tgbotapi.Message{
+			From: &tgbotapi.User{ID: userId},
+			Text: "New description",
+			ReplyToMessage: &tgbotapi.Message{
+				MessageID: 101,
+			},
+		},
+	}
+
+	// Expect edit of original message
+	tg.On("Request", mock.AnythingOfType("tgbotapi.EditMessageTextConfig")).
+		Return(&tgbotapi.APIResponse{Ok: true}, nil).Once()
+	// Expect confirmation message
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		return strings.Contains(msg.Text, "Kuvaus päivitetty")
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	bot.handleUpdate(context.Background(), update)
+	tg.AssertExpectations(t)
+
+	// Verify description was updated
+	if session.currentDraft.Description != "New description" {
+		t.Errorf("expected description='New description', got '%s'", session.currentDraft.Description)
+	}
+}

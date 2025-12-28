@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -9,6 +10,15 @@ import (
 
 	"github.com/raine/telegram-tori-bot/tori"
 )
+
+// escapeMarkdown escapes special characters for Telegram Markdown V1
+func escapeMarkdown(text string) string {
+	text = strings.ReplaceAll(text, "*", "\\*")
+	text = strings.ReplaceAll(text, "_", "\\_")
+	text = strings.ReplaceAll(text, "`", "\\`")
+	text = strings.ReplaceAll(text, "[", "\\[")
+	return text
+}
 
 // MessageSender abstracts the ability to send Telegram messages.
 // This interface decouples UserSession from the full Bot struct,

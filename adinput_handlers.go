@@ -30,6 +30,10 @@ type AdInputDraft struct {
 	TradeType   string // "1" = sell, "2" = give away
 	Price       int
 
+	// Message IDs for editing via reply
+	TitleMessageID       int
+	DescriptionMessageID int
+
 	// Image data
 	Images []UploadedImage
 

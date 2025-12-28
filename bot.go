@@ -168,19 +168,21 @@ func (b *Bot) handlePhoto(ctx context.Context, session *UserSession, message *tg
 			CategoryPredictions: categories,
 		}
 
-		// Show detected info to user
-		msgText := fmt.Sprintf(`*Tunnistettu:*
-📦 *Otsikko:* %s
-📝 *Kuvaus:* %s
+		// Send title message (user can reply to edit)
+		titleMsg := tgbotapi.NewMessage(session.userId, fmt.Sprintf("📦 *Otsikko:* %s", escapeMarkdown(result.Item.Title)))
+		titleMsg.ParseMode = tgbotapi.ModeMarkdown
+		sentTitle := session.replyWithMessage(titleMsg)
+		session.currentDraft.TitleMessageID = sentTitle.MessageID
 
-Valitse osasto`,
-			result.Item.Title,
-			result.Item.Description,
-		)
+		// Send description message (user can reply to edit)
+		descMsg := tgbotapi.NewMessage(session.userId, fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(result.Item.Description)))
+		descMsg.ParseMode = tgbotapi.ModeMarkdown
+		sentDesc := session.replyWithMessage(descMsg)
+		session.currentDraft.DescriptionMessageID = sentDesc.MessageID
 
-		// Send message with category keyboard
+		// Send category selection
 		if len(categories) > 0 {
-			msg := tgbotapi.NewMessage(session.userId, msgText)
+			msg := tgbotapi.NewMessage(session.userId, "Valitse osasto")
 			msg.ParseMode = tgbotapi.ModeMarkdown
 			msg.ReplyMarkup = makeCategoryPredictionKeyboard(categories)
 			session.replyWithMessage(msg)
@@ -188,7 +190,7 @@ Valitse osasto`,
 			// No categories predicted, use default
 			session.currentDraft.CategoryID = 76 // "Muu" category
 			session.currentDraft.State = AdFlowStateAwaitingPrice
-			session.reply(msgText + "\n\nEi osastoehdotuksia, käytetään oletusta.\n\nSyötä hinta (esim. 50€)")
+			session.reply("Ei osastoehdotuksia, käytetään oletusta.\n\nSyötä hinta (esim. 50€)")
 		}
 	} else {
 		// Adding to existing draft
@@ -251,6 +253,36 @@ func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		session.mu.Unlock()
 		b.handlePhoto(ctx, session, update.Message)
 		return
+	}
+
+	// Handle replies to title/description messages (editing)
+	if update.Message.ReplyToMessage != nil {
+		session.mu.Lock()
+		draft := session.currentDraft
+		if draft != nil {
+			replyToID := update.Message.ReplyToMessage.MessageID
+			if draft.TitleMessageID == replyToID {
+				draft.Title = update.Message.Text
+				// Edit the original message to show updated title
+				editMsg := tgbotapi.NewEditMessageText(session.userId, replyToID, fmt.Sprintf("📦 *Otsikko:* %s", escapeMarkdown(draft.Title)))
+				editMsg.ParseMode = tgbotapi.ModeMarkdown
+				b.tg.Request(editMsg)
+				session.reply(fmt.Sprintf("✅ Otsikko päivitetty: %s", escapeMarkdown(update.Message.Text)))
+				session.mu.Unlock()
+				return
+			}
+			if draft.DescriptionMessageID == replyToID {
+				draft.Description = update.Message.Text
+				// Edit the original message to show updated description
+				editMsg := tgbotapi.NewEditMessageText(session.userId, replyToID, fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(draft.Description)))
+				editMsg.ParseMode = tgbotapi.ModeMarkdown
+				b.tg.Request(editMsg)
+				session.reply("✅ Kuvaus päivitetty")
+				session.mu.Unlock()
+				return
+			}
+		}
+		session.mu.Unlock()
 	}
 
 	// Handle attribute input if awaiting attribute
@@ -482,8 +514,8 @@ func (b *Bot) handlePriceInput(session *UserSession, text string) {
 📷 *Kuvia:* %d
 
 Lähetä /laheta julkaistaksesi tai /peru peruuttaaksesi.`,
-		session.currentDraft.Title,
-		session.currentDraft.Description,
+		escapeMarkdown(session.currentDraft.Title),
+		escapeMarkdown(session.currentDraft.Description),
 		session.currentDraft.Price,
 		len(session.photos),
 	)
@@ -560,7 +592,6 @@ func (b *Bot) handleSendListing(ctx context.Context, session *UserSession) {
 	log.Info().Str("title", draftCopy.Title).Int("price", draftCopy.Price).Msg("listing published")
 	session.reset()
 }
-
 
 // handleLoginCommand starts the login flow
 func (b *Bot) handleLoginCommand(session *UserSession) {
