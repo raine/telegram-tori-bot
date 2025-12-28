@@ -177,14 +177,9 @@ func makeCategoryPredictionKeyboard(categories []tori.CategoryPrediction) tgbota
 	var rows [][]tgbotapi.InlineKeyboardButton
 
 	for i, cat := range categories {
-		path := tori.GetCategoryPath(cat)
+		// Show last 2 levels of category path for cleaner display
+		displayText := tori.GetCategoryPathLastN(cat, 2)
 		callbackData := fmt.Sprintf("cat:%d", cat.ID)
-
-		// Truncate long paths for button text
-		displayText := path
-		if len(displayText) > 50 {
-			displayText = "..." + displayText[len(displayText)-47:]
-		}
 
 		// Use emoji number if available, otherwise fall back to bracketed number
 		prefix := fmt.Sprintf("[%d]", i+1)

@@ -49,3 +49,27 @@ func GetCategoryPath(cat CategoryPrediction) string {
 	}
 	return GetCategoryPath(*cat.Parent) + " > " + cat.Label
 }
+
+// GetCategoryPathLastN returns the last N levels of the category path
+func GetCategoryPathLastN(cat CategoryPrediction, n int) string {
+	parts := getCategoryParts(cat)
+	if len(parts) <= n {
+		return joinParts(parts)
+	}
+	return joinParts(parts[len(parts)-n:])
+}
+
+func getCategoryParts(cat CategoryPrediction) []string {
+	if cat.Parent == nil {
+		return []string{cat.Label}
+	}
+	return append(getCategoryParts(*cat.Parent), cat.Label)
+}
+
+func joinParts(parts []string) string {
+	result := parts[0]
+	for i := 1; i < len(parts); i++ {
+		result += " > " + parts[i]
+	}
+	return result
+}
