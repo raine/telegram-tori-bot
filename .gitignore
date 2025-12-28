@@ -1,1 +1,6 @@
 stuff
+auth_cookies.json
+auth_tokens.json
+/create-listing
+/login-test
+/test-session
