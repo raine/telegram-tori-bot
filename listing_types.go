@@ -1,13 +1,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/raine/telegram-tori-bot/tori"
-	"github.com/rs/zerolog/log"
 )
 
 // AdFlowState tracks where we are in the ad creation flow
@@ -72,104 +70,6 @@ var (
 	ErrNoDeviceID     = fmt.Errorf("no device ID available")
 	ErrNoDraft        = fmt.Errorf("no active draft")
 )
-
-// startNewAdFlow creates a draft and returns the ID and ETag.
-// Does NOT mutate session - caller must update session with returned values.
-func (b *Bot) startNewAdFlow(ctx context.Context, client *tori.AdinputClient) (draftID string, etag string, err error) {
-	log.Info().Msg("creating draft ad")
-	draft, err := client.CreateDraftAd(ctx)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to create draft: %w", err)
-	}
-
-	log.Info().Str("draftId", draft.ID).Msg("draft ad created")
-	return draft.ID, draft.ETag, nil
-}
-
-// uploadPhotoToAd uploads a photo to the draft ad.
-// Does NOT mutate session.
-func (b *Bot) uploadPhotoToAd(ctx context.Context, client *tori.AdinputClient, draftID string, photoData []byte, width, height int) (*UploadedImage, error) {
-	if draftID == "" {
-		return nil, fmt.Errorf("no draft ad to upload to")
-	}
-
-	resp, err := client.UploadImage(ctx, draftID, photoData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to upload image: %w", err)
-	}
-
-	return &UploadedImage{
-		ImagePath: resp.ImagePath,
-		Location:  resp.Location,
-		Width:     width,
-		Height:    height,
-	}, nil
-}
-
-// setImageOnDraft sets the uploaded image(s) on the draft and returns new ETag.
-// Does NOT mutate session.
-func (b *Bot) setImageOnDraft(ctx context.Context, client *tori.AdinputClient, draftID, etag string, images []UploadedImage) (string, error) {
-	if len(images) == 0 {
-		return etag, nil
-	}
-
-	imageData := make([]map[string]any, len(images))
-	for i, img := range images {
-		imageData[i] = map[string]any{
-			"uri":    img.ImagePath,
-			"width":  img.Width,
-			"height": img.Height,
-			"type":   "image/jpg",
-		}
-	}
-
-	patchResp, err := client.PatchItem(ctx, draftID, etag, map[string]any{
-		"image": imageData,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to set image on item: %w", err)
-	}
-
-	return patchResp.ETag, nil
-}
-
-// getCategoryPredictions gets AI-suggested categories from the uploaded image.
-// Does NOT mutate session.
-func (b *Bot) getCategoryPredictions(ctx context.Context, client *tori.AdinputClient, draftID string) ([]tori.CategoryPrediction, error) {
-	if draftID == "" {
-		return nil, fmt.Errorf("no draft ad")
-	}
-
-	return client.GetCategoryPredictions(ctx, draftID)
-}
-
-// setCategoryOnDraft sets the category on the draft and returns new ETag.
-// Does NOT mutate session.
-func (b *Bot) setCategoryOnDraft(ctx context.Context, client *tori.AdinputClient, draftID, etag string, categoryID int) (string, error) {
-	patchResp, err := client.PatchItem(ctx, draftID, etag, map[string]any{
-		"category": categoryID,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to set category: %w", err)
-	}
-
-	return patchResp.ETag, nil
-}
-
-// getAttributesForDraft fetches category-specific attributes
-func (b *Bot) getAttributesForDraft(ctx context.Context, session *UserSession) (*tori.AttributesResponse, error) {
-	if session.draftID == "" {
-		return nil, fmt.Errorf("no draft ad")
-	}
-
-	attrs, err := session.adInputClient.GetAttributes(ctx, session.draftID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get attributes: %w", err)
-	}
-
-	session.adAttributes = attrs
-	return attrs, nil
-}
 
 var emojiNumbers = []string{"1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"}
 
@@ -272,45 +172,4 @@ func buildFinalPayload(
 	}
 
 	return payload
-}
-
-// updateAndPublishAd updates the ad with all fields and publishes it.
-// Does NOT mutate session.
-func (b *Bot) updateAndPublishAd(
-	ctx context.Context,
-	client *tori.AdinputClient,
-	draftID string,
-	etag string,
-	draft *AdInputDraft,
-	images []UploadedImage,
-	postalCode string,
-) error {
-	payload := buildFinalPayload(draft, images, postalCode)
-
-	// Update the ad
-	_, err := client.UpdateAd(ctx, draftID, etag, payload)
-	if err != nil {
-		return fmt.Errorf("failed to update ad: %w", err)
-	}
-
-	// Set delivery options - always use meetup mode since ToriDiili shipping
-	// requires full address/phone/package info that we don't collect
-	err = client.SetDeliveryOptions(ctx, draftID, tori.DeliveryOptions{
-		BuyNow:             false,
-		Client:             "ANDROID",
-		Meetup:             true,
-		SellerPaysShipping: false,
-		Shipping:           false,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to set delivery options: %w", err)
-	}
-
-	// Publish
-	_, err = client.PublishAd(ctx, draftID)
-	if err != nil {
-		return fmt.Errorf("failed to publish ad: %w", err)
-	}
-
-	return nil
 }

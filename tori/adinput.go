@@ -16,6 +16,11 @@ const (
 	AdinputBaseURL = "https://apps-adinput.svc.tori.fi"
 	GatewayBaseURL = "https://apps-gw-poc.svc.tori.fi"
 
+	// Service names for gateway routing
+	ServiceAdinput      = "APPS-ADINPUT"
+	ServiceItemCreation = "RC-ITEM-CREATION-FLOW-API"
+	ServiceTjtAPI       = "TJT-API"
+
 	// Android app version strings - update these when the API requires newer versions
 	// Format: ToriApp_And/{version} (Linux; U; Android {os}; {locale}; {device} Build/{build}) ToriNativeApp(UA spoofed for tracking) ToriApp_And
 	androidUserAgent      = "ToriApp_And/26.4.0 (Linux; U; Android 14; en_us; Pixel 6 Build/UP1A.231005.007) ToriNativeApp(UA spoofed for tracking) ToriApp_And"
@@ -80,6 +85,74 @@ func (c *AdinputClient) setCommonHeaders(req *http.Request, service string, body
 	req.Header.Set("x-finn-apps-adinput-version-name", adinputVersion)
 }
 
+// requestOptions contains optional settings for doJSON
+type requestOptions struct {
+	etag          string // If-Match header value
+	expectedCodes []int  // Expected success status codes (defaults to 200)
+}
+
+// doJSON performs a JSON API request and decodes the response.
+// The reqBody can be nil, a map, or any struct that can be JSON marshaled.
+// The respDest should be a pointer to a struct to decode the response into, or nil if no response body is expected.
+func (c *AdinputClient) doJSON(ctx context.Context, method, fullURL, service string, reqBody any, respDest any, opts *requestOptions) error {
+	var bodyReader io.Reader
+	var bodyBytes []byte
+
+	if reqBody != nil {
+		var err error
+		bodyBytes, err = json.Marshal(reqBody)
+		if err != nil {
+			return fmt.Errorf("failed to marshal request body: %w", err)
+		}
+		bodyReader = bytes.NewReader(bodyBytes)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, fullURL, bodyReader)
+	if err != nil {
+		return err
+	}
+
+	c.setCommonHeaders(req, service, bodyBytes)
+	if reqBody != nil {
+		req.Header.Set("Content-Type", "application/json")
+	} else {
+		req.Header.Set("Content-Length", "0")
+	}
+	if opts != nil && opts.etag != "" {
+		req.Header.Set("If-Match", opts.etag)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// Check status code
+	expectedCodes := []int{http.StatusOK}
+	if opts != nil && len(opts.expectedCodes) > 0 {
+		expectedCodes = opts.expectedCodes
+	}
+	statusOK := false
+	for _, code := range expectedCodes {
+		if resp.StatusCode == code {
+			statusOK = true
+			break
+		}
+	}
+	if !statusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API error %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	if respDest != nil {
+		if err := json.NewDecoder(resp.Body).Decode(respDest); err != nil {
+			return fmt.Errorf("failed to decode response: %w", err)
+		}
+	}
+	return nil
+}
+
 // DraftAd represents the ad object returned when creating a draft
 type DraftAd struct {
 	ID          string `json:"id"`
@@ -98,33 +171,13 @@ type CreateDraftResponse struct {
 
 // CreateDraftAd creates a new draft ad
 func (c *AdinputClient) CreateDraftAd(ctx context.Context) (*DraftAd, error) {
-	path := "/adinput/ad/withModel/recommerce"
-	reqURL := AdinputBaseURL + path
-
-	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	c.setCommonHeaders(req, "APPS-ADINPUT", nil)
-	req.Header.Set("Content-Length", "0")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to create draft: %d - %s", resp.StatusCode, string(body))
-	}
-
 	var result CreateDraftResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
+	err := c.doJSON(ctx, "POST", AdinputBaseURL+"/adinput/ad/withModel/recommerce", ServiceAdinput, nil, &result, &requestOptions{
+		expectedCodes: []int{http.StatusCreated},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create draft: %w", err)
 	}
-
 	return &result.Ad, nil
 }
 
@@ -154,7 +207,7 @@ func (c *AdinputClient) UploadImage(ctx context.Context, adID string, imageData 
 		return nil, err
 	}
 
-	c.setCommonHeaders(req, "APPS-ADINPUT", nil)
+	c.setCommonHeaders(req, ServiceAdinput, nil)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("upload-draft-interop-version", "6")
 	req.Header.Set("upload-complete", "?1")
@@ -193,33 +246,11 @@ type CategoryPredictionsResponse struct {
 
 // GetCategoryPredictions gets AI-suggested categories based on the uploaded image
 func (c *AdinputClient) GetCategoryPredictions(ctx context.Context, adID string) ([]CategoryPrediction, error) {
-	path := fmt.Sprintf("/categories/predictions/%s", adID)
-	reqURL := c.baseURL + path
-
-	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	c.setCommonHeaders(req, "RC-ITEM-CREATION-FLOW-API", nil)
-	req.Header.Set("Content-Length", "0")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to get category predictions: %d - %s", resp.StatusCode, string(body))
-	}
-
 	var result CategoryPredictionsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
+	err := c.doJSON(ctx, "POST", c.baseURL+"/categories/predictions/"+adID, ServiceItemCreation, nil, &result, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get category predictions: %w", err)
 	}
-
 	return result.Prediction.Categories, nil
 }
 
@@ -231,39 +262,11 @@ type PatchItemResponse struct {
 
 // PatchItem updates item data (used to set image, category, etc.)
 func (c *AdinputClient) PatchItem(ctx context.Context, adID, etag string, data map[string]any) (*PatchItemResponse, error) {
-	path := fmt.Sprintf("/items/%s", adID)
-	reqURL := c.baseURL + path
-
-	body, err := json.Marshal(map[string]any{"data": data})
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "PATCH", reqURL, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-
-	c.setCommonHeaders(req, "RC-ITEM-CREATION-FLOW-API", body)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("If-Match", etag)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to patch item: %d - %s", resp.StatusCode, string(respBody))
-	}
-
 	var result PatchItemResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
+	err := c.doJSON(ctx, "PATCH", c.baseURL+"/items/"+adID, ServiceItemCreation, map[string]any{"data": data}, &result, &requestOptions{etag: etag})
+	if err != nil {
+		return nil, fmt.Errorf("patch item: %w", err)
 	}
-
 	return &result, nil
 }
 
@@ -293,32 +296,11 @@ type AttributesResponse struct {
 
 // GetAttributes gets category-specific attributes for the current category
 func (c *AdinputClient) GetAttributes(ctx context.Context, adID string) (*AttributesResponse, error) {
-	path := fmt.Sprintf("/attributes/%s", adID)
-	reqURL := c.baseURL + path
-
-	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	c.setCommonHeaders(req, "RC-ITEM-CREATION-FLOW-API", nil)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to get attributes: %d - %s", resp.StatusCode, string(body))
-	}
-
 	var result AttributesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
+	err := c.doJSON(ctx, "GET", c.baseURL+"/attributes/"+adID, ServiceItemCreation, nil, &result, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get attributes: %w", err)
 	}
-
 	return &result, nil
 }
 
@@ -380,39 +362,11 @@ type UpdateAdResponse struct {
 
 // UpdateAd updates the ad with all fields
 func (c *AdinputClient) UpdateAd(ctx context.Context, adID, etag string, payload AdUpdatePayload) (*UpdateAdResponse, error) {
-	path := fmt.Sprintf("/adinput/ad/recommerce/%s/update", adID)
-	reqURL := AdinputBaseURL + path
-
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "PUT", reqURL, bytes.NewReader(body))
-	if err != nil {
-		return nil, err
-	}
-
-	c.setCommonHeaders(req, "APPS-ADINPUT", body)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("If-Match", etag)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to update ad: %d - %s", resp.StatusCode, string(respBody))
-	}
-
 	var result UpdateAdResponse
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
+	err := c.doJSON(ctx, "PUT", AdinputBaseURL+"/adinput/ad/recommerce/"+adID+"/update", ServiceAdinput, payload, &result, &requestOptions{etag: etag})
+	if err != nil {
+		return nil, fmt.Errorf("update ad: %w", err)
 	}
-
 	return &result, nil
 }
 
@@ -427,33 +381,10 @@ type DeliveryOptions struct {
 
 // SetDeliveryOptions sets delivery options for the ad
 func (c *AdinputClient) SetDeliveryOptions(ctx context.Context, adID string, opts DeliveryOptions) error {
-	path := fmt.Sprintf("/ads/%s/delivery", adID)
-	reqURL := c.baseURL + path
-
-	body, err := json.Marshal(opts)
+	err := c.doJSON(ctx, "POST", c.baseURL+"/ads/"+adID+"/delivery", ServiceTjtAPI, opts, nil, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("set delivery options: %w", err)
 	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-
-	c.setCommonHeaders(req, "TJT-API", body)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to set delivery options: %d - %s", resp.StatusCode, string(respBody))
-	}
-
 	return nil
 }
 
@@ -479,7 +410,7 @@ func (c *AdinputClient) PublishAd(ctx context.Context, adID string) (*OrderRespo
 		return nil, err
 	}
 
-	c.setCommonHeaders(req, "APPS-ADINPUT", []byte(body))
+	c.setCommonHeaders(req, ServiceAdinput, []byte(body))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := c.httpClient.Do(req)
