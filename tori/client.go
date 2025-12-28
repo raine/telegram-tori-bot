@@ -60,6 +60,11 @@ func NewClient(opts ClientOpts) *Client {
 	return &c
 }
 
+// GetAuth returns the authorization header value
+func (c *Client) GetAuth() string {
+	return c.auth
+}
+
 func (c *Client) req(ctx context.Context, result any) *resty.Request {
 	request := c.httpClient.
 		NewRequest().

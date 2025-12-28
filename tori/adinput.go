@@ -15,6 +15,15 @@ import (
 const (
 	AdinputBaseURL = "https://apps-adinput.svc.tori.fi"
 	GatewayBaseURL = "https://apps-gw-poc.svc.tori.fi"
+
+	// Android app version strings - update these when the API requires newer versions
+	// Format: ToriApp_And/{version} (Linux; U; Android {os}; {locale}; {device} Build/{build}) ToriNativeApp(UA spoofed for tracking) ToriApp_And
+	androidUserAgent      = "ToriApp_And/26.4.0 (Linux; U; Android 14; en_us; Pixel 6 Build/UP1A.231005.007) ToriNativeApp(UA spoofed for tracking) ToriApp_And"
+	androidAppVersionName = "26.4.0"
+	androidAppBuildNumber = "26357"
+	androidOSVersion      = "14"
+	androidDevice         = "Pixel 6"
+	adinputVersion        = "viewings"
 )
 
 // AdinputClient handles the new tori.fi ad creation APIs
@@ -38,25 +47,25 @@ func (c *AdinputClient) setCommonHeaders(req *http.Request, service string, body
 	path := req.URL.Path
 	method := req.Method
 
-	req.Header.Set("User-Agent", "ToriApp_iOS/26.4.0-26357 (iPhone; CPU iPhone OS 26.1 like Mac OS X)")
+	req.Header.Set("User-Agent", androidUserAgent)
 	req.Header.Set("Accept", "application/json; charset=UTF-8")
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	req.Header.Set("Authorization", "Bearer "+c.bearerToken)
 
 	// Gateway headers
-	req.Header.Set("finn-device-info", "iOS, mobile")
+	req.Header.Set("finn-device-info", "Android, mobile")
 	req.Header.Set("finn-gw-service", service)
 	req.Header.Set("finn-gw-key", CalculateGatewayKey(method, path, service, body))
 	req.Header.Set("finn-app-installation-id", c.installationID)
 
-	// NMP headers
-	req.Header.Set("x-nmp-os-name", "iOS")
-	req.Header.Set("x-nmp-os-version", "18.0")
-	req.Header.Set("x-nmp-app-version-name", "26.4.0")
-	req.Header.Set("x-nmp-app-build-number", "26357")
+	// NMP headers (Android format)
+	req.Header.Set("x-nmp-os-name", "Android")
+	req.Header.Set("x-nmp-os-version", androidOSVersion)
+	req.Header.Set("x-nmp-app-version-name", androidAppVersionName)
+	req.Header.Set("x-nmp-app-build-number", androidAppBuildNumber)
 	req.Header.Set("x-nmp-app-brand", "Tori")
-	req.Header.Set("x-nmp-device", "iPhone")
-	req.Header.Set("x-finn-apps-adinput-version-name", "viewings")
+	req.Header.Set("x-nmp-device", androidDevice)
+	req.Header.Set("x-finn-apps-adinput-version-name", adinputVersion)
 }
 
 // DraftAd represents the ad object returned when creating a draft
@@ -315,6 +324,18 @@ type AdUpdatePayload struct {
 	Extra map[string]any `json:"-"`
 }
 
+// reservedPayloadKeys are the keys that cannot be overwritten by Extra fields
+var reservedPayloadKeys = map[string]bool{
+	"category":    true,
+	"title":       true,
+	"description": true,
+	"trade_type":  true,
+	"location":    true,
+	"image":       true,
+	"multi_image": true,
+	"condition":   true,
+}
+
 // MarshalJSON custom marshals AdUpdatePayload to include extra fields
 func (p AdUpdatePayload) MarshalJSON() ([]byte, error) {
 	// Create a map with all the known fields
@@ -330,9 +351,11 @@ func (p AdUpdatePayload) MarshalJSON() ([]byte, error) {
 	if p.Condition != "" {
 		m["condition"] = p.Condition
 	}
-	// Add extra dynamic fields
+	// Add extra dynamic fields (skip reserved keys to prevent overwrites)
 	for k, v := range p.Extra {
-		m[k] = v
+		if !reservedPayloadKeys[k] {
+			m[k] = v
+		}
 	}
 	return json.Marshal(m)
 }

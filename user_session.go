@@ -44,6 +44,15 @@ type UserSession struct {
 	refreshToken string
 	// Device ID (UUID) - unique per user, used for API requests
 	deviceID string
+
+	// New adinput API state for ad creation
+	adInputClient *tori.AdinputClient
+	draftID       string
+	etag          string
+	// Attributes for the selected category (used for prompting required fields)
+	adAttributes *tori.AttributesResponse
+	// Current draft being created (persists user input between messages)
+	currentDraft *AdInputDraft
 }
 
 func (s *UserSession) reset() {
@@ -56,6 +65,12 @@ func (s *UserSession) reset() {
 	if s.authFlow != nil {
 		s.authFlow.Reset()
 	}
+	// Reset new adinput API state
+	s.adInputClient = nil
+	s.draftID = ""
+	s.etag = ""
+	s.adAttributes = nil
+	s.currentDraft = nil
 }
 
 func (s *UserSession) replyWithError(err error) tgbotapi.Message {
