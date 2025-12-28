@@ -529,8 +529,6 @@ func (b *Bot) handleSendListing(ctx context.Context, session *UserSession) {
 	images := make([]UploadedImage, len(session.currentDraft.Images))
 	copy(images, session.currentDraft.Images)
 	client := session.adInputClient
-	toriClient := session.client
-	toriAccountId := session.toriAccountId
 
 	session.reply("Lähetetään ilmoitusta...")
 
@@ -546,21 +544,8 @@ func (b *Bot) handleSendListing(ctx context.Context, session *UserSession) {
 	}
 	etag = newEtag
 
-	// Get user's postal code from account
-	account, err := toriClient.GetAccount(ctx, toriAccountId)
-	if err != nil {
-		session.mu.Lock()
-		session.replyWithError(err)
-		return
-	}
-
-	// Safe postal code extraction
-	postalCode := extractPostalCode(account)
-	if postalCode == "" {
-		session.mu.Lock()
-		session.reply("Postinumero puuttuu tori-tilistä")
-		return
-	}
+	// TODO: get postal code from user profile or session
+	postalCode := "00420"
 
 	// Update and publish
 	if err := b.updateAndPublishAd(ctx, client, draftID, etag, &draftCopy, images, postalCode); err != nil {
@@ -576,19 +561,6 @@ func (b *Bot) handleSendListing(ctx context.Context, session *UserSession) {
 	session.reset()
 }
 
-// extractPostalCode safely extracts postal code from account locations
-func extractPostalCode(account tori.Account) string {
-	if len(account.Locations) == 0 {
-		return ""
-	}
-	if len(account.Locations[0].Locations) == 0 {
-		return ""
-	}
-	if len(account.Locations[0].Locations[0].Locations) == 0 {
-		return ""
-	}
-	return account.Locations[0].Locations[0].Locations[0].Code
-}
 
 // handleLoginCommand starts the login flow
 func (b *Bot) handleLoginCommand(session *UserSession) {

@@ -12,6 +12,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/raine/telegram-tori-bot/storage"
 	"github.com/raine/telegram-tori-bot/tori/auth"
+	"github.com/raine/telegram-tori-bot/vision"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -109,6 +110,19 @@ func (m *botApiMock) Request(c tgbotapi.Chattable) (*tgbotapi.APIResponse, error
 func (m *botApiMock) GetFileDirectURL(fileID string) (string, error) {
 	args := m.Called(fileID)
 	return args.Get(0).(string), args.Error(1)
+}
+
+// mockVisionAnalyzer implements vision.Analyzer for testing
+type mockVisionAnalyzer struct {
+	mock.Mock
+}
+
+func (m *mockVisionAnalyzer) AnalyzeImage(ctx context.Context, data []byte, mimeType string) (*vision.AnalysisResult, error) {
+	args := m.Called(ctx, data, mimeType)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*vision.AnalysisResult), args.Error(1)
 }
 
 func makeUpdateWithMessageText(userId int64, text string) tgbotapi.Update {

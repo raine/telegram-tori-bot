@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	ApiBaseUrl = "https://api.tori.fi/api"
+	ApiBaseUrl = "https://api.tori.fi/api" // Legacy - not used in new flow
 )
 
 type AccountResponse struct {
