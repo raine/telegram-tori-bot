@@ -43,6 +43,9 @@ func main() {
 	tg.Debug = false
 	log.Info().Str("username", tg.Self.UserName).Msg("authorized on account")
 
+	// Register bot commands for Telegram's command menu
+	registerCommands(tg)
+
 	// Derive encryption key from passphrase
 	encryptionKey, err := storage.DeriveKey(tokenKey)
 	if err != nil {
