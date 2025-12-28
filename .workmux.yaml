@@ -1,0 +1,8 @@
+post_create:
+  - direnv allow
+
+files:
+  symlink:
+    - .envrc
+    - .env
+    - CLAUDE.md
