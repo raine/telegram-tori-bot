@@ -70,7 +70,7 @@ func (m *mockSessionStore) DeleteTemplate(telegramID int64) error {
 	return nil
 }
 
-func setupWithTestServer(t *testing.T, ts *httptest.Server) (*httptest.Server, int64, *botApiMock, *Bot, *UserSession) {
+func setup(t *testing.T) (int64, *botApiMock, *Bot, *UserSession) {
 	userId := int64(1)
 	tg := new(botApiMock)
 
@@ -84,18 +84,13 @@ func setupWithTestServer(t *testing.T, ts *httptest.Server) (*httptest.Server, i
 		},
 	}
 
-	bot := NewBot(tg, ts.URL, store)
+	bot := NewBot(tg, store)
 	session, err := bot.state.getUserSession(userId)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	return ts, userId, tg, bot, session
-}
-
-func setup(t *testing.T) (*httptest.Server, int64, *botApiMock, *Bot, *UserSession) {
-	ts := makeTestServer(t)
-	return setupWithTestServer(t, ts)
+	return userId, tg, bot, session
 }
 
 func formatJson(b []byte) string {
@@ -156,27 +151,16 @@ func makeMessage(userId int64, text string) tgbotapi.MessageConfig {
 	return msg
 }
 
-func makeTestServer(t *testing.T) *httptest.Server {
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("{}"))
-	}))
-}
-
 func TestMain(m *testing.M) {
 	os.Setenv("GO_ENV", "test")
 	os.Exit(m.Run())
 }
 
 func TestHandleUpdate_UnauthenticatedUser(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
-		t.Fatal("no requests expected")
-	}))
-	defer ts.Close()
 	userId := int64(99999) // Not in session store
 	tg := new(botApiMock)
 	store := newMockSessionStore() // Empty store - no authenticated users
-	bot := NewBot(tg, ts.URL, store)
+	bot := NewBot(tg, store)
 
 	update := tgbotapi.Update{
 		Message: &tgbotapi.Message{
@@ -194,8 +178,7 @@ func TestHandleUpdate_UnauthenticatedUser(t *testing.T) {
 }
 
 func TestHandleUpdate_AuthenticatedUserStart(t *testing.T) {
-	ts, userId, tg, bot, _ := setup(t)
-	defer ts.Close()
+	userId, tg, bot, _ := setup(t)
 
 	update := makeUpdateWithMessageText(userId, "/start")
 
@@ -207,8 +190,7 @@ func TestHandleUpdate_AuthenticatedUserStart(t *testing.T) {
 }
 
 func TestHandleUpdate_RemovePhotosCommand(t *testing.T) {
-	ts, userId, tg, bot, session := setup(t)
-	defer ts.Close()
+	userId, tg, bot, session := setup(t)
 
 	update := makeUpdateWithMessageText(userId, "/poistakuvat")
 
@@ -285,7 +267,7 @@ func setupAdInputSession(t *testing.T, ts *httptest.Server) (*httptest.Server, i
 		},
 	}
 
-	bot := NewBot(tg, ts.URL, store)
+	bot := NewBot(tg, store)
 	session, err := bot.state.getUserSession(userId)
 	if err != nil {
 		t.Fatal(err)

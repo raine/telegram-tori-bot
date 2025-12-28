@@ -3,7 +3,6 @@ package main
 import (
 	"sync"
 
-	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/rs/zerolog/log"
 )
 
@@ -29,10 +28,7 @@ func (bs *BotState) newUserSession(userId int64) (*UserSession, error) {
 			session.toriAccountId = storedSession.ToriUserID
 			session.refreshToken = storedSession.Tokens.RefreshToken
 			session.deviceID = storedSession.Tokens.DeviceID
-			session.client = tori.NewClient(tori.ClientOpts{
-				Auth:    "Bearer " + storedSession.Tokens.BearerToken,
-				BaseURL: bs.bot.toriApiBaseUrl,
-			})
+			session.bearerToken = storedSession.Tokens.BearerToken
 			log.Info().Int64("userId", userId).Msg("loaded session from database")
 			return &session, nil
 		}

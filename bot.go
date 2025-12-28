@@ -24,16 +24,14 @@ type BotAPI interface {
 type Bot struct {
 	tg             BotAPI
 	state          BotState
-	toriApiBaseUrl string
 	sessionStore   storage.SessionStore
 	visionAnalyzer vision.Analyzer
 }
 
-func NewBot(tg BotAPI, toriApiBaseUrl string, sessionStore storage.SessionStore) *Bot {
+func NewBot(tg BotAPI, sessionStore storage.SessionStore) *Bot {
 	bot := &Bot{
-		tg:             tg,
-		toriApiBaseUrl: toriApiBaseUrl,
-		sessionStore:   sessionStore,
+		tg:           tg,
+		sessionStore: sessionStore,
 	}
 
 	bot.state = bot.NewBotState()
@@ -245,7 +243,7 @@ func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	// Handle photo messages (handlePhoto manages its own locking)
 	if len(update.Message.Photo) > 0 {
 		session.mu.Lock()
-		if session.client == nil {
+		if !session.isLoggedIn() {
 			session.reply(loginRequiredText)
 			session.mu.Unlock()
 			return
@@ -322,7 +320,7 @@ func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	command, _ := parseCommand(update.Message.Text)
 	switch command {
 	case "/start":
-		if session.client == nil {
+		if !session.isLoggedIn() {
 			session.reply(loginRequiredText)
 		} else {
 			session.reply(startText)
@@ -344,7 +342,7 @@ func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	case "/poistamalli":
 		b.handleDeleteTemplate(session)
 	default:
-		if session.client == nil {
+		if !session.isLoggedIn() {
 			session.reply(loginRequiredText)
 			return
 		}
@@ -701,7 +699,7 @@ func (b *Bot) handleSendListing(ctx context.Context, session *UserSession) {
 // handleLoginCommand starts the login flow
 func (b *Bot) handleLoginCommand(session *UserSession) {
 	// Check if already logged in
-	if session.client != nil {
+	if session.isLoggedIn() {
 		session.reply(loginAlreadyLoggedInText)
 		return
 	}
@@ -827,14 +825,11 @@ func (b *Bot) finalizeAuth(ctx context.Context, session *UserSession) {
 		}
 	}
 
-	// Update session with new client
+	// Update session with tokens
 	session.toriAccountId = tokens.UserID
 	session.refreshToken = tokens.RefreshToken
 	session.deviceID = tokens.DeviceID
-	session.client = tori.NewClient(tori.ClientOpts{
-		Auth:    "Bearer " + tokens.BearerToken,
-		BaseURL: b.toriApiBaseUrl,
-	})
+	session.bearerToken = tokens.BearerToken
 
 	session.authFlow.Reset()
 	session.reply(loginSuccessText)
@@ -859,10 +854,8 @@ func (b *Bot) tryRefreshTokens(session *UserSession) error {
 
 	// Update session with new tokens
 	session.refreshToken = newTokens.RefreshToken
-	session.client = tori.NewClient(tori.ClientOpts{
-		Auth:    "Bearer " + newTokens.BearerToken,
-		BaseURL: b.toriApiBaseUrl,
-	})
+	session.bearerToken = newTokens.BearerToken
+	session.adInputClient = nil // Reset so it gets recreated with new token
 
 	// Persist new tokens to storage
 	if b.sessionStore != nil {

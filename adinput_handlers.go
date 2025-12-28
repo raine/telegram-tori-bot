@@ -60,14 +60,8 @@ type UploadedImage struct {
 
 // initAdInputClient initializes the AdinputClient for the session if not already done
 func (s *UserSession) initAdInputClient() {
-	if s.adInputClient == nil && s.client != nil {
-		// Get bearer token from existing client auth header
-		// The client stores auth as "Bearer <token>", extract just the token
-		auth := s.client.GetAuth()
-		if len(auth) > 7 && auth[:7] == "Bearer " {
-			bearerToken := auth[7:]
-			s.adInputClient = tori.NewAdinputClient(bearerToken)
-		}
+	if s.adInputClient == nil && s.bearerToken != "" {
+		s.adInputClient = tori.NewAdinputClient(s.bearerToken)
 	}
 }
 

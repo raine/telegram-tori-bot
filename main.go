@@ -9,7 +9,6 @@ import (
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/raine/telegram-tori-bot/storage"
-	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/raine/telegram-tori-bot/vision"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -91,7 +90,7 @@ func runBot(ctx context.Context, tg *tgbotapi.BotAPI, sessionStore storage.Sessi
 	updateConfig.Timeout = 60
 	updates := tg.GetUpdatesChan(updateConfig)
 
-	bot := NewBot(tg, tori.ApiBaseUrl, sessionStore)
+	bot := NewBot(tg, sessionStore)
 	if visionAnalyzer != nil {
 		bot.SetVisionAnalyzer(visionAnalyzer)
 	}

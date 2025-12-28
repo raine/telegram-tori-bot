@@ -11,6 +11,11 @@ import (
 	"github.com/raine/telegram-tori-bot/tori"
 )
 
+// isLoggedIn returns true if the user has a valid bearer token
+func (s *UserSession) isLoggedIn() bool {
+	return s.bearerToken != ""
+}
+
 // escapeMarkdown escapes special characters for Telegram Markdown V1
 func escapeMarkdown(text string) string {
 	text = strings.ReplaceAll(text, "*", "\\*")
@@ -34,7 +39,7 @@ type PendingPhoto struct {
 
 type UserSession struct {
 	userId        int64
-	client        *tori.Client
+	bearerToken   string
 	toriAccountId string
 	sender        MessageSender
 	mu            sync.Mutex
