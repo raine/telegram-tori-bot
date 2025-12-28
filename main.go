@@ -67,9 +67,9 @@ func main() {
 	}
 	visionAnalyzer, err := llm.NewGeminiAnalyzer(ctx)
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to initialize Gemini vision analyzer")
+		log.Fatal().Err(err).Msg("failed to initialize gemini vision analyzer")
 	}
-	log.Info().Msg("Gemini vision analyzer initialized")
+	log.Info().Msg("gemini vision analyzer initialized")
 
 	g, ctx := errgroup.WithContext(ctx)
 
