@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/rs/zerolog/log"
 	"google.golang.org/genai"
 )
 
@@ -69,6 +70,8 @@ func (g *GeminiAnalyzer) AnalyzeImage(ctx context.Context, imageData []byte, mim
 	}
 
 	text := result.Text()
+	log.Info().Str("response", text).Msg("gemini vision response")
+
 	item, err := parseItemDescription(text)
 	if err != nil {
 		return nil, err
