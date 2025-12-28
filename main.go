@@ -62,18 +62,15 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	// Initialize vision analyzer if GOOGLE_API_KEY is set
-	var visionAnalyzer vision.Analyzer
-	if os.Getenv("GOOGLE_API_KEY") != "" {
-		analyzer, err := vision.NewGeminiAnalyzer(ctx)
-		if err != nil {
-			log.Fatal().Err(err).Msg("failed to initialize Gemini vision analyzer")
-		}
-		visionAnalyzer = analyzer
-		log.Info().Msg("Gemini vision analyzer initialized")
-	} else {
-		log.Warn().Msg("GOOGLE_API_KEY not set, vision analysis disabled")
+	// Initialize vision analyzer (GEMINI_API_KEY is required)
+	if os.Getenv("GEMINI_API_KEY") == "" {
+		log.Fatal().Msg("GEMINI_API_KEY environment variable is required")
 	}
+	visionAnalyzer, err := vision.NewGeminiAnalyzer(ctx)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to initialize Gemini vision analyzer")
+	}
+	log.Info().Msg("Gemini vision analyzer initialized")
 
 	g, ctx := errgroup.WithContext(ctx)
 

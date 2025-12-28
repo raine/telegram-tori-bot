@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	"google.golang.org/genai"
@@ -36,9 +37,11 @@ type GeminiAnalyzer struct {
 }
 
 // NewGeminiAnalyzer creates a new Gemini-based analyzer.
-// It uses the GOOGLE_API_KEY environment variable for authentication.
+// It uses the GEMINI_API_KEY environment variable for authentication.
 func NewGeminiAnalyzer(ctx context.Context) (*GeminiAnalyzer, error) {
-	client, err := genai.NewClient(ctx, nil)
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey: os.Getenv("GEMINI_API_KEY"),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
 	}

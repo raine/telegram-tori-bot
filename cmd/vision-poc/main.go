@@ -12,18 +12,18 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: %s <image-path> [gemini|openai|both]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "Usage: %s <image-path>\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\nEnvironment variables:\n")
-		fmt.Fprintf(os.Stderr, "  GOOGLE_API_KEY - Required for Gemini\n")
-		fmt.Fprintf(os.Stderr, "  OPENAI_API_KEY - Required for OpenAI\n")
+		fmt.Fprintf(os.Stderr, "  GEMINI_API_KEY - Required for Gemini\n")
+		os.Exit(1)
+	}
+
+	if os.Getenv("GEMINI_API_KEY") == "" {
+		fmt.Fprintf(os.Stderr, "Error: GEMINI_API_KEY environment variable is required\n")
 		os.Exit(1)
 	}
 
 	imagePath := os.Args[1]
-	provider := "both"
-	if len(os.Args) >= 3 {
-		provider = os.Args[2]
-	}
 
 	imageData, err := os.ReadFile(imagePath)
 	if err != nil {
@@ -34,19 +34,7 @@ func main() {
 	mimeType := getMimeType(imagePath)
 	ctx := context.Background()
 
-	switch provider {
-	case "gemini":
-		runGemini(ctx, imageData, mimeType)
-	case "openai":
-		runOpenAI(ctx, imageData, mimeType)
-	case "both":
-		runGemini(ctx, imageData, mimeType)
-		fmt.Println("\n" + strings.Repeat("-", 50) + "\n")
-		runOpenAI(ctx, imageData, mimeType)
-	default:
-		fmt.Fprintf(os.Stderr, "Unknown provider: %s (use gemini, openai, or both)\n", provider)
-		os.Exit(1)
-	}
+	runGemini(ctx, imageData, mimeType)
 }
 
 func runGemini(ctx context.Context, imageData []byte, mimeType string) {
@@ -57,20 +45,6 @@ func runGemini(ctx context.Context, imageData []byte, mimeType string) {
 		fmt.Printf("Error creating Gemini analyzer: %v\n", err)
 		return
 	}
-
-	result, err := analyzer.AnalyzeImage(ctx, imageData, mimeType)
-	if err != nil {
-		fmt.Printf("Error analyzing image: %v\n", err)
-		return
-	}
-
-	printResult(result)
-}
-
-func runOpenAI(ctx context.Context, imageData []byte, mimeType string) {
-	fmt.Println("=== OPENAI ===")
-
-	analyzer := vision.NewOpenAIAnalyzer()
 
 	result, err := analyzer.AnalyzeImage(ctx, imageData, mimeType)
 	if err != nil {
