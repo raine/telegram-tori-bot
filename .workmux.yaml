@@ -6,3 +6,4 @@ files:
     - .envrc
     - .env
     - CLAUDE.md
+    - tori/testdata
