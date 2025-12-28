@@ -20,6 +20,13 @@ type StoredSession struct {
 	LastUpdated time.Time
 }
 
+// Template represents a user's description template.
+type Template struct {
+	ID         int64
+	TelegramID int64
+	Content    string
+}
+
 // SessionStore defines the interface for session persistence.
 type SessionStore interface {
 	Get(telegramID int64) (*StoredSession, error)
@@ -27,6 +34,11 @@ type SessionStore interface {
 	Delete(telegramID int64) error
 	GetAll() ([]StoredSession, error)
 	Close() error
+
+	// Template methods (single template per user)
+	SetTemplate(telegramID int64, content string) error
+	GetTemplate(telegramID int64) (*Template, error)
+	DeleteTemplate(telegramID int64) error
 }
 
 // SQLiteStore implements SessionStore using SQLite with encrypted tokens.
@@ -75,6 +87,19 @@ func (s *SQLiteStore) init() error {
 	_, err := s.db.Exec(query)
 	if err != nil {
 		return fmt.Errorf("failed to create sessions table: %w", err)
+	}
+
+	templatesQuery := `
+	CREATE TABLE IF NOT EXISTS templates (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		telegram_id INTEGER NOT NULL UNIQUE,
+		content TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	`
+	_, err = s.db.Exec(templatesQuery)
+	if err != nil {
+		return fmt.Errorf("failed to create templates table: %w", err)
 	}
 
 	return nil
@@ -212,4 +237,55 @@ func (s *SQLiteStore) GetAll() ([]StoredSession, error) {
 // Close closes the database connection.
 func (s *SQLiteStore) Close() error {
 	return s.db.Close()
+}
+
+// SetTemplate sets the description template for a user (replacing any existing one).
+func (s *SQLiteStore) SetTemplate(telegramID int64, content string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	query := `
+	INSERT INTO templates (telegram_id, content)
+	VALUES (?, ?)
+	ON CONFLICT(telegram_id) DO UPDATE SET
+		content = excluded.content,
+		created_at = CURRENT_TIMESTAMP;
+	`
+	_, err := s.db.Exec(query, telegramID, content)
+	if err != nil {
+		return fmt.Errorf("failed to upsert template: %w", err)
+	}
+	return nil
+}
+
+// GetTemplate retrieves the user's template.
+func (s *SQLiteStore) GetTemplate(telegramID int64) (*Template, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var t Template
+	err := s.db.QueryRow(
+		"SELECT id, telegram_id, content FROM templates WHERE telegram_id = ? LIMIT 1",
+		telegramID,
+	).Scan(&t.ID, &t.TelegramID, &t.Content)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query template: %w", err)
+	}
+
+	return &t, nil
+}
+
+// DeleteTemplate removes the user's template.
+func (s *SQLiteStore) DeleteTemplate(telegramID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec("DELETE FROM templates WHERE telegram_id = ?", telegramID)
+	if err != nil {
+		return fmt.Errorf("failed to delete template: %w", err)
+	}
+	return nil
 }

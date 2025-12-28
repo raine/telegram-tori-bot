@@ -339,6 +339,10 @@ func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		session.pendingPhotos = nil
 		session.currentDraft = nil
 		session.reply(photosRemoved)
+	case "/malli":
+		b.handleTemplateCommand(session, update.Message.Text)
+	case "/poistamalli":
+		b.handleDeleteTemplate(session)
 	default:
 		if session.client == nil {
 			session.reply(loginRequiredText)
@@ -365,6 +369,8 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, query *tgbotapi.CallbackQ
 	// Handle category selection
 	if strings.HasPrefix(query.Data, "cat:") {
 		b.handleCategorySelection(ctx, session, query)
+	} else if strings.HasPrefix(query.Data, "shipping:") {
+		b.handleShippingSelection(ctx, session, query)
 	}
 }
 
@@ -516,23 +522,17 @@ func (b *Bot) handlePriceInput(session *UserSession, text string) {
 	}
 
 	session.currentDraft.Price = price
-	session.currentDraft.State = AdFlowStateReadyToPublish
+	session.currentDraft.State = AdFlowStateAwaitingShipping
 
-	// Show summary
-	msg := fmt.Sprintf(`*Ilmoitus valmis:*
-📦 *Otsikko:* %s
-📝 *Kuvaus:* %s
-💰 *Hinta:* %d€
-📷 *Kuvia:* %d
-
-Lähetä /laheta julkaistaksesi tai /peru peruuttaaksesi.`,
-		escapeMarkdown(session.currentDraft.Title),
-		escapeMarkdown(session.currentDraft.Description),
-		session.currentDraft.Price,
-		len(session.photos),
+	// Ask about shipping
+	msg := tgbotapi.NewMessage(session.userId, "Onko postitus mahdollinen?")
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Kyllä", "shipping:yes"),
+			tgbotapi.NewInlineKeyboardButtonData("Ei", "shipping:no"),
+		),
 	)
-
-	session.reply(msg)
+	session.replyWithMessage(msg)
 }
 
 var priceRegex = regexp.MustCompile(`(\d+)`)
@@ -543,6 +543,97 @@ func parsePriceMessage(text string) (int, error) {
 		return 0, fmt.Errorf("no price found")
 	}
 	return strconv.Atoi(m[1])
+}
+
+// handleShippingSelection handles the shipping yes/no callback
+func (b *Bot) handleShippingSelection(ctx context.Context, session *UserSession, query *tgbotapi.CallbackQuery) {
+	isYes := strings.HasSuffix(query.Data, ":yes")
+
+	session.mu.Lock()
+	defer session.mu.Unlock()
+
+	if session.currentDraft == nil || session.currentDraft.State != AdFlowStateAwaitingShipping {
+		return
+	}
+
+	session.currentDraft.ShippingPossible = isYes
+
+	// Remove the inline keyboard
+	if query.Message != nil {
+		edit := tgbotapi.NewEditMessageReplyMarkup(
+			query.Message.Chat.ID,
+			query.Message.MessageID,
+			tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}},
+		)
+		b.tg.Request(edit)
+	}
+
+	// Apply template if user has one
+	if b.sessionStore != nil {
+		tmpl, err := b.sessionStore.GetTemplate(session.userId)
+		if err == nil && tmpl != nil {
+			expanded := expandTemplate(tmpl.Content, isYes)
+			if strings.TrimSpace(expanded) != "" {
+				session.currentDraft.Description += "\n\n" + expanded
+
+				// Update the description message in chat
+				if session.currentDraft.DescriptionMessageID != 0 {
+					editMsg := tgbotapi.NewEditMessageText(
+						session.userId,
+						session.currentDraft.DescriptionMessageID,
+						fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(session.currentDraft.Description)),
+					)
+					editMsg.ParseMode = tgbotapi.ModeMarkdown
+					b.tg.Request(editMsg)
+				}
+			}
+		}
+	}
+
+	b.showAdSummary(session)
+}
+
+// showAdSummary displays the final ad summary before publishing
+func (b *Bot) showAdSummary(session *UserSession) {
+	session.currentDraft.State = AdFlowStateReadyToPublish
+
+	shippingText := "Ei"
+	if session.currentDraft.ShippingPossible {
+		shippingText = "Kyllä"
+	}
+
+	msg := fmt.Sprintf(`*Ilmoitus valmis:*
+📦 *Otsikko:* %s
+📝 *Kuvaus:* %s
+💰 *Hinta:* %d€
+🚚 *Postitus:* %s
+📷 *Kuvia:* %d
+
+Lähetä /laheta julkaistaksesi tai /peru peruuttaaksesi.`,
+		escapeMarkdown(session.currentDraft.Title),
+		escapeMarkdown(session.currentDraft.Description),
+		session.currentDraft.Price,
+		shippingText,
+		len(session.photos),
+	)
+
+	session.reply(msg)
+}
+
+// templateRegex matches {{#if shipping}}...{{/end}} blocks (case-insensitive, flexible whitespace)
+var templateRegex = regexp.MustCompile(`(?si)\{\{\s*#if\s+shipping\s*\}\}(.*?)\{\{\s*/end\s*\}\}`)
+
+// expandTemplate expands template conditionals based on shipping flag
+func expandTemplate(content string, shipping bool) string {
+	return templateRegex.ReplaceAllStringFunc(content, func(match string) string {
+		if shipping {
+			submatch := templateRegex.FindStringSubmatch(match)
+			if len(submatch) > 1 {
+				return submatch[1]
+			}
+		}
+		return ""
+	})
 }
 
 // handleSendListing sends the listing using the new adinput API
@@ -560,6 +651,8 @@ func (b *Bot) handleSendListing(ctx context.Context, session *UserSession) {
 			session.reply("Täytä ensin lisätiedot.")
 		case AdFlowStateAwaitingPrice:
 			session.reply("Syötä ensin hinta.")
+		case AdFlowStateAwaitingShipping:
+			session.reply("Valitse ensin postitusvaihtoehto.")
 		default:
 			session.reply("Ilmoitus ei ole valmis lähetettäväksi.")
 		}
@@ -785,4 +878,50 @@ func (b *Bot) tryRefreshTokens(session *UserSession) error {
 
 	log.Info().Int64("userId", session.userId).Msg("token refresh successful")
 	return nil
+}
+
+// handleTemplateCommand handles /malli command - view or set template
+func (b *Bot) handleTemplateCommand(session *UserSession, text string) {
+	if b.sessionStore == nil {
+		session.reply("Mallit eivät ole käytettävissä")
+		return
+	}
+
+	args := strings.TrimSpace(strings.TrimPrefix(text, "/malli"))
+
+	if args == "" {
+		// View current template
+		tmpl, err := b.sessionStore.GetTemplate(session.userId)
+		if err != nil {
+			session.replyWithError(err)
+			return
+		}
+		if tmpl == nil {
+			session.reply("Ei tallennettua mallia.\n\nAseta malli: `/malli <teksti>`\n\nEsim: `/malli Nouto Kannelmäestä{{#if shipping}} tai postitus{{/end}}. Mobilepay/käteinen.`")
+			return
+		}
+		session.reply(fmt.Sprintf("*Nykyinen malli:*\n`%s`\n\nPoista malli: /poistamalli", escapeMarkdown(tmpl.Content)))
+		return
+	}
+
+	// Set new template
+	if err := b.sessionStore.SetTemplate(session.userId, args); err != nil {
+		session.replyWithError(err)
+		return
+	}
+	session.reply("✅ Malli tallennettu.")
+}
+
+// handleDeleteTemplate handles /poistamalli command
+func (b *Bot) handleDeleteTemplate(session *UserSession) {
+	if b.sessionStore == nil {
+		session.reply("Mallit eivät ole käytettävissä")
+		return
+	}
+
+	if err := b.sessionStore.DeleteTemplate(session.userId); err != nil {
+		session.replyWithError(err)
+		return
+	}
+	session.reply("🗑 Malli poistettu.")
 }

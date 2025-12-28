@@ -18,17 +18,19 @@ const (
 	AdFlowStateAwaitingCategory
 	AdFlowStateAwaitingAttribute
 	AdFlowStateAwaitingPrice
+	AdFlowStateAwaitingShipping
 	AdFlowStateReadyToPublish
 )
 
 // AdInputDraft tracks the state of a new-API ad creation
 type AdInputDraft struct {
-	State       AdFlowState
-	CategoryID  int
-	Title       string
-	Description string
-	TradeType   string // "1" = sell, "2" = give away
-	Price       int
+	State            AdFlowState
+	CategoryID       int
+	Title            string
+	Description      string
+	TradeType        string // "1" = sell, "2" = give away
+	Price            int
+	ShippingPossible bool
 
 	// Message IDs for editing via reply
 	TitleMessageID       int
@@ -292,13 +294,13 @@ func (b *Bot) updateAndPublishAd(
 		return fmt.Errorf("failed to update ad: %w", err)
 	}
 
-	// Set delivery options (meetup only for now)
+	// Set delivery options
 	err = client.SetDeliveryOptions(ctx, draftID, tori.DeliveryOptions{
 		BuyNow:             false,
 		Client:             "ANDROID",
 		Meetup:             true,
 		SellerPaysShipping: false,
-		Shipping:           false,
+		Shipping:           draft.ShippingPossible,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to set delivery options: %w", err)

@@ -58,6 +58,18 @@ func (m *mockSessionStore) Close() error {
 	return nil
 }
 
+func (m *mockSessionStore) SetTemplate(telegramID int64, content string) error {
+	return nil
+}
+
+func (m *mockSessionStore) GetTemplate(telegramID int64) (*storage.Template, error) {
+	return nil, nil
+}
+
+func (m *mockSessionStore) DeleteTemplate(telegramID int64) error {
+	return nil
+}
+
 func setupWithTestServer(t *testing.T, ts *httptest.Server) (*httptest.Server, int64, *botApiMock, *Bot, *UserSession) {
 	userId := int64(1)
 	tg := new(botApiMock)
@@ -466,11 +478,9 @@ func TestHandlePriceInput_ValidPrice(t *testing.T) {
 	}
 	session.photos = []tgbotapi.PhotoSize{{FileID: "1"}}
 
-	// Expect summary message
+	// Expect shipping question (flow now asks about shipping after price)
 	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
-		return strings.Contains(msg.Text, "Ilmoitus valmis") &&
-			strings.Contains(msg.Text, "Logitech hiiri") &&
-			strings.Contains(msg.Text, "50€")
+		return strings.Contains(msg.Text, "Onko postitus mahdollinen?")
 	})).Return(tgbotapi.Message{}, nil).Once()
 
 	session.mu.Lock()
@@ -482,8 +492,8 @@ func TestHandlePriceInput_ValidPrice(t *testing.T) {
 	if session.currentDraft.Price != 50 {
 		t.Errorf("expected price=50, got %d", session.currentDraft.Price)
 	}
-	if session.currentDraft.State != AdFlowStateReadyToPublish {
-		t.Errorf("expected state ReadyToPublish, got %v", session.currentDraft.State)
+	if session.currentDraft.State != AdFlowStateAwaitingShipping {
+		t.Errorf("expected state AwaitingShipping, got %v", session.currentDraft.State)
 	}
 }
 
