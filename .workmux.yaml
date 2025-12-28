@@ -3,7 +3,6 @@ post_create:
 
 files:
   symlink:
-    - .envrc
     - .env
     - CLAUDE.md
     - tori/testdata
