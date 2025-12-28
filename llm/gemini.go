@@ -51,6 +51,20 @@ Example: {"category_id": 123}
 
 Respond ONLY with the JSON object.`
 
+const attributeSelectionPrompt = `Analyze the item title and description to select the most appropriate option for each attribute.
+
+Item Title: %s
+Item Description: %s
+
+For each attribute below, select the best matching option ID.
+If the correct option cannot be confidently determined from the text, return null for that attribute. Do not guess.
+
+Attributes:
+%s
+
+Respond ONLY with a JSON object mapping attribute names to option IDs.
+Example: {"condition": 123, "color": 456, "size": null}`
+
 // GeminiAnalyzer uses Google's Gemini API for image analysis and category selection.
 type GeminiAnalyzer struct {
 	client *genai.Client
@@ -210,4 +224,78 @@ func (g *GeminiAnalyzer) SelectCategory(ctx context.Context, title, description 
 	}
 
 	return resp.CategoryID, nil
+}
+
+// SelectAttributes selects the best options for the given attributes using Gemini Lite.
+// Returns a map of attribute name -> selected option ID.
+// Attributes where the LLM returns null are omitted from the result.
+func (g *GeminiAnalyzer) SelectAttributes(ctx context.Context, title, description string, attrs []tori.Attribute) (map[string]int, error) {
+	if len(attrs) == 0 {
+		return nil, nil
+	}
+
+	var attrBuilder strings.Builder
+	for _, attr := range attrs {
+		attrBuilder.WriteString(fmt.Sprintf("\nAttribute: %s (name: %s)\nOptions:\n", attr.Label, attr.Name))
+		for _, opt := range attr.Options {
+			attrBuilder.WriteString(fmt.Sprintf("- %d: %s\n", opt.ID, opt.Label))
+		}
+	}
+
+	prompt := fmt.Sprintf(attributeSelectionPrompt, title, description, attrBuilder.String())
+
+	result, err := g.client.Models.GenerateContent(ctx, geminiLiteModel, []*genai.Content{
+		genai.NewContentFromParts([]*genai.Part{genai.NewPartFromText(prompt)}, genai.RoleUser),
+	}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("gemini attribute selection failed: %w", err)
+	}
+
+	if len(result.Candidates) == 0 || len(result.Candidates[0].Content.Parts) == 0 {
+		return nil, fmt.Errorf("empty response from gemini")
+	}
+
+	text := result.Text()
+
+	// Extract JSON object from response
+	text = strings.TrimSpace(text)
+	start := strings.Index(text, "{")
+	end := strings.LastIndex(text, "}")
+	if start == -1 || end == -1 || end <= start {
+		return nil, fmt.Errorf("no JSON object found in response: %s", text)
+	}
+	text = text[start : end+1]
+
+	// Parse as map with nullable ints
+	var selections map[string]*int
+	if err := json.Unmarshal([]byte(text), &selections); err != nil {
+		return nil, fmt.Errorf("failed to parse attribute json: %w (response: %s)", err, text)
+	}
+
+	// Filter out nulls and convert to map[string]int
+	finalMap := make(map[string]int)
+	for k, v := range selections {
+		if v != nil {
+			finalMap[k] = *v
+		}
+	}
+
+	// Log usage and cost
+	if result.UsageMetadata != nil {
+		cost := calculateGeminiCost(
+			int64(result.UsageMetadata.PromptTokenCount),
+			int64(result.UsageMetadata.CandidatesTokenCount),
+			geminiLiteInputPricePerMillion,
+			geminiLiteOutputPricePerMillion,
+		)
+		log.Info().
+			Str("model", geminiLiteModel).
+			Int("inputTokens", int(result.UsageMetadata.PromptTokenCount)).
+			Int("outputTokens", int(result.UsageMetadata.CandidatesTokenCount)).
+			Float64("costUSD", cost).
+			Int("autoSelectedCount", len(finalMap)).
+			Msg("attribute selection llm call")
+	}
+
+	return finalMap, nil
 }

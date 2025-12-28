@@ -163,6 +163,8 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, query *tgbotapi.CallbackQ
 		b.listingHandler.HandleCategorySelection(ctx, session, query)
 	} else if strings.HasPrefix(query.Data, "shipping:") {
 		b.listingHandler.HandleShippingSelection(ctx, session, query)
+	} else if strings.HasPrefix(query.Data, "reselect:") {
+		b.handleReselectCallback(ctx, session, query)
 	}
 }
 
@@ -214,7 +216,7 @@ func (b *Bot) handleDeleteTemplate(session *UserSession) {
 	session.reply("🗑 Malli poistettu.")
 }
 
-// handleOsastoCommand handles /osasto command - re-select category
+// handleOsastoCommand handles /osasto command - re-select category or attributes
 func (b *Bot) handleOsastoCommand(session *UserSession) {
 	if session.currentDraft == nil {
 		session.reply("Ei aktiivista ilmoitusta. Lähetä ensin kuva.")
@@ -226,18 +228,76 @@ func (b *Bot) handleOsastoCommand(session *UserSession) {
 		return
 	}
 
-	// Reset to category selection state and clear collected attributes
-	session.currentDraft.State = AdFlowStateAwaitingCategory
-	session.currentDraft.CategoryID = 0
-	session.currentDraft.CollectedAttrs = make(map[string]string)
-	session.currentDraft.RequiredAttrs = nil
-	session.currentDraft.CurrentAttrIndex = 0
+	// If still awaiting category, just show category keyboard
+	if session.currentDraft.State == AdFlowStateAwaitingCategory {
+		msg := tgbotapi.NewMessage(session.userId, "Valitse osasto")
+		msg.ParseMode = tgbotapi.ModeMarkdown
+		msg.ReplyMarkup = makeCategoryPredictionKeyboard(session.currentDraft.CategoryPredictions)
+		session.replyWithMessage(msg)
+		return
+	}
 
-	// Show category selection keyboard
-	msg := tgbotapi.NewMessage(session.userId, "Valitse osasto")
-	msg.ParseMode = tgbotapi.ModeMarkdown
-	msg.ReplyMarkup = makeCategoryPredictionKeyboard(session.currentDraft.CategoryPredictions)
+	// If past category selection, show options menu
+	msg := tgbotapi.NewMessage(session.userId, "Mitä haluat muuttaa?")
+	buttons := [][]tgbotapi.InlineKeyboardButton{
+		{tgbotapi.NewInlineKeyboardButtonData("Vaihda osasto", "reselect:category")},
+	}
+	// Only show attribute option if there were required attributes
+	if session.adAttributes != nil && len(session.adAttributes.Attributes) > 0 {
+		buttons = append(buttons, []tgbotapi.InlineKeyboardButton{
+			tgbotapi.NewInlineKeyboardButtonData("Valitse lisätiedot uudelleen", "reselect:attrs"),
+		})
+	}
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(buttons...)
 	session.replyWithMessage(msg)
+}
+
+// handleReselectCallback handles reselect:category and reselect:attrs callbacks
+func (b *Bot) handleReselectCallback(ctx context.Context, session *UserSession, query *tgbotapi.CallbackQuery) {
+	session.mu.Lock()
+
+	if session.currentDraft == nil {
+		session.reply("Ei aktiivista ilmoitusta.")
+		session.mu.Unlock()
+		return
+	}
+
+	// Remove the inline keyboard
+	if query.Message != nil {
+		edit := tgbotapi.NewEditMessageReplyMarkup(
+			query.Message.Chat.ID,
+			query.Message.MessageID,
+			tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}},
+		)
+		b.tg.Request(edit)
+	}
+
+	if query.Data == "reselect:category" {
+		// Reset to category selection state and clear collected attributes
+		session.currentDraft.State = AdFlowStateAwaitingCategory
+		session.currentDraft.CategoryID = 0
+		session.currentDraft.CollectedAttrs = make(map[string]string)
+		session.currentDraft.RequiredAttrs = nil
+		session.currentDraft.CurrentAttrIndex = 0
+
+		// Show category selection keyboard
+		msg := tgbotapi.NewMessage(session.userId, "Valitse osasto")
+		msg.ParseMode = tgbotapi.ModeMarkdown
+		msg.ReplyMarkup = makeCategoryPredictionKeyboard(session.currentDraft.CategoryPredictions)
+		session.replyWithMessage(msg)
+		session.mu.Unlock()
+	} else if query.Data == "reselect:attrs" {
+		// Clear collected attributes but keep category
+		session.currentDraft.CollectedAttrs = make(map[string]string)
+		session.currentDraft.CurrentAttrIndex = 0
+		categoryID := session.currentDraft.CategoryID
+		session.mu.Unlock()
+
+		// Re-process category selection to fetch and prompt for attributes
+		b.listingHandler.ProcessCategorySelection(ctx, session, categoryID)
+	} else {
+		session.mu.Unlock()
+	}
 }
 
 // --- Template expansion ---

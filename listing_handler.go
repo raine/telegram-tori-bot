@@ -250,7 +250,7 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 			if autoSelectedID > 0 {
 				// Release lock and process category selection (which acquires its own lock)
 				session.mu.Unlock()
-				h.processCategorySelection(ctx, session, autoSelectedID)
+				h.ProcessCategorySelection(ctx, session, autoSelectedID)
 				return
 			}
 
@@ -328,12 +328,12 @@ func (h *ListingHandler) HandleCategorySelection(ctx context.Context, session *U
 	}
 	session.mu.Unlock()
 
-	h.processCategorySelection(ctx, session, categoryID)
+	h.ProcessCategorySelection(ctx, session, categoryID)
 }
 
-// processCategorySelection handles the common category selection logic.
+// ProcessCategorySelection handles the common category selection logic.
 // It sets category, fetches attributes, and prompts for next step.
-func (h *ListingHandler) processCategorySelection(ctx context.Context, session *UserSession, categoryID int) {
+func (h *ListingHandler) ProcessCategorySelection(ctx context.Context, session *UserSession, categoryID int) {
 	session.mu.Lock()
 
 	// Find category label for logging
@@ -386,6 +386,11 @@ func (h *ListingHandler) processCategorySelection(ctx context.Context, session *
 
 	// Get required SELECT attributes
 	requiredAttrs := tori.GetRequiredSelectAttributes(attrs)
+
+	// Try auto-selection for required attributes using LLM
+	if len(requiredAttrs) > 0 {
+		requiredAttrs = h.tryAutoSelectAttributes(ctx, session, requiredAttrs)
+	}
 
 	if len(requiredAttrs) > 0 {
 		session.currentDraft.RequiredAttrs = requiredAttrs
@@ -625,6 +630,66 @@ func (h *ListingHandler) tryAutoSelectCategory(ctx context.Context, title, descr
 	}
 
 	return categoryID
+}
+
+// tryAutoSelectAttributes attempts to auto-select attributes using LLM.
+// Returns the list of attributes that still need manual selection.
+// Caller must hold session.mu.Lock().
+func (h *ListingHandler) tryAutoSelectAttributes(ctx context.Context, session *UserSession, attrs []tori.Attribute) []tori.Attribute {
+	gemini, ok := h.visionAnalyzer.(*llm.GeminiAnalyzer)
+	if !ok {
+		return attrs
+	}
+
+	title := session.currentDraft.Title
+	description := session.currentDraft.Description
+
+	selectedMap, err := gemini.SelectAttributes(ctx, title, description, attrs)
+	if err != nil {
+		log.Warn().Err(err).Msg("LLM attribute selection failed, falling back to manual")
+		return attrs
+	}
+
+	if len(selectedMap) == 0 {
+		return attrs
+	}
+
+	var remainingAttrs []tori.Attribute
+	var autoSelectedInfo []string
+
+	for _, attr := range attrs {
+		selectedID, found := selectedMap[attr.Name]
+
+		// Validate: selected ID must exist in this attribute's options
+		validOption := false
+		var selectedLabel string
+		if found {
+			for _, opt := range attr.Options {
+				if opt.ID == selectedID {
+					validOption = true
+					selectedLabel = opt.Label
+					break
+				}
+			}
+		}
+
+		if validOption {
+			// Auto-select this attribute
+			session.currentDraft.CollectedAttrs[attr.Name] = strconv.Itoa(selectedID)
+			autoSelectedInfo = append(autoSelectedInfo, fmt.Sprintf("%s: *%s*", attr.Label, selectedLabel))
+			log.Info().Str("attr", attr.Name).Str("label", selectedLabel).Int("optionId", selectedID).Msg("attribute auto-selected")
+		} else {
+			// Keep for manual input
+			remainingAttrs = append(remainingAttrs, attr)
+		}
+	}
+
+	// Inform user what was auto-selected
+	if len(autoSelectedInfo) > 0 {
+		session.reply(fmt.Sprintf("%s", strings.Join(autoSelectedInfo, "\n")))
+	}
+
+	return remainingAttrs
 }
 
 // promptForAttribute shows a keyboard to select an attribute value.

@@ -54,12 +54,12 @@ type UserSession struct {
 	authFlow *AuthFlow
 
 	// Adinput API state for ad creation
-	adInputClient    *tori.AdinputClient
-	draftID          string
-	etag             string
-	adAttributes     *tori.AttributesResponse
-	currentDraft     *AdInputDraft
-	isCreatingDraft  bool // Prevents concurrent draft creation from album photos
+	adInputClient   *tori.AdinputClient
+	draftID         string
+	etag            string
+	adAttributes    *tori.AttributesResponse
+	currentDraft    *AdInputDraft
+	isCreatingDraft bool // Prevents concurrent draft creation from album photos
 }
 
 // --- Thread-safe accessors ---

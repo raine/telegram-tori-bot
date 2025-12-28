@@ -700,7 +700,7 @@ func TestHandleOsastoCommand_NoPredictions(t *testing.T) {
 	tg.AssertExpectations(t)
 }
 
-func TestHandleOsastoCommand_ShowsCategoryKeyboard(t *testing.T) {
+func TestHandleOsastoCommand_ShowsMenuWhenPastCategorySelection(t *testing.T) {
 	_, _, tg, bot, session := setupAdInputSession(t, makeAdInputTestServer(t))
 
 	// Draft exists with predictions and we're past category selection
@@ -716,6 +716,35 @@ func TestHandleOsastoCommand_ShowsCategoryKeyboard(t *testing.T) {
 		CurrentAttrIndex: 1,
 	}
 
+	// Expect options menu with inline keyboard (since past category selection)
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		return msg.Text == "Mitä haluat muuttaa?" && msg.ReplyMarkup != nil
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	session.mu.Lock()
+	bot.handleOsastoCommand(session)
+	session.mu.Unlock()
+
+	tg.AssertExpectations(t)
+
+	// State should NOT be reset yet (menu was shown, user hasn't selected)
+	if session.currentDraft.State != AdFlowStateAwaitingPrice {
+		t.Errorf("expected state to remain AwaitingPrice, got %v", session.currentDraft.State)
+	}
+}
+
+func TestHandleOsastoCommand_ShowsCategoryKeyboardWhenAwaitingCategory(t *testing.T) {
+	_, _, tg, bot, session := setupAdInputSession(t, makeAdInputTestServer(t))
+
+	// Draft exists with predictions and we're still awaiting category
+	session.currentDraft = &AdInputDraft{
+		State: AdFlowStateAwaitingCategory,
+		CategoryPredictions: []tori.CategoryPrediction{
+			{ID: 5012, Label: "Tietokoneen oheislaitteet"},
+			{ID: 5013, Label: "Näytöt"},
+		},
+	}
+
 	// Expect category selection message with inline keyboard
 	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
 		return msg.Text == "Valitse osasto" && msg.ReplyMarkup != nil
@@ -726,20 +755,6 @@ func TestHandleOsastoCommand_ShowsCategoryKeyboard(t *testing.T) {
 	session.mu.Unlock()
 
 	tg.AssertExpectations(t)
-
-	// Verify state was reset
-	if session.currentDraft.State != AdFlowStateAwaitingCategory {
-		t.Errorf("expected state AwaitingCategory, got %v", session.currentDraft.State)
-	}
-	if session.currentDraft.CategoryID != 0 {
-		t.Errorf("expected CategoryID to be reset to 0, got %d", session.currentDraft.CategoryID)
-	}
-	if len(session.currentDraft.CollectedAttrs) != 0 {
-		t.Errorf("expected CollectedAttrs to be cleared, got %v", session.currentDraft.CollectedAttrs)
-	}
-	if session.currentDraft.RequiredAttrs != nil {
-		t.Errorf("expected RequiredAttrs to be nil")
-	}
 }
 
 func TestHandleUpdate_OsastoDuringPriceInput(t *testing.T) {
@@ -758,16 +773,16 @@ func TestHandleUpdate_OsastoDuringPriceInput(t *testing.T) {
 
 	update := makeUpdateWithMessageText(userId, "/osasto")
 
-	// Expect category selection message
+	// Expect options menu (since past category selection)
 	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
-		return msg.Text == "Valitse osasto" && msg.ReplyMarkup != nil
+		return msg.Text == "Mitä haluat muuttaa?" && msg.ReplyMarkup != nil
 	})).Return(tgbotapi.Message{}, nil).Once()
 
 	bot.handleUpdate(context.Background(), update)
 	tg.AssertExpectations(t)
 
-	// Verify state changed to awaiting category
-	if session.currentDraft.State != AdFlowStateAwaitingCategory {
-		t.Errorf("expected state AwaitingCategory, got %v", session.currentDraft.State)
+	// State should remain (menu was shown, user hasn't selected yet)
+	if session.currentDraft.State != AdFlowStateAwaitingPrice {
+		t.Errorf("expected state to remain AwaitingPrice, got %v", session.currentDraft.State)
 	}
 }
