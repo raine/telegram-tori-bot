@@ -85,7 +85,6 @@ func printResult(result *vision.AnalysisResult) {
 	fmt.Printf("Title:       %s\n", result.Item.Title)
 	fmt.Printf("Brand:       %s\n", result.Item.Brand)
 	fmt.Printf("Model:       %s\n", result.Item.Model)
-	fmt.Printf("Condition:   %s\n", result.Item.Condition)
 	fmt.Printf("Description: %s\n", result.Item.Description)
 	fmt.Println()
 	fmt.Printf("Tokens:      %d in / %d out / %d total\n",

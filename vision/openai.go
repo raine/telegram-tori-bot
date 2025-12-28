@@ -23,10 +23,9 @@ Respond in JSON format with these fields:
 - description: A longer description with relevant details about the item (2-3 sentences, in Finnish if possible)
 - brand: The brand name if identifiable (empty string if unknown)
 - model: The model name or number if identifiable (empty string if unknown)
-- condition: Estimated condition based on the image (one of: "new", "like_new", "good", "fair", "poor")
 
 Example response:
-{"title": "Logitech G Pro X Superlight langaton pelihiiri", "description": "Kevyt langaton pelihiiri ammattipelaamiseen. Logitech Hero 25K -sensori, jopa 70 tunnin akunkesto.", "brand": "Logitech", "model": "G Pro X Superlight", "condition": "good"}
+{"title": "Logitech G Pro X Superlight langaton pelihiiri", "description": "Kevyt langaton pelihiiri ammattipelaamiseen. Logitech Hero 25K -sensori, jopa 70 tunnin akunkesto.", "brand": "Logitech", "model": "G Pro X Superlight"}
 
 Respond ONLY with the JSON object, no markdown or other text.`
 

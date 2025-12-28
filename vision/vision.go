@@ -8,7 +8,6 @@ type ItemDescription struct {
 	Description string // Longer description with details
 	Brand       string // Brand name if identifiable
 	Model       string // Model name/number if identifiable
-	Condition   string // Estimated condition (new, like new, good, fair, poor)
 }
 
 // Usage contains token usage and cost information.

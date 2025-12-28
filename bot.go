@@ -107,7 +107,6 @@ func (b *Bot) handlePhoto(ctx context.Context, session *UserSession, message *tg
 
 		log.Info().
 			Str("title", result.Item.Title).
-			Str("condition", result.Item.Condition).
 			Float64("cost", result.Usage.CostUSD).
 			Msg("image analyzed")
 
@@ -169,29 +168,14 @@ func (b *Bot) handlePhoto(ctx context.Context, session *UserSession, message *tg
 			CategoryPredictions: categories,
 		}
 
-		// Map condition to Finnish
-		conditionMap := map[string]string{
-			"new":      "Uusi",
-			"like_new": "Erinomainen",
-			"good":     "Hyvä",
-			"fair":     "Tyydyttävä",
-			"poor":     "Huono",
-		}
-		conditionFi := conditionMap[result.Item.Condition]
-		if conditionFi == "" {
-			conditionFi = "Hyvä"
-		}
-
 		// Show detected info to user
 		msgText := fmt.Sprintf(`*Tunnistettu:*
 📦 *Otsikko:* %s
 📝 *Kuvaus:* %s
-🏷️ *Kunto:* %s
 
 Valitse osasto:`,
 			result.Item.Title,
 			result.Item.Description,
-			conditionFi,
 		)
 
 		// Send message with category keyboard
