@@ -170,6 +170,8 @@ func (b *Bot) getAttributesForDraft(ctx context.Context, session *UserSession) (
 	return attrs, nil
 }
 
+var emojiNumbers = []string{"1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"}
+
 // makeCategoryPredictionKeyboard creates an inline keyboard for category selection
 func makeCategoryPredictionKeyboard(categories []tori.CategoryPrediction) tgbotapi.InlineKeyboardMarkup {
 	var rows [][]tgbotapi.InlineKeyboardButton
@@ -184,8 +186,14 @@ func makeCategoryPredictionKeyboard(categories []tori.CategoryPrediction) tgbota
 			displayText = "..." + displayText[len(displayText)-47:]
 		}
 
+		// Use emoji number if available, otherwise fall back to bracketed number
+		prefix := fmt.Sprintf("[%d]", i+1)
+		if i < len(emojiNumbers) {
+			prefix = emojiNumbers[i]
+		}
+
 		button := tgbotapi.NewInlineKeyboardButtonData(
-			fmt.Sprintf("[%d] %s", i+1, displayText),
+			fmt.Sprintf("%s %s", prefix, displayText),
 			callbackData,
 		)
 		rows = append(rows, []tgbotapi.InlineKeyboardButton{button})
