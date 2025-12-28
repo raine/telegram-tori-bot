@@ -44,6 +44,9 @@ type Authenticator struct {
 	oauthCode   string
 	accessToken string
 	idToken     string
+
+	// Device ID (UUID) - generated once per authenticator instance
+	deviceID string
 }
 
 // NewAuthenticator creates a new authenticator instance.
@@ -61,7 +64,20 @@ func NewAuthenticator() (*Authenticator, error) {
 			},
 		},
 		codeVerifier: generateCodeVerifier(),
+		deviceID:     generateDeviceID(),
 	}, nil
+}
+
+// generateDeviceID creates a new random UUID for device identification.
+// This mimics how the Android app generates its installation ID.
+func generateDeviceID() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	// Format as UUID v4: xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx
+	b[6] = (b[6] & 0x0f) | 0x40 // Version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // Variant 10
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
 // InitSession initializes the OAuth session and returns any error.
@@ -183,7 +199,7 @@ func (a *Authenticator) Finalize() (*TokenSet, error) {
 	a.oauthCode = oauthCode
 
 	// Step 7: Exchange code for tokens
-	accessToken, idToken, err := a.exchangeCodeForTokens()
+	accessToken, refreshToken, idToken, err := a.exchangeCodeForTokens()
 	if err != nil {
 		return nil, fmt.Errorf("token exchange failed: %w", err)
 	}
@@ -203,10 +219,12 @@ func (a *Authenticator) Finalize() (*TokenSet, error) {
 	}
 
 	return &TokenSet{
-		UserID:      userID,
-		BearerToken: bearerToken,
-		AccessToken: accessToken,
-		IDToken:     idToken,
+		UserID:       userID,
+		BearerToken:  bearerToken,
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		IDToken:      idToken,
+		DeviceID:     a.deviceID,
 	}, nil
 }
 
@@ -603,7 +621,7 @@ func (a *Authenticator) followOAuthRedirects(location string) (string, error) {
 	return "", fmt.Errorf("too many redirects")
 }
 
-func (a *Authenticator) exchangeCodeForTokens() (string, string, error) {
+func (a *Authenticator) exchangeCodeForTokens() (accessToken, refreshToken, idToken string, err error) {
 	endpoint := fmt.Sprintf("%s/oauth/token", LoginBaseURL)
 
 	data := url.Values{}
@@ -615,7 +633,7 @@ func (a *Authenticator) exchangeCodeForTokens() (string, string, error) {
 
 	req, err := http.NewRequest("POST", endpoint, strings.NewReader(data.Encode()))
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
 	req.Header.Set("User-Agent", AndroidSDKUserAgent)
@@ -625,14 +643,14 @@ func (a *Authenticator) exchangeCodeForTokens() (string, string, error) {
 
 	resp, err := a.httpClient.Do(req)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != 200 {
-		return "", "", fmt.Errorf("token exchange failed with status %d: %s", resp.StatusCode, string(body))
+		return "", "", "", fmt.Errorf("token exchange failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var result struct {
@@ -641,10 +659,10 @@ func (a *Authenticator) exchangeCodeForTokens() (string, string, error) {
 		IDToken      string `json:"id_token"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
-	return result.AccessToken, result.IDToken, nil
+	return result.AccessToken, result.RefreshToken, result.IDToken, nil
 }
 
 func (a *Authenticator) exchangeForSPPCode() (string, error) {
@@ -691,11 +709,10 @@ func (a *Authenticator) exchangeForSPPCode() (string, error) {
 func (a *Authenticator) toriLogin(spidCode string) (string, string, error) {
 	endpoint := fmt.Sprintf("%s/public/login", ToriBaseURL)
 
-	deviceID := AndroidClientID
 	abTestDeviceID := generateUUID()
 
 	payload := map[string]string{
-		"deviceId": deviceID,
+		"deviceId": a.deviceID,
 		"idToken":  a.idToken,
 		"spidCode": spidCode,
 	}
@@ -719,7 +736,7 @@ func (a *Authenticator) toriLogin(spidCode string) (string, string, error) {
 	req.Header.Set("finn-device-info", "Android, mobile")
 	req.Header.Set("finn-gw-service", gwService)
 	req.Header.Set("finn-gw-key", gwKey)
-	req.Header.Set("finn-app-installation-id", "fQ6pfn5oxTK")
+	req.Header.Set("finn-app-installation-id", a.deviceID)
 
 	// NMP headers
 	req.Header.Set("x-nmp-os-name", "Android")
@@ -786,8 +803,9 @@ func generateUUID() string {
 }
 
 // RefreshTokens uses a refresh token to obtain new access tokens.
+// The deviceID should be the same one used during initial login.
 // Returns a new TokenSet with updated tokens.
-func RefreshTokens(refreshToken string) (*TokenSet, error) {
+func RefreshTokens(refreshToken, deviceID string) (*TokenSet, error) {
 	// Step 1: Use refresh token to get new OAuth tokens
 	endpoint := fmt.Sprintf("%s/oauth/token", LoginBaseURL)
 
@@ -870,7 +888,7 @@ func RefreshTokens(refreshToken string) (*TokenSet, error) {
 	loginEndpoint := fmt.Sprintf("%s/public/login", ToriBaseURL)
 
 	loginPayload := map[string]string{
-		"deviceId": AndroidClientID,
+		"deviceId": deviceID,
 		"idToken":  tokenResult.IDToken,
 		"spidCode": exchangeResult.Data.Code,
 	}
@@ -889,6 +907,7 @@ func RefreshTokens(refreshToken string) (*TokenSet, error) {
 	loginReq.Header.Set("Content-Type", "application/json")
 	loginReq.Header.Set("finn-gw-service", gwService)
 	loginReq.Header.Set("finn-gw-key", gwKey)
+	loginReq.Header.Set("finn-app-installation-id", deviceID)
 
 	loginResp, err := client.Do(loginReq)
 	if err != nil {
@@ -918,6 +937,7 @@ func RefreshTokens(refreshToken string) (*TokenSet, error) {
 		AccessToken:  tokenResult.AccessToken,
 		RefreshToken: tokenResult.RefreshToken,
 		IDToken:      tokenResult.IDToken,
+		DeviceID:     deviceID,
 	}, nil
 }
 

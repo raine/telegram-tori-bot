@@ -9,6 +9,7 @@ type TokenSet struct {
 	AccessToken  string    `json:"access_token"`  // OAuth access token
 	RefreshToken string    `json:"refresh_token"` // OAuth refresh token
 	IDToken      string    `json:"id_token"`      // OAuth ID token
+	DeviceID     string    `json:"device_id"`     // Unique device ID (UUID) per user
 	ExpiresAt    time.Time `json:"expires_at,omitempty"`
 }
 

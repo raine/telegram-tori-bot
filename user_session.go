@@ -42,6 +42,8 @@ type UserSession struct {
 
 	// Refresh token for token refresh (stored when logging in)
 	refreshToken string
+	// Device ID (UUID) - unique per user, used for API requests
+	deviceID string
 }
 
 func (s *UserSession) reset() {

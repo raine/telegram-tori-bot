@@ -730,6 +730,7 @@ func (b *Bot) finalizeAuth(ctx context.Context, session *UserSession) {
 	// Update session with new client
 	session.toriAccountId = tokens.UserID
 	session.refreshToken = tokens.RefreshToken
+	session.deviceID = tokens.DeviceID
 	session.client = tori.NewClient(tori.ClientOpts{
 		Auth:    "Bearer " + tokens.BearerToken,
 		BaseURL: b.toriApiBaseUrl,
@@ -822,10 +823,13 @@ func (b *Bot) tryRefreshTokens(session *UserSession) error {
 	if session.refreshToken == "" {
 		return fmt.Errorf("no refresh token available")
 	}
+	if session.deviceID == "" {
+		return fmt.Errorf("no device ID available")
+	}
 
 	log.Info().Int64("userId", session.userId).Msg("attempting token refresh")
 
-	newTokens, err := auth.RefreshTokens(session.refreshToken)
+	newTokens, err := auth.RefreshTokens(session.refreshToken, session.deviceID)
 	if err != nil {
 		return fmt.Errorf("refresh failed: %w", err)
 	}
