@@ -632,6 +632,11 @@ func (h *ListingHandler) tryAutoSelectCategory(ctx context.Context, title, descr
 	return categoryID
 }
 
+// Attributes that should never be auto-selected (require user input)
+var manualOnlyAttributes = map[string]bool{
+	"condition": true, // Condition is subjective, user must choose
+}
+
 // tryAutoSelectAttributes attempts to auto-select attributes using LLM.
 // Returns the list of attributes that still need manual selection.
 // Caller must hold session.mu.Lock().
@@ -641,10 +646,25 @@ func (h *ListingHandler) tryAutoSelectAttributes(ctx context.Context, session *U
 		return attrs
 	}
 
+	// Filter out attributes that must be selected manually
+	var autoSelectableAttrs []tori.Attribute
+	var manualAttrs []tori.Attribute
+	for _, attr := range attrs {
+		if manualOnlyAttributes[attr.Name] {
+			manualAttrs = append(manualAttrs, attr)
+		} else {
+			autoSelectableAttrs = append(autoSelectableAttrs, attr)
+		}
+	}
+
+	if len(autoSelectableAttrs) == 0 {
+		return attrs
+	}
+
 	title := session.currentDraft.Title
 	description := session.currentDraft.Description
 
-	selectedMap, err := gemini.SelectAttributes(ctx, title, description, attrs)
+	selectedMap, err := gemini.SelectAttributes(ctx, title, description, autoSelectableAttrs)
 	if err != nil {
 		log.Warn().Err(err).Msg("LLM attribute selection failed, falling back to manual")
 		return attrs
@@ -657,7 +677,7 @@ func (h *ListingHandler) tryAutoSelectAttributes(ctx context.Context, session *U
 	var remainingAttrs []tori.Attribute
 	var autoSelectedInfo []string
 
-	for _, attr := range attrs {
+	for _, attr := range autoSelectableAttrs {
 		selectedID, found := selectedMap[attr.Name]
 
 		// Validate: selected ID must exist in this attribute's options
@@ -683,6 +703,9 @@ func (h *ListingHandler) tryAutoSelectAttributes(ctx context.Context, session *U
 			remainingAttrs = append(remainingAttrs, attr)
 		}
 	}
+
+	// Add manual-only attributes to remaining
+	remainingAttrs = append(remainingAttrs, manualAttrs...)
 
 	// Inform user what was auto-selected
 	if len(autoSelectedInfo) > 0 {
