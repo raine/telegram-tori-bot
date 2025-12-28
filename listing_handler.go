@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -18,6 +19,7 @@ type ListingHandler struct {
 	tg             BotAPI
 	visionAnalyzer llm.Analyzer
 	sessionStore   storage.SessionStore
+	searchClient   *tori.SearchClient
 }
 
 // NewListingHandler creates a new listing handler.
@@ -26,6 +28,7 @@ func NewListingHandler(tg BotAPI, visionAnalyzer llm.Analyzer, sessionStore stor
 		tg:             tg,
 		visionAnalyzer: visionAnalyzer,
 		sessionStore:   sessionStore,
+		searchClient:   tori.NewSearchClient(),
 	}
 }
 
@@ -62,7 +65,7 @@ func (h *ListingHandler) HandleInput(ctx context.Context, session *UserSession, 
 	// Handle attribute input
 	if state == AdFlowStateAwaitingAttribute {
 		session.mu.Lock()
-		h.HandleAttributeInput(session, message.Text)
+		h.HandleAttributeInput(ctx, session, message.Text)
 		session.mu.Unlock()
 		return true
 	}
@@ -262,8 +265,10 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 		} else {
 			// No categories predicted, use default
 			session.currentDraft.CategoryID = 76 // "Muu" category
-			session.currentDraft.State = AdFlowStateAwaitingPrice
-			session.reply("Ei osastoehdotuksia, käytetään oletusta.\n\nSyötä hinta (esim. 50€)")
+			session.reply("Ei osastoehdotuksia, käytetään oletusta.")
+			// promptForPrice releases and re-acquires lock internally
+			h.promptForPrice(ctx, session)
+			// Lock is held after promptForPrice returns
 		}
 		session.mu.Unlock()
 	} else {
@@ -398,14 +403,13 @@ func (h *ListingHandler) ProcessCategorySelection(ctx context.Context, session *
 		session.currentDraft.State = AdFlowStateAwaitingAttribute
 		h.promptForAttribute(session, requiredAttrs[0])
 	} else {
-		session.currentDraft.State = AdFlowStateAwaitingPrice
-		session.reply("Syötä hinta (esim. 50€)")
+		h.promptForPrice(ctx, session)
 	}
 }
 
 // HandleAttributeInput handles user selection of an attribute value.
 // Caller must hold session.mu.Lock().
-func (h *ListingHandler) HandleAttributeInput(session *UserSession, text string) {
+func (h *ListingHandler) HandleAttributeInput(ctx context.Context, session *UserSession, text string) {
 	if session.currentDraft == nil || session.currentDraft.State != AdFlowStateAwaitingAttribute {
 		return
 	}
@@ -415,8 +419,7 @@ func (h *ListingHandler) HandleAttributeInput(session *UserSession, text string)
 
 	if idx >= len(attrs) {
 		// Shouldn't happen, but handle gracefully
-		session.currentDraft.State = AdFlowStateAwaitingPrice
-		session.reply("Syötä hinta (esim. 50€)")
+		h.promptForPrice(ctx, session)
 		return
 	}
 
@@ -441,8 +444,7 @@ func (h *ListingHandler) HandleAttributeInput(session *UserSession, text string)
 		nextAttr := attrs[session.currentDraft.CurrentAttrIndex]
 		h.promptForAttribute(session, nextAttr)
 	} else {
-		session.currentDraft.State = AdFlowStateAwaitingPrice
-		session.replyAndRemoveCustomKeyboard("Syötä hinta (esim. 50€)")
+		h.promptForPrice(ctx, session)
 	}
 }
 
@@ -720,6 +722,88 @@ func (h *ListingHandler) promptForAttribute(session *UserSession, attr tori.Attr
 	msg := tgbotapi.NewMessage(session.userId, fmt.Sprintf("Valitse %s", strings.ToLower(attr.Label)))
 	msg.ParseMode = tgbotapi.ModeMarkdown
 	msg.ReplyMarkup = makeAttributeKeyboard(attr)
+	session.replyWithMessage(msg)
+}
+
+// promptForPrice fetches price recommendations and prompts the user.
+// Caller must hold session.mu.Lock().
+func (h *ListingHandler) promptForPrice(ctx context.Context, session *UserSession) {
+	session.currentDraft.State = AdFlowStateAwaitingPrice
+	title := session.currentDraft.Title
+
+	// Release lock for network search
+	session.mu.Unlock()
+
+	// Search for similar items
+	results, err := h.searchClient.Search(ctx, tori.SearchKeyBapCommon, tori.SearchParams{
+		Query: title,
+		Rows:  20,
+	})
+
+	// Collect prices from results
+	var prices []int
+	if err == nil && results != nil {
+		for _, doc := range results.Docs {
+			if doc.Price != nil && doc.Price.Amount > 0 {
+				prices = append(prices, doc.Price.Amount)
+			}
+		}
+	} else if err != nil {
+		log.Warn().Err(err).Msg("price search failed")
+	}
+
+	// Calculate recommendation
+	var recommendationMsg string
+	var recommendedPrice int
+
+	if len(prices) >= 3 {
+		sort.Ints(prices)
+		minPrice := prices[0]
+		maxPrice := prices[len(prices)-1]
+
+		// Calculate median
+		medianPrice := prices[len(prices)/2]
+		if len(prices)%2 == 0 {
+			medianPrice = (prices[len(prices)/2-1] + prices[len(prices)/2]) / 2
+		}
+
+		recommendedPrice = medianPrice
+		recommendationMsg = fmt.Sprintf("\n\n💡 *Hinta-arvio* (%d ilmoitusta):\nKeskihinta: *%d€* (vaihteluväli %d–%d€)",
+			len(prices), medianPrice, minPrice, maxPrice)
+
+		log.Info().
+			Str("title", title).
+			Int("median", medianPrice).
+			Int("min", minPrice).
+			Int("max", maxPrice).
+			Int("count", len(prices)).
+			Msg("price recommendation")
+	}
+
+	// Re-acquire lock
+	session.mu.Lock()
+
+	// Check if state is still valid (user may have cancelled during search)
+	if session.currentDraft == nil || session.currentDraft.State != AdFlowStateAwaitingPrice {
+		return
+	}
+
+	msgText := fmt.Sprintf("Syötä hinta (esim. 50€)%s", recommendationMsg)
+	msg := tgbotapi.NewMessage(session.userId, msgText)
+	msg.ParseMode = tgbotapi.ModeMarkdown
+
+	// Add suggestion button if we have a recommendation
+	if recommendedPrice > 0 {
+		keyboard := tgbotapi.NewReplyKeyboard(
+			tgbotapi.NewKeyboardButtonRow(
+				tgbotapi.NewKeyboardButton(fmt.Sprintf("%d€", recommendedPrice)),
+			),
+		)
+		keyboard.OneTimeKeyboard = true
+		keyboard.ResizeKeyboard = true
+		msg.ReplyMarkup = keyboard
+	}
+
 	session.replyWithMessage(msg)
 }
 

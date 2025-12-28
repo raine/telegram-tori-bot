@@ -373,7 +373,7 @@ func TestHandleAttributeInput_SelectsOption(t *testing.T) {
 	})).Return(tgbotapi.Message{}, nil).Once()
 
 	session.mu.Lock()
-	listingHandler.HandleAttributeInput(session, "Erinomainen")
+	listingHandler.HandleAttributeInput(context.Background(), session, "Erinomainen")
 	session.mu.Unlock()
 
 	tg.AssertExpectations(t)
@@ -397,6 +397,7 @@ func TestHandleAttributeInput_LastAttribute_MovesToPrice(t *testing.T) {
 	// Set up session with only one attribute left (the last one)
 	session.currentDraft = &AdInputDraft{
 		State:          AdFlowStateAwaitingAttribute,
+		Title:          "Test Item",
 		CollectedAttrs: map[string]string{"condition": "2"},
 		RequiredAttrs: []tori.Attribute{
 			{
@@ -420,13 +421,13 @@ func TestHandleAttributeInput_LastAttribute_MovesToPrice(t *testing.T) {
 		CurrentAttrIndex: 1, // On the last attribute
 	}
 
-	// Expect price prompt with keyboard removal
+	// Expect price prompt (may include recommendation text)
 	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
-		return msg.Text == "Syötä hinta (esim. 50€)"
+		return strings.HasPrefix(msg.Text, "Syötä hinta (esim. 50€)")
 	})).Return(tgbotapi.Message{}, nil).Once()
 
 	session.mu.Lock()
-	listingHandler.HandleAttributeInput(session, "Hiiri")
+	listingHandler.HandleAttributeInput(context.Background(), session, "Hiiri")
 	session.mu.Unlock()
 
 	tg.AssertExpectations(t)
