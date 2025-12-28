@@ -10,25 +10,38 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// AdFlowState tracks where we are in the ad creation flow
+type AdFlowState int
+
+const (
+	AdFlowStateNone AdFlowState = iota
+	AdFlowStateAwaitingCategory
+	AdFlowStateAwaitingAttribute
+	AdFlowStateAwaitingPrice
+	AdFlowStateReadyToPublish
+)
+
 // AdInputDraft tracks the state of a new-API ad creation
 type AdInputDraft struct {
-	DraftID     string
-	ETag        string
+	State       AdFlowState
 	CategoryID  int
 	Title       string
 	Description string
 	TradeType   string // "1" = sell, "2" = give away
 	Price       int
-	PostalCode  string
 
 	// Image data
 	Images []UploadedImage
 
+	// Category predictions for selection
+	CategoryPredictions []tori.CategoryPrediction
+
 	// Dynamic attributes collected from user
 	CollectedAttrs map[string]string
 
-	// Current attribute being asked (index into required attrs)
-	CurrentAttrIndex int
+	// Attribute collection state
+	RequiredAttrs    []tori.Attribute // Attributes that need user input
+	CurrentAttrIndex int              // Which attribute we're currently asking about
 }
 
 // UploadedImage holds info about an uploaded image
@@ -55,41 +68,27 @@ func (s *UserSession) initAdInputClient() {
 // ErrNotLoggedIn is returned when the user tries to create an ad without being logged in
 var ErrNotLoggedIn = fmt.Errorf("user not logged in")
 
-// startNewAdFlow begins the new API ad creation flow
-func (b *Bot) startNewAdFlow(ctx context.Context, session *UserSession) error {
-	if session.client == nil {
-		return ErrNotLoggedIn
-	}
-	session.initAdInputClient()
-	if session.adInputClient == nil {
-		return fmt.Errorf("could not initialize ad input client: failed to extract bearer token")
-	}
-
-	// Create a draft ad
-	log.Info().Int64("userId", session.userId).Msg("creating draft ad")
-	draft, err := session.adInputClient.CreateDraftAd(ctx)
+// startNewAdFlow creates a draft and returns the ID and ETag.
+// Does NOT mutate session - caller must update session with returned values.
+func (b *Bot) startNewAdFlow(ctx context.Context, client *tori.AdinputClient) (draftID string, etag string, err error) {
+	log.Info().Msg("creating draft ad")
+	draft, err := client.CreateDraftAd(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to create draft: %w", err)
+		return "", "", fmt.Errorf("failed to create draft: %w", err)
 	}
 
-	session.draftID = draft.ID
-	session.etag = draft.ETag
-
-	log.Info().
-		Int64("userId", session.userId).
-		Str("draftId", draft.ID).
-		Msg("draft ad created")
-
-	return nil
+	log.Info().Str("draftId", draft.ID).Msg("draft ad created")
+	return draft.ID, draft.ETag, nil
 }
 
-// uploadPhotoToAd uploads a photo to the draft ad
-func (b *Bot) uploadPhotoToAd(ctx context.Context, session *UserSession, photoData []byte, width, height int) (*UploadedImage, error) {
-	if session.draftID == "" {
+// uploadPhotoToAd uploads a photo to the draft ad.
+// Does NOT mutate session.
+func (b *Bot) uploadPhotoToAd(ctx context.Context, client *tori.AdinputClient, draftID string, photoData []byte, width, height int) (*UploadedImage, error) {
+	if draftID == "" {
 		return nil, fmt.Errorf("no draft ad to upload to")
 	}
 
-	resp, err := session.adInputClient.UploadImage(ctx, session.draftID, photoData)
+	resp, err := client.UploadImage(ctx, draftID, photoData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to upload image: %w", err)
 	}
@@ -102,10 +101,11 @@ func (b *Bot) uploadPhotoToAd(ctx context.Context, session *UserSession, photoDa
 	}, nil
 }
 
-// setImageOnDraft sets the uploaded image(s) on the draft
-func (b *Bot) setImageOnDraft(ctx context.Context, session *UserSession, images []UploadedImage) error {
+// setImageOnDraft sets the uploaded image(s) on the draft and returns new ETag.
+// Does NOT mutate session.
+func (b *Bot) setImageOnDraft(ctx context.Context, client *tori.AdinputClient, draftID, etag string, images []UploadedImage) (string, error) {
 	if len(images) == 0 {
-		return nil
+		return etag, nil
 	}
 
 	imageData := make([]map[string]any, len(images))
@@ -118,37 +118,37 @@ func (b *Bot) setImageOnDraft(ctx context.Context, session *UserSession, images 
 		}
 	}
 
-	patchResp, err := session.adInputClient.PatchItem(ctx, session.draftID, session.etag, map[string]any{
+	patchResp, err := client.PatchItem(ctx, draftID, etag, map[string]any{
 		"image": imageData,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to set image on item: %w", err)
+		return "", fmt.Errorf("failed to set image on item: %w", err)
 	}
 
-	session.etag = patchResp.ETag
-	return nil
+	return patchResp.ETag, nil
 }
 
-// getCategoryPredictions gets AI-suggested categories from the uploaded image
-func (b *Bot) getCategoryPredictions(ctx context.Context, session *UserSession) ([]tori.CategoryPrediction, error) {
-	if session.draftID == "" {
+// getCategoryPredictions gets AI-suggested categories from the uploaded image.
+// Does NOT mutate session.
+func (b *Bot) getCategoryPredictions(ctx context.Context, client *tori.AdinputClient, draftID string) ([]tori.CategoryPrediction, error) {
+	if draftID == "" {
 		return nil, fmt.Errorf("no draft ad")
 	}
 
-	return session.adInputClient.GetCategoryPredictions(ctx, session.draftID)
+	return client.GetCategoryPredictions(ctx, draftID)
 }
 
-// setCategoryOnDraft sets the category on the draft
-func (b *Bot) setCategoryOnDraft(ctx context.Context, session *UserSession, categoryID int) error {
-	patchResp, err := session.adInputClient.PatchItem(ctx, session.draftID, session.etag, map[string]any{
+// setCategoryOnDraft sets the category on the draft and returns new ETag.
+// Does NOT mutate session.
+func (b *Bot) setCategoryOnDraft(ctx context.Context, client *tori.AdinputClient, draftID, etag string, categoryID int) (string, error) {
+	patchResp, err := client.PatchItem(ctx, draftID, etag, map[string]any{
 		"category": categoryID,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to set category: %w", err)
+		return "", fmt.Errorf("failed to set category: %w", err)
 	}
 
-	session.etag = patchResp.ETag
-	return nil
+	return patchResp.ETag, nil
 }
 
 // getAttributesForDraft fetches category-specific attributes
@@ -266,10 +266,13 @@ func buildFinalPayload(
 	return payload
 }
 
-// updateAndPublishAd updates the ad with all fields and publishes it
+// updateAndPublishAd updates the ad with all fields and publishes it.
+// Does NOT mutate session.
 func (b *Bot) updateAndPublishAd(
 	ctx context.Context,
-	session *UserSession,
+	client *tori.AdinputClient,
+	draftID string,
+	etag string,
 	draft *AdInputDraft,
 	images []UploadedImage,
 	postalCode string,
@@ -277,16 +280,15 @@ func (b *Bot) updateAndPublishAd(
 	payload := buildFinalPayload(draft, images, postalCode)
 
 	// Update the ad
-	updateResp, err := session.adInputClient.UpdateAd(ctx, session.draftID, session.etag, payload)
+	_, err := client.UpdateAd(ctx, draftID, etag, payload)
 	if err != nil {
 		return fmt.Errorf("failed to update ad: %w", err)
 	}
-	session.etag = updateResp.ETag
 
 	// Set delivery options (meetup only for now)
-	err = session.adInputClient.SetDeliveryOptions(ctx, session.draftID, tori.DeliveryOptions{
+	err = client.SetDeliveryOptions(ctx, draftID, tori.DeliveryOptions{
 		BuyNow:             false,
-		Client:             "IOS",
+		Client:             "ANDROID",
 		Meetup:             true,
 		SellerPaysShipping: false,
 		Shipping:           false,
@@ -296,7 +298,7 @@ func (b *Bot) updateAndPublishAd(
 	}
 
 	// Publish
-	_, err = session.adInputClient.PublishAd(ctx, session.draftID)
+	_, err = client.PublishAd(ctx, draftID)
 	if err != nil {
 		return fmt.Errorf("failed to publish ad: %w", err)
 	}

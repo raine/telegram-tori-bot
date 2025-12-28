@@ -23,19 +23,15 @@ type PendingPhoto struct {
 }
 
 type UserSession struct {
-	userId               int64
-	client               *tori.Client
-	listing              *tori.Listing
-	toriAccountId        string
-	sender               MessageSender
-	mu                   sync.Mutex
-	pendingPhotos        *[]PendingPhoto
-	photos               []tgbotapi.PhotoSize
-	categories           []tori.Category
-	userSubjectMessageId int
-	userBodyMessageId    int
-	botSubjectMessageId  int
-	botBodyMessageId     int
+	userId        int64
+	client        *tori.Client
+	toriAccountId string
+	sender        MessageSender
+	mu            sync.Mutex
+
+	// Photo collection
+	pendingPhotos *[]PendingPhoto
+	photos        []tgbotapi.PhotoSize
 
 	// Auth flow state for login
 	authFlow *AuthFlow
@@ -45,7 +41,7 @@ type UserSession struct {
 	// Device ID (UUID) - unique per user, used for API requests
 	deviceID string
 
-	// New adinput API state for ad creation
+	// Adinput API state for ad creation
 	adInputClient *tori.AdinputClient
 	draftID       string
 	etag          string
@@ -57,15 +53,12 @@ type UserSession struct {
 
 func (s *UserSession) reset() {
 	log.Info().Int64("userId", s.userId).Msg("reset user session")
-	s.listing = nil
 	s.pendingPhotos = nil
 	s.photos = nil
-	s.categories = nil
-	s.userSubjectMessageId = 0
 	if s.authFlow != nil {
 		s.authFlow.Reset()
 	}
-	// Reset new adinput API state
+	// Reset adinput API state
 	s.adInputClient = nil
 	s.draftID = ""
 	s.etag = ""

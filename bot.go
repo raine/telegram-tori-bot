@@ -1,20 +1,17 @@
 package main
 
 import (
-	"cmp"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"os"
-	"slices"
+	"regexp"
+	"strconv"
 	"strings"
-	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/raine/telegram-tori-bot/storage"
 	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/raine/telegram-tori-bot/tori/auth"
+	"github.com/raine/telegram-tori-bot/vision"
 	"github.com/rs/zerolog/log"
 )
 
@@ -28,15 +25,14 @@ type Bot struct {
 	tg             BotAPI
 	state          BotState
 	toriApiBaseUrl string
-	filterCache    *FilterCache
 	sessionStore   storage.SessionStore
+	visionAnalyzer vision.Analyzer
 }
 
 func NewBot(tg BotAPI, toriApiBaseUrl string, sessionStore storage.SessionStore) *Bot {
 	bot := &Bot{
 		tg:             tg,
 		toriApiBaseUrl: toriApiBaseUrl,
-		filterCache:    NewFilterCache(time.Hour),
 		sessionStore:   sessionStore,
 	}
 
@@ -44,494 +40,192 @@ func NewBot(tg BotAPI, toriApiBaseUrl string, sessionStore storage.SessionStore)
 	return bot
 }
 
-func (b *Bot) handlePhoto(message *tgbotapi.Message) {
-	session, err := b.state.getUserSession(message.From.ID)
-	if err != nil {
-		log.Error().Err(err).Send()
-		return
-	}
-
-	// Note: The caller (handleUpdate) already holds session.mu.Lock()
-	// When photos are sent as a "media group" that appear like a single message
-	// with multiple photos, the photos are in fact sent one by one in separate
-	// messages. To give feedback like "n photos added", we have to wait a bit
-	// after the first photo is sent and keep track of photos since then.
-	//
-	// Also, in media groups, photos have an order. It looks like the order is
-	// based on message's id. So eventually we need to add uploaded photos
-	// to session.photo in ordered by message id.
-	if session.pendingPhotos == nil {
-		session.pendingPhotos = new([]PendingPhoto)
-
-		go func() {
-			env, _ := os.LookupEnv("GO_ENV")
-			if env == "test" {
-				time.Sleep(1000 * time.Microsecond)
-			} else {
-				time.Sleep(1 * time.Second)
-			}
-
-			// Lock here because we're running after handleUpdate released the lock
-			session.mu.Lock()
-			defer session.mu.Unlock()
-
-			// Guard against nil in case it was cleared (e.g., via /poistakuvat) while sleeping
-			if session.pendingPhotos == nil {
-				return
-			}
-
-			// Order pending photos batch based on message id, which is the
-			// order in which message were sent, but not necessary the order
-			// they are processed by the program
-			slices.SortStableFunc(*session.pendingPhotos, func(a, b PendingPhoto) int {
-				return cmp.Compare(a.messageId, b.messageId)
-			})
-
-			for _, pendingPhoto := range *session.pendingPhotos {
-				session.photos = append(session.photos, pendingPhoto.photoSize)
-			}
-
-			session.reply("%s lisätty", pluralize("kuva", "kuvaa", len(*session.pendingPhotos)))
-			session.pendingPhotos = nil
-			log.Info().Interface("photos", session.photos).Msg("added pending photos to session")
-		}()
-	}
-
-	// message.Photo is an array of PhotoSizes and the last one is the largest size
-	largestPhoto := message.Photo[len(message.Photo)-1]
-	url, err := b.tg.GetFileDirectURL(largestPhoto.FileID)
-	if err != nil {
-		log.Error().Err(err).Msg("failed to get photo url")
-		return
-	}
-
-	log.Info().Interface("photo", largestPhoto).Str("url", url).Int("messageId", message.MessageID).Msg("added photo to pending photos")
-	pendingPhoto := PendingPhoto{
-		messageId: message.MessageID,
-		photoSize: largestPhoto,
-	}
-	*session.pendingPhotos = append(*session.pendingPhotos, pendingPhoto)
+// SetVisionAnalyzer sets the vision analyzer for image analysis
+func (b *Bot) SetVisionAnalyzer(analyzer vision.Analyzer) {
+	b.visionAnalyzer = analyzer
 }
 
-// handleCallback is called when a tgbotapi.update with CallbackQuery is
-// received. That happens when user interacts with an inline keyboard with
-// callback data.
-func (b *Bot) handleCallback(ctx context.Context, update tgbotapi.Update) {
-	log.Info().Msg("got callback")
+// handlePhoto processes a photo message and starts or adds to the listing flow
+func (b *Bot) handlePhoto(ctx context.Context, session *UserSession, message *tgbotapi.Message) {
+	// Get the largest photo size (no lock needed for read)
+	largestPhoto := message.Photo[len(message.Photo)-1]
 
-	session, err := b.state.getUserSession(update.CallbackQuery.From.ID)
-	if err != nil {
-		log.Error().Err(err).Send()
+	// Check if we have an existing draft (brief lock)
+	session.mu.Lock()
+	existingDraft := session.draftID != ""
+	client := session.adInputClient
+	draftID := session.draftID
+	etag := session.etag
+
+	if !existingDraft {
+		session.reply("Analysoidaan kuvaa...")
+		session.initAdInputClient()
+		client = session.adInputClient
+	} else {
+		session.reply("Lisätään kuva...")
+	}
+	session.mu.Unlock()
+
+	if client == nil {
+		session.mu.Lock()
+		session.reply("Virhe: ei voitu alustaa yhteyttä")
+		session.mu.Unlock()
 		return
 	}
 
+	// Download the photo (NO LOCK - network I/O)
+	photoData, err := downloadFileID(b.tg.GetFileDirectURL, largestPhoto.FileID)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to download photo")
+		session.mu.Lock()
+		session.replyWithError(err)
+		session.mu.Unlock()
+		return
+	}
+
+	// If this is the first photo, analyze with Gemini and create draft
+	var result *vision.AnalysisResult
+	var categories []tori.CategoryPrediction
+
+	if !existingDraft {
+		// Analyze with Gemini vision (NO LOCK - network I/O)
+		if b.visionAnalyzer == nil {
+			session.mu.Lock()
+			session.reply("Kuva-analyysi ei ole käytettävissä")
+			session.mu.Unlock()
+			return
+		}
+
+		result, err = b.visionAnalyzer.AnalyzeImage(ctx, photoData, "image/jpeg")
+		if err != nil {
+			log.Error().Err(err).Msg("failed to analyze image")
+			session.mu.Lock()
+			session.replyWithError(err)
+			session.mu.Unlock()
+			return
+		}
+
+		log.Info().
+			Str("title", result.Item.Title).
+			Str("condition", result.Item.Condition).
+			Float64("cost", result.Usage.CostUSD).
+			Msg("image analyzed")
+
+		// Create draft ad (NO LOCK - network I/O)
+		draftID, etag, err = b.startNewAdFlow(ctx, client)
+		if err != nil {
+			session.mu.Lock()
+			session.replyWithError(err)
+			session.mu.Unlock()
+			return
+		}
+	}
+
+	// Upload photo to draft (NO LOCK - network I/O)
+	uploaded, err := b.uploadPhotoToAd(ctx, client, draftID, photoData, largestPhoto.Width, largestPhoto.Height)
+	if err != nil {
+		session.mu.Lock()
+		session.replyWithError(err)
+		session.mu.Unlock()
+		return
+	}
+
+	// Now update session state (LOCK)
 	session.mu.Lock()
 	defer session.mu.Unlock()
 
-	var newCategoryCode string
-	for _, c := range session.categories {
-		if c.Label == update.CallbackQuery.Data {
-			newCategoryCode = c.Code
-		}
-	}
+	// Add photo to session
+	session.photos = append(session.photos, largestPhoto)
 
-	newadFilters, err := b.fetchNewadFilters(ctx, session.client.GetFiltersSectionNewad)
-	if err != nil {
-		session.replyWithError(err)
-		return
-	}
-	missingFieldBefore := tori.GetMissingListingField(newadFilters.Newad.ParamMap, newadFilters.Newad.SettingsParams, *session.listing)
+	if !existingDraft {
+		// Update session with draft info
+		session.draftID = draftID
+		session.etag = etag
 
-	session.listing.Category = newCategoryCode
-	// Clear the AdDetails, since category has changed
-	session.listing.AdDetails = nil
-	msg := makeCategoryMessage(session.categories, newCategoryCode)
-	msgReplyMarkup, _ := msg.ReplyMarkup.(tgbotapi.InlineKeyboardMarkup)
-	editMsg := tgbotapi.NewEditMessageTextAndMarkup(
-		update.CallbackQuery.From.ID,
-		update.CallbackQuery.Message.MessageID,
-		msg.Text,
-		msgReplyMarkup,
-	)
-	editMsg.ParseMode = tgbotapi.ModeMarkdown
-	_, err = b.tg.Send(editMsg)
-	if err != nil {
-		session.replyWithError(err)
-		return
-	}
-
-	callback := tgbotapi.NewCallback(update.CallbackQuery.ID, update.CallbackQuery.Data)
-	if _, err := b.tg.Request(callback); err != nil {
-		session.replyWithError(err)
-		return
-	}
-
-	// Prompt user for next field because category has changed and AdDetails has been cleared
-	msg, missingFieldNow, err := makeNextFieldPrompt(ctx, b.filterCache, session.client.GetFiltersSectionNewad, *session.listing)
-	if err != nil {
-		session.replyWithError(err)
-		return
-	}
-	// Reduce a bit of noise by not sending the prompt message if it's the same
-	// as previous one, before changing category
-	if missingFieldBefore != missingFieldNow {
-		session.replyWithMessage(msg)
-	}
-}
-
-// handleNewListing starts a new listing from the user's message
-func (b *Bot) handleNewListing(ctx context.Context, session *UserSession, text string, messageId int) {
-	// Do the best we can to ensure listing can be eventually sent
-	// successfully, instead of failing after user has input all details and
-	// bot tries to POST the listing to Tori
-	msgText := b.checkUserPreconditions(ctx, session)
-	if msgText != "" {
-		session.reply(msgText)
-		return
-	}
-
-	listing := newListingFromMessage(text)
-	session.userSubjectMessageId = messageId
-	session.listing = &listing
-	// Remove custom keyboard just in case there was one from previous
-	// listing creation that did not finish
-	sent := session.reply(listingSubjectIsText, session.listing.Subject)
-	session.botSubjectMessageId = sent.MessageID
-	categories, err := tori.GetCategoriesForSubject(ctx, session.client, session.listing.Subject)
-	if err != nil {
-		session.replyWithError(err)
-		session.reset()
-		return
-	}
-	log.Info().Str("subject", session.listing.Subject).Interface("categories", categories).Msg("found categories for subject")
-	if len(categories) == 0 {
-		// TODO: add fallback mechanism for selecting category
-		session.reply(cantFigureOutCategoryText)
-		session.reset()
-		return
-	}
-	session.categories = categories
-	session.listing.Category = categories[0].Code
-	msg := makeCategoryMessage(categories, session.listing.Category)
-	session.replyWithMessage(msg)
-	log.Info().Interface("listing", session.listing).Msg("started a new listing")
-
-	msg, _, err = makeNextFieldPrompt(ctx, b.filterCache, session.client.GetFiltersSectionNewad, *session.listing)
-	if err != nil {
-		session.replyWithError(err)
-		return
-	}
-	session.replyWithMessage(msg)
-}
-
-// handleListingFieldReply augments an existing listing with user's message
-func (b *Bot) handleListingFieldReply(ctx context.Context, session *UserSession, text string, messageId int) {
-	newadFilters, err := b.fetchNewadFilters(ctx, session.client.GetFiltersSectionNewad)
-	if err != nil {
-		session.replyWithError(err)
-		return
-	}
-	settingsParams := newadFilters.Newad.SettingsParams
-	paramMap := newadFilters.Newad.ParamMap
-
-	// User is replying to bot's question, and we can determine what, by
-	// getting the next missing field from Listing
-	repliedField := tori.GetMissingListingField(paramMap, settingsParams, *session.listing)
-	if repliedField == "" {
-		log.Info().Msg("not expecting a reply")
-		return
-	}
-
-	log.Info().Str("field", repliedField).Msg("user is replying to field")
-	newListing, err := setListingFieldFromMessage(paramMap, *session.listing, repliedField, text)
-	if err != nil {
-		var noLabelFoundError *NoLabelFoundError
-		label, _ := tori.GetLabelForField(paramMap, repliedField) // can't error in this case
-		if errors.As(err, &noLabelFoundError) {
-			session.reply(invalidReplyToField, label)
-		} else {
-			session.replyWithError(err)
-		}
-
-		return
-	}
-	session.listing = &newListing
-	log.Info().Interface("listing", newListing).Msg("updated listing")
-
-	if repliedField == "body" {
-		session.userBodyMessageId = messageId
-		sent := session.reply(listingBodyIsText, session.listing.Body)
-		session.botBodyMessageId = sent.MessageID
-	}
-
-	msg, missingField, err := makeNextFieldPrompt(ctx, b.filterCache, session.client.GetFiltersSectionNewad, *session.listing)
-	if missingField != "" {
+		// Set image on draft
+		allImages := []UploadedImage{*uploaded}
+		newEtag, err := b.setImageOnDraft(ctx, client, draftID, etag, allImages)
 		if err != nil {
 			session.replyWithError(err)
 			return
 		}
-		session.replyWithMessage(msg)
-	} else {
-		var text string
-		if len(session.photos) == 0 {
-			text = listingReadyToBeSentNoImagesText
-		} else {
-			text = listingReadyToBeSentText
+		session.etag = newEtag
+
+		// Get category predictions
+		categories, err = b.getCategoryPredictions(ctx, client, draftID)
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to get category predictions")
+			categories = []tori.CategoryPrediction{}
 		}
-		session.replyAndRemoveCustomKeyboard(
-			fmt.Sprintf("%s\n%s", text, listingReadyCommands),
+
+		// Initialize the draft with vision results
+		session.currentDraft = &AdInputDraft{
+			State:               AdFlowStateAwaitingCategory,
+			Title:               result.Item.Title,
+			Description:         result.Item.Description,
+			TradeType:           "1", // Default to sell
+			CollectedAttrs:      make(map[string]string),
+			Images:              allImages,
+			CategoryPredictions: categories,
+		}
+
+		// Map condition to Finnish
+		conditionMap := map[string]string{
+			"new":      "Uusi",
+			"like_new": "Erinomainen",
+			"good":     "Hyvä",
+			"fair":     "Tyydyttävä",
+			"poor":     "Huono",
+		}
+		conditionFi := conditionMap[result.Item.Condition]
+		if conditionFi == "" {
+			conditionFi = "Hyvä"
+		}
+
+		// Show detected info to user
+		msgText := fmt.Sprintf(`*Tunnistettu:*
+📦 *Otsikko:* %s
+📝 *Kuvaus:* %s
+🏷️ *Kunto:* %s
+
+Valitse osasto:`,
+			result.Item.Title,
+			result.Item.Description,
+			conditionFi,
 		)
-	}
-}
 
-func (b *Bot) handleFreetextReply(ctx context.Context, update tgbotapi.Update) {
-	var text string
-	if update.Message.Caption != "" {
-		text = update.Message.Caption
+		// Send message with category keyboard
+		if len(categories) > 0 {
+			msg := tgbotapi.NewMessage(session.userId, msgText)
+			msg.ParseMode = tgbotapi.ModeMarkdown
+			msg.ReplyMarkup = makeCategoryPredictionKeyboard(categories)
+			session.replyWithMessage(msg)
+		} else {
+			// No categories predicted, use default
+			session.currentDraft.CategoryID = 76 // "Muu" category
+			session.currentDraft.State = AdFlowStateAwaitingPrice
+			session.reply(msgText + "\n\nEi osastoehdotuksia, käytetään oletusta.\n\nSyötä hinta (esim. 50€):")
+		}
 	} else {
-		text = update.Message.Text
-	}
+		// Adding to existing draft
+		session.currentDraft.Images = append(session.currentDraft.Images, *uploaded)
 
-	session, err := b.state.getUserSession(update.Message.From.ID)
-	if err != nil {
-		log.Error().Err(err).Send()
-		return
-	}
-
-	// Message has a photo
-	if len(update.Message.Photo) > 0 {
-		b.handlePhoto(update.Message)
-	}
-
-	if text == "" {
-		return
-	}
-
-	if session.listing == nil {
-		b.handleNewListing(ctx, session, text, update.Message.MessageID)
-	} else {
-		b.handleListingFieldReply(ctx, session, text, update.Message.MessageID)
-	}
-}
-
-func (b *Bot) sendListingCommand(ctx context.Context, update tgbotapi.Update) {
-	userId := update.Message.From.ID
-	session, err := b.state.getUserSession(userId)
-	if err != nil {
-		log.Error().Err(err).Send()
-		return
-	}
-
-	if session.listing == nil {
-		session.reply(noListingOnSendText)
-		return
-	}
-
-	_, missingField, err := makeNextFieldPrompt(ctx, b.filterCache, session.client.GetFiltersSectionNewad, *session.listing)
-	if err != nil {
-		log.Error().Stack().Err(err).Send()
-		return
-	}
-	if missingField != "" {
-		log.Info().Str("missingField", missingField).Msg("cannot send listing with missing field(s)")
-		session.reply(incompleteListingOnSendText)
-		return
-	}
-
-	// Add location to listing based on logged in user's location
-	account, err := session.client.GetAccount(ctx, session.toriAccountId)
-	if err != nil {
-		session.replyWithError(err)
-		return
-	}
-	listingLocation := tori.AccountLocationListToListingLocation(account.Locations)
-	session.listing.Location = &listingLocation
-	session.listing.AccountId = tori.ParseAccountIdNumberFromPath(account.AccountId)
-
-	// Phone number hidden implicitly
-	session.listing.PhoneHidden = true
-
-	medias, err := uploadListingPhotos(ctx, b.tg.GetFileDirectURL, session.client.UploadMedia, session.photos)
-	if err != nil {
-		session.replyWithError(err)
-		return
-	}
-
-	listingImages := make([]tori.ListingMedia, 0, len(medias))
-	for _, m := range medias {
-		listingImages = append(listingImages, tori.ListingMedia{
-			Id: "/public/media/ad/" + m.Id,
-		})
-	}
-	session.listing.Images = &listingImages
-
-	err = session.client.PostListing(ctx, *session.listing)
-	if err != nil {
-		session.replyWithError(err)
-		return
-	}
-	session.replyAndRemoveCustomKeyboard(listingSentText)
-
-	// Create a JSON archive of listing and photos. The archive can be used
-	// later to resend the same listing, perhaps with minor modifications.
-	archive := NewListingArchive(*session.listing, session.photos)
-	archiveBytes, err := json.Marshal(archive)
-	if err != nil {
-		session.replyWithError(err)
-		return
-	}
-	document := tgbotapi.NewDocument(session.userId, tgbotapi.FileBytes{
-		Name:  "archive.json",
-		Bytes: archiveBytes,
-	})
-	document.Caption = session.listing.Subject
-
-	_, err = b.tg.Send(document)
-	if err != nil {
-		session.replyWithError(err)
-		return
-	}
-
-	log.Info().Interface("listing", session.listing).Msg("listing posted successfully")
-	session.reset()
-}
-
-func (b *Bot) handleImportJson(update tgbotapi.Update) {
-	userId := update.Message.From.ID
-	session, err := b.state.getUserSession(userId)
-	if err != nil {
-		log.Error().Err(err).Send()
-		return
-	}
-
-	replyToMessage := update.Message.ReplyToMessage
-	if replyToMessage == nil || replyToMessage.Document == nil || replyToMessage.Document.MimeType != "application/json" {
-		session.reply(importJsonInputError)
-		return
-	}
-
-	archiveBytes, err := downloadFileID(b.tg.GetFileDirectURL, replyToMessage.Document.FileID)
-	if err != nil {
-		session.replyWithError(err)
-		return
-	}
-
-	var archive ListingArchive
-	err = json.Unmarshal(archiveBytes, &archive)
-
-	if err != nil {
-		session.replyWithError(err)
-		return
-	}
-
-	session.photos = archive.Photos
-	session.listing = &archive.Listing
-
-	// When the listing is marshalled for the json archive, empty
-	// delivery_options won't exist in the output json. This is because in the
-	// json sent to tori, omitting delivery_options means that only pickup is
-	// possible. When importing listing to session, we need to set
-	// delivery_options to an empty array in the pickup case so that bot knows
-	// the field has been asked.
-	// See also "empty multi value in AdDetails is not marshaled" test.
-	if session.listing.AdDetails["delivery_options"] == nil {
-		session.listing.AdDetails["delivery_options"] = []string{}
-	}
-
-	session.reply(importJsonSuccessful, session.listing.Subject)
-}
-
-func (b *Bot) handleForget(ctx context.Context, update tgbotapi.Update, args []string) {
-	userId := update.Message.From.ID
-	session, err := b.state.getUserSession(userId)
-	if err != nil {
-		log.Error().Err(err).Send()
-		return
-	}
-	switch args[0] {
-	case "hinta":
-		session.listing.Price = 0
-	case "kunto":
-		delete(session.listing.AdDetails, "general_condition")
-	case "lisätiedot":
-		session.listing.AdDetails = tori.AdDetails{}
-	default:
-		session.reply(forgetInvalidField)
-		return
-	}
-
-	msg, _, err := makeNextFieldPrompt(ctx, b.filterCache, session.client.GetFiltersSectionNewad, *session.listing)
-	if err != nil {
-		session.replyWithError(err)
-		return
-	}
-	session.replyWithMessage(msg)
-}
-
-func (b *Bot) handleMessageEdit(update tgbotapi.Update) {
-	userId := update.EditedMessage.From.ID
-	session, err := b.state.getUserSession(userId)
-	if err != nil {
-		log.Error().Err(err).Send()
-		return
-	}
-
-	if session.listing == nil {
-		return
-	}
-
-	var text string
-	if update.EditedMessage.Caption != "" {
-		text = update.EditedMessage.Caption
-	} else {
-		text = update.EditedMessage.Text
-	}
-
-	var editMsg tgbotapi.EditMessageTextConfig
-	switch update.EditedMessage.MessageID {
-	// User edited subject message with the intent of changing the subject
-	case session.userSubjectMessageId:
-		listing := newListingFromMessage(text)
-		log.Info().Str("oldSubject", session.listing.Subject).Str("newSubject", listing.Subject).Msg("listing subject updated")
-		session.listing.Subject = listing.Subject
-
-		editMsg = tgbotapi.NewEditMessageText(
-			session.userId,
-			session.botSubjectMessageId,
-			fmt.Sprintf(listingSubjectIsText, session.listing.Subject),
-		)
-	// User edited body message with the intent of changing the subject
-	case session.userBodyMessageId:
-		log.Info().Str("oldBody", session.listing.Body).Str("newBody", text).Msg("listing body updated")
-		session.listing.Body = strings.TrimSpace(text)
-
-		editMsg = tgbotapi.NewEditMessageText(
-			session.userId,
-			session.botBodyMessageId,
-			fmt.Sprintf(listingBodyIsText, session.listing.Body),
-		)
-	}
-
-	if editMsg.ChatID != 0 {
-		editMsg.ParseMode = tgbotapi.ModeMarkdown
-		_, err = b.tg.Send(editMsg)
-		log.Info().Interface("editMsg", editMsg).Msg("message edited")
+		// Update images on draft
+		newEtag, err := b.setImageOnDraft(ctx, client, draftID, session.etag, session.currentDraft.Images)
 		if err != nil {
 			session.replyWithError(err)
 			return
 		}
+		session.etag = newEtag
+
+		session.reply(fmt.Sprintf("Kuva lisätty! Kuvia yhteensä: %d", len(session.photos)))
 	}
 }
 
 func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
-	// Update is user interacting with inline keyboard
+	// Handle callback queries (inline keyboard button presses)
 	if update.CallbackQuery != nil {
-		b.handleCallback(ctx, update)
-		return
-	}
-
-	if update.EditedMessage != nil {
-		b.handleMessageEdit(update)
+		b.handleCallbackQuery(ctx, update.CallbackQuery)
 		return
 	}
 
@@ -546,27 +240,59 @@ func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		return
 	}
 
-	session.mu.Lock()
-	defer session.mu.Unlock()
-
 	log.Info().Str("text", update.Message.Text).Str("caption", update.Message.Caption).Msg("got message")
 
-	// Check if auth flow timed out
+	// Handle auth flow (needs lock)
+	session.mu.Lock()
 	if session.authFlow != nil && session.authFlow.IsTimedOut() {
 		session.authFlow.Reset()
 		session.reply(loginTimeoutText)
 	}
 
-	// Handle auth flow if active
 	if session.authFlow != nil && session.authFlow.IsActive() {
 		b.handleAuthFlowMessage(ctx, session, update.Message.Text)
+		session.mu.Unlock()
+		return
+	}
+	session.mu.Unlock()
+
+	// Handle photo messages (handlePhoto manages its own locking)
+	if len(update.Message.Photo) > 0 {
+		session.mu.Lock()
+		if session.client == nil {
+			session.reply(loginRequiredText)
+			session.mu.Unlock()
+			return
+		}
+		session.mu.Unlock()
+		b.handlePhoto(ctx, session, update.Message)
 		return
 	}
 
-	command, args := parseCommand(update.Message.Text)
+	// Handle attribute input if awaiting attribute
+	session.mu.Lock()
+	if session.currentDraft != nil && session.currentDraft.State == AdFlowStateAwaitingAttribute {
+		b.handleAttributeInput(session, update.Message.Text)
+		session.mu.Unlock()
+		return
+	}
+	session.mu.Unlock()
+
+	// Handle price input if awaiting price
+	session.mu.Lock()
+	if session.currentDraft != nil && session.currentDraft.State == AdFlowStateAwaitingPrice {
+		b.handlePriceInput(session, update.Message.Text)
+		session.mu.Unlock()
+		return
+	}
+	session.mu.Unlock()
+
+	// Handle commands
+	session.mu.Lock()
+	defer session.mu.Unlock()
+
+	command, _ := parseCommand(update.Message.Text)
 	switch command {
-	// /start is the command telegram client prompts user to send to a
-	// bot when there are no prior messages
 	case "/start":
 		if session.client == nil {
 			session.reply(loginRequiredText)
@@ -579,23 +305,305 @@ func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		session.reset()
 		session.replyAndRemoveCustomKeyboard(okText)
 	case "/laheta":
-		b.sendListingCommand(ctx, update)
+		b.handleSendListing(ctx, session)
 	case "/poistakuvat":
 		session.photos = nil
 		session.pendingPhotos = nil
+		session.currentDraft = nil
 		session.reply(photosRemoved)
-	case "/tuojson":
-		b.handleImportJson(update)
-	case "/unohda":
-		b.handleForget(ctx, update, args)
 	default:
-		// Require login for freetext (listing creation)
 		if session.client == nil {
 			session.reply(loginRequiredText)
 			return
 		}
-		b.handleFreetextReply(ctx, update)
+		// For now, just tell user to send a photo
+		session.reply("Lähetä kuva aloittaaksesi ilmoituksen teon")
 	}
+}
+
+// handleCallbackQuery handles inline keyboard button presses
+func (b *Bot) handleCallbackQuery(ctx context.Context, query *tgbotapi.CallbackQuery) {
+	userId := query.From.ID
+	session, err := b.state.getUserSession(userId)
+	if err != nil {
+		log.Error().Err(err).Send()
+		return
+	}
+
+	// Answer the callback to remove the loading state
+	callback := tgbotapi.NewCallback(query.ID, "")
+	b.tg.Request(callback)
+
+	// Handle category selection
+	if strings.HasPrefix(query.Data, "cat:") {
+		b.handleCategorySelection(ctx, session, query)
+	}
+}
+
+// handleCategorySelection processes category selection and fetches attributes
+func (b *Bot) handleCategorySelection(ctx context.Context, session *UserSession, query *tgbotapi.CallbackQuery) {
+	categoryIDStr := strings.TrimPrefix(query.Data, "cat:")
+	categoryID, err := strconv.Atoi(categoryIDStr)
+	if err != nil {
+		log.Error().Err(err).Str("data", query.Data).Msg("invalid category callback data")
+		return
+	}
+
+	session.mu.Lock()
+	if session.currentDraft == nil || session.currentDraft.State != AdFlowStateAwaitingCategory {
+		session.reply("Ei aktiivista ilmoitusta")
+		session.mu.Unlock()
+		return
+	}
+
+	// Find category label for logging
+	var categoryLabel string
+	for _, cat := range session.currentDraft.CategoryPredictions {
+		if cat.ID == categoryID {
+			categoryLabel = cat.Label
+			break
+		}
+	}
+
+	session.currentDraft.CategoryID = categoryID
+	log.Info().Int("categoryId", categoryID).Str("label", categoryLabel).Msg("category selected")
+
+	// Edit the original message to remove keyboard
+	if query.Message != nil {
+		edit := tgbotapi.NewEditMessageReplyMarkup(
+			query.Message.Chat.ID,
+			query.Message.MessageID,
+			tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}},
+		)
+		b.tg.Request(edit)
+	}
+
+	session.reply(fmt.Sprintf("Osasto: *%s*", categoryLabel))
+
+	// Get client and draft info for network calls
+	client := session.adInputClient
+	draftID := session.draftID
+	etag := session.etag
+	session.mu.Unlock()
+
+	// Set category on draft (NO LOCK - network I/O)
+	newEtag, err := b.setCategoryOnDraft(ctx, client, draftID, etag, categoryID)
+	if err != nil {
+		session.mu.Lock()
+		session.replyWithError(err)
+		session.mu.Unlock()
+		return
+	}
+
+	// Fetch attributes for this category (NO LOCK - network I/O)
+	attrs, err := client.GetAttributes(ctx, draftID)
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to get attributes, skipping to price")
+		session.mu.Lock()
+		session.etag = newEtag
+		session.currentDraft.State = AdFlowStateAwaitingPrice
+		session.reply("Syötä hinta (esim. 50€):")
+		session.mu.Unlock()
+		return
+	}
+
+	// Re-acquire lock to update session
+	session.mu.Lock()
+	defer session.mu.Unlock()
+
+	session.etag = newEtag
+	session.adAttributes = attrs
+
+	// Get required SELECT attributes
+	requiredAttrs := tori.GetRequiredSelectAttributes(attrs)
+
+	if len(requiredAttrs) > 0 {
+		session.currentDraft.RequiredAttrs = requiredAttrs
+		session.currentDraft.CurrentAttrIndex = 0
+		session.currentDraft.State = AdFlowStateAwaitingAttribute
+		b.promptForAttribute(session, requiredAttrs[0])
+	} else {
+		session.currentDraft.State = AdFlowStateAwaitingPrice
+		session.reply("Syötä hinta (esim. 50€):")
+	}
+}
+
+// promptForAttribute shows a keyboard to select an attribute value
+func (b *Bot) promptForAttribute(session *UserSession, attr tori.Attribute) {
+	msg := tgbotapi.NewMessage(session.userId, fmt.Sprintf("Valitse %s:", attr.Label))
+	msg.ParseMode = tgbotapi.ModeMarkdown
+	msg.ReplyMarkup = makeAttributeKeyboard(attr)
+	session.replyWithMessage(msg)
+}
+
+// handleAttributeInput handles user selection of an attribute value
+func (b *Bot) handleAttributeInput(session *UserSession, text string) {
+	if session.currentDraft == nil || session.currentDraft.State != AdFlowStateAwaitingAttribute {
+		return
+	}
+
+	attrs := session.currentDraft.RequiredAttrs
+	idx := session.currentDraft.CurrentAttrIndex
+
+	if idx >= len(attrs) {
+		// Shouldn't happen, but handle gracefully
+		session.currentDraft.State = AdFlowStateAwaitingPrice
+		session.reply("Syötä hinta (esim. 50€):")
+		return
+	}
+
+	currentAttr := attrs[idx]
+
+	// Find the selected option by label
+	opt := tori.FindOptionByLabel(&currentAttr, text)
+	if opt == nil {
+		// Invalid selection, prompt again
+		session.reply(fmt.Sprintf("Valitse jokin vaihtoehdoista %s:", currentAttr.Label))
+		b.promptForAttribute(session, currentAttr)
+		return
+	}
+
+	// Store the selected value
+	session.currentDraft.CollectedAttrs[currentAttr.Name] = strconv.Itoa(opt.ID)
+	log.Info().Str("attr", currentAttr.Name).Str("label", text).Int("optionId", opt.ID).Msg("attribute selected")
+
+	// Move to next attribute or price input
+	session.currentDraft.CurrentAttrIndex++
+	if session.currentDraft.CurrentAttrIndex < len(attrs) {
+		nextAttr := attrs[session.currentDraft.CurrentAttrIndex]
+		b.promptForAttribute(session, nextAttr)
+	} else {
+		session.currentDraft.State = AdFlowStateAwaitingPrice
+		session.replyAndRemoveCustomKeyboard("Syötä hinta (esim. 50€):")
+	}
+}
+
+// handlePriceInput handles price input when awaiting price
+func (b *Bot) handlePriceInput(session *UserSession, text string) {
+	// Parse price from text
+	price, err := parsePriceMessage(text)
+	if err != nil {
+		session.reply("En ymmärtänyt hintaa. Syötä hinta numerona (esim. 50€ tai 50):")
+		return
+	}
+
+	session.currentDraft.Price = price
+	session.currentDraft.State = AdFlowStateReadyToPublish
+
+	// Show summary
+	msg := fmt.Sprintf(`*Ilmoitus valmis:*
+📦 *Otsikko:* %s
+📝 *Kuvaus:* %s
+💰 *Hinta:* %d€
+📷 *Kuvia:* %d
+
+Lähetä /laheta julkaistaksesi tai /peru peruuttaaksesi.`,
+		session.currentDraft.Title,
+		session.currentDraft.Description,
+		session.currentDraft.Price,
+		len(session.photos),
+	)
+
+	session.reply(msg)
+}
+
+var priceRegex = regexp.MustCompile(`(\d+)`)
+
+func parsePriceMessage(text string) (int, error) {
+	m := priceRegex.FindStringSubmatch(text)
+	if m == nil {
+		return 0, fmt.Errorf("no price found")
+	}
+	return strconv.Atoi(m[1])
+}
+
+// handleSendListing sends the listing using the new adinput API
+func (b *Bot) handleSendListing(ctx context.Context, session *UserSession) {
+	if session.currentDraft == nil || len(session.photos) == 0 {
+		session.reply("Ei ilmoitusta lähetettäväksi. Lähetä ensin kuva.")
+		return
+	}
+
+	if session.currentDraft.State != AdFlowStateReadyToPublish {
+		switch session.currentDraft.State {
+		case AdFlowStateAwaitingCategory:
+			session.reply("Valitse ensin osasto.")
+		case AdFlowStateAwaitingAttribute:
+			session.reply("Täytä ensin lisätiedot.")
+		case AdFlowStateAwaitingPrice:
+			session.reply("Syötä ensin hinta.")
+		default:
+			session.reply("Ilmoitus ei ole valmis lähetettäväksi.")
+		}
+		return
+	}
+
+	// Copy data needed for network ops
+	draftID := session.draftID
+	etag := session.etag
+	draftCopy := *session.currentDraft
+	images := make([]UploadedImage, len(session.currentDraft.Images))
+	copy(images, session.currentDraft.Images)
+	client := session.adInputClient
+	toriClient := session.client
+	toriAccountId := session.toriAccountId
+
+	session.reply("Lähetetään ilmoitusta...")
+
+	// Release lock for network I/O
+	session.mu.Unlock()
+
+	// Set category on draft
+	newEtag, err := b.setCategoryOnDraft(ctx, client, draftID, etag, draftCopy.CategoryID)
+	if err != nil {
+		session.mu.Lock()
+		session.replyWithError(err)
+		return
+	}
+	etag = newEtag
+
+	// Get user's postal code from account
+	account, err := toriClient.GetAccount(ctx, toriAccountId)
+	if err != nil {
+		session.mu.Lock()
+		session.replyWithError(err)
+		return
+	}
+
+	// Safe postal code extraction
+	postalCode := extractPostalCode(account)
+	if postalCode == "" {
+		session.mu.Lock()
+		session.reply("Postinumero puuttuu tori-tilistä")
+		return
+	}
+
+	// Update and publish
+	if err := b.updateAndPublishAd(ctx, client, draftID, etag, &draftCopy, images, postalCode); err != nil {
+		session.mu.Lock()
+		session.replyWithError(err)
+		return
+	}
+
+	// Re-acquire lock for final state update
+	session.mu.Lock()
+	session.replyAndRemoveCustomKeyboard(listingSentText)
+	log.Info().Str("title", draftCopy.Title).Int("price", draftCopy.Price).Msg("listing published")
+	session.reset()
+}
+
+// extractPostalCode safely extracts postal code from account locations
+func extractPostalCode(account tori.Account) string {
+	if len(account.Locations) == 0 {
+		return ""
+	}
+	if len(account.Locations[0].Locations) == 0 {
+		return ""
+	}
+	if len(account.Locations[0].Locations[0].Locations) == 0 {
+		return ""
+	}
+	return account.Locations[0].Locations[0].Locations[0].Code
 }
 
 // handleLoginCommand starts the login flow
@@ -741,84 +749,7 @@ func (b *Bot) finalizeAuth(ctx context.Context, session *UserSession) {
 	log.Info().Int64("userId", session.userId).Str("toriUserId", tokens.UserID).Msg("user logged in successfully")
 }
 
-func makeNextFieldPrompt(
-	ctx context.Context,
-	cache *FilterCache,
-	getNewadFilters func(context.Context) (tori.NewadFilters, error),
-	listing tori.Listing,
-) (
-	tgbotapi.MessageConfig,
-	string,
-	error,
-) {
-	newadFilters, err := fetchNewadFiltersWithCache(ctx, cache, getNewadFilters)
-	if err != nil {
-		return tgbotapi.MessageConfig{}, "", err
-	}
-	missingField := tori.GetMissingListingField(
-		newadFilters.Newad.ParamMap,
-		newadFilters.Newad.SettingsParams,
-		listing,
-	)
-	if missingField == "" {
-		return tgbotapi.MessageConfig{}, "", nil
-	}
-	msg, err := makeMissingFieldPromptMessage(newadFilters.Newad.ParamMap, missingField)
-	if err != nil {
-		return msg, missingField, err
-	}
-	return msg, missingField, nil
-}
-
-func (b *Bot) fetchNewadFilters(ctx context.Context, get func(context.Context) (tori.NewadFilters, error)) (tori.NewadFilters, error) {
-	return fetchNewadFiltersWithCache(ctx, b.filterCache, get)
-}
-
-func fetchNewadFiltersWithCache(ctx context.Context, cache *FilterCache, get func(context.Context) (tori.NewadFilters, error)) (tori.NewadFilters, error) {
-	cachedNewadFilters, ok := cache.Get()
-	if !ok {
-		newadFilters, err := get(ctx)
-		if err != nil {
-			return newadFilters, err
-		}
-		cache.Set(newadFilters)
-		return newadFilters, nil
-	} else {
-		return cachedNewadFilters, nil
-	}
-}
-
-func (b *Bot) checkUserPreconditions(ctx context.Context, session *UserSession) string {
-	// Check that access token is valid
-	account, err := session.client.GetAccount(ctx, session.toriAccountId)
-	if err != nil {
-		log.Warn().Err(err).Msg("precondition check failed, attempting token refresh")
-
-		// Try to refresh tokens
-		if refreshErr := b.tryRefreshTokens(session); refreshErr != nil {
-			log.Error().Err(refreshErr).Msg("token refresh failed")
-			return sessionMaybeExpiredText
-		}
-
-		// Retry with refreshed token
-		account, err = session.client.GetAccount(ctx, session.toriAccountId)
-		if err != nil {
-			log.Error().Err(err).Msg("precondition check failed after token refresh")
-			return sessionMaybeExpiredText
-		}
-	}
-
-	// Tori account needs to have location set so that it can be added to listing
-	if len(account.Locations) == 0 {
-		log.Error().Msg("precondition check failed: account does not have locations set")
-		return noLocationsInToriAccountText
-	}
-
-	return "" // OK
-}
-
 // tryRefreshTokens attempts to refresh the session's tokens using the stored refresh token.
-// If successful, updates the session's client and persists the new tokens.
 func (b *Bot) tryRefreshTokens(session *UserSession) error {
 	if session.refreshToken == "" {
 		return fmt.Errorf("no refresh token available")
@@ -850,7 +781,6 @@ func (b *Bot) tryRefreshTokens(session *UserSession) error {
 		}
 		if err := b.sessionStore.Save(storedSession); err != nil {
 			log.Warn().Err(err).Msg("failed to persist refreshed tokens")
-			// Don't fail - the refresh itself succeeded
 		}
 	}
 

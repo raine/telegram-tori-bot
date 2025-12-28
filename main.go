@@ -10,6 +10,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/raine/telegram-tori-bot/storage"
 	"github.com/raine/telegram-tori-bot/tori"
+	"github.com/raine/telegram-tori-bot/vision"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
@@ -61,11 +62,24 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
+	// Initialize vision analyzer if GOOGLE_API_KEY is set
+	var visionAnalyzer vision.Analyzer
+	if os.Getenv("GOOGLE_API_KEY") != "" {
+		analyzer, err := vision.NewGeminiAnalyzer(ctx)
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to initialize Gemini vision analyzer")
+		}
+		visionAnalyzer = analyzer
+		log.Info().Msg("Gemini vision analyzer initialized")
+	} else {
+		log.Warn().Msg("GOOGLE_API_KEY not set, vision analysis disabled")
+	}
+
 	g, ctx := errgroup.WithContext(ctx)
 
 	// Run bot update loop
 	g.Go(func() error {
-		return runBot(ctx, tg, sessionStore)
+		return runBot(ctx, tg, sessionStore, visionAnalyzer)
 	})
 
 	if err := g.Wait(); err != nil && err != context.Canceled {
@@ -75,12 +89,15 @@ func main() {
 	}
 }
 
-func runBot(ctx context.Context, tg *tgbotapi.BotAPI, sessionStore storage.SessionStore) error {
+func runBot(ctx context.Context, tg *tgbotapi.BotAPI, sessionStore storage.SessionStore, visionAnalyzer vision.Analyzer) error {
 	updateConfig := tgbotapi.NewUpdate(0)
 	updateConfig.Timeout = 60
 	updates := tg.GetUpdatesChan(updateConfig)
 
 	bot := NewBot(tg, tori.ApiBaseUrl, sessionStore)
+	if visionAnalyzer != nil {
+		bot.SetVisionAnalyzer(visionAnalyzer)
+	}
 
 	var wg sync.WaitGroup
 

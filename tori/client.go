@@ -2,7 +2,6 @@ package tori
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/go-resty/resty/v2"
@@ -88,88 +87,6 @@ func (c *Client) GetAccount(ctx context.Context, accountId string) (Account, err
 		Get("/v1.2/private/accounts/{accountId}"))
 
 	return result.Account, err
-}
-
-type UploadMediaResponse struct {
-	Media `json:"image"`
-}
-
-type Media struct {
-	Id  string `json:"id"`
-	Url string `json:"url"`
-}
-
-func (c *Client) UploadMedia(ctx context.Context, data []byte) (Media, error) {
-	media := Media{}
-
-	res, err := handleError(
-		c.req(ctx, nil).SetHeaders(
-			map[string]string{
-				"Content-Type":   "application/x-www-form-urlencoded",
-				"User-Agent":     "Tori/12.1.16 (com.tori.tori; build:190; iOS 15.3.1) Alamofire/5.4.4",
-				"Content-Length": fmt.Sprintf("%v", len(data)),
-			},
-		).
-			SetBody(data).
-			Post("/v2.2/media"))
-	if err != nil {
-		return media, err
-	}
-
-	// Tori API returns the wrong content-type (text/plain) so we can't use
-	// resty's SetResult to unmarshal JSON automatically.
-	var uploadImageResponse UploadMediaResponse
-	err = json.Unmarshal(res.Body(), &uploadImageResponse)
-	if err != nil {
-		return media, err
-	}
-	return uploadImageResponse.Media, err
-}
-
-type Ad struct {
-	ListIdCode string   `json:"list_id_code"`
-	Category   Category `json:"category"`
-}
-
-type GetListingResponse struct {
-	Ad Ad `json:"ad"`
-}
-
-func (c *Client) GetListing(ctx context.Context, id string) (Ad, error) {
-	result := &GetListingResponse{}
-	_, err := handleError(
-		c.req(ctx, result).
-			SetPathParam("id", id).
-			Get("/v2/listings/{id}"))
-
-	return result.Ad, err
-}
-
-func (c *Client) GetCategories(ctx context.Context) (Categories, error) {
-	result := &Categories{}
-	_, err := handleError(
-		c.req(ctx, result).Get("/v1.2/public/categories/insert"))
-
-	return *result, err
-}
-
-func (c *Client) GetFiltersSectionNewad(ctx context.Context) (NewadFilters, error) {
-	result := &NewadFilters{}
-	_, err := handleError(
-		c.req(ctx, result).
-			SetQueryParam("section", "newad").
-			Get("/v1.2/public/filters"))
-
-	return *result, err
-}
-
-func (c *Client) PostListing(ctx context.Context, listing Listing) error {
-	_, err := handleError(
-		c.req(ctx, nil).
-			SetBody(listing).
-			Post("/v2/listings"))
-
-	return err
 }
 
 // handleError is a generic error handler for failing response (>399 status
