@@ -173,7 +173,7 @@ func (b *Bot) handlePhoto(ctx context.Context, session *UserSession, message *tg
 📦 *Otsikko:* %s
 📝 *Kuvaus:* %s
 
-Valitse osasto:`,
+Valitse osasto`,
 			result.Item.Title,
 			result.Item.Description,
 		)
@@ -188,7 +188,7 @@ Valitse osasto:`,
 			// No categories predicted, use default
 			session.currentDraft.CategoryID = 76 // "Muu" category
 			session.currentDraft.State = AdFlowStateAwaitingPrice
-			session.reply(msgText + "\n\nEi osastoehdotuksia, käytetään oletusta.\n\nSyötä hinta (esim. 50€):")
+			session.reply(msgText + "\n\nEi osastoehdotuksia, käytetään oletusta.\n\nSyötä hinta (esim. 50€)")
 		}
 	} else {
 		// Adding to existing draft
@@ -386,7 +386,7 @@ func (b *Bot) handleCategorySelection(ctx context.Context, session *UserSession,
 		session.mu.Lock()
 		session.etag = newEtag
 		session.currentDraft.State = AdFlowStateAwaitingPrice
-		session.reply("Syötä hinta (esim. 50€):")
+		session.reply("Syötä hinta (esim. 50€)")
 		session.mu.Unlock()
 		return
 	}
@@ -408,13 +408,13 @@ func (b *Bot) handleCategorySelection(ctx context.Context, session *UserSession,
 		b.promptForAttribute(session, requiredAttrs[0])
 	} else {
 		session.currentDraft.State = AdFlowStateAwaitingPrice
-		session.reply("Syötä hinta (esim. 50€):")
+		session.reply("Syötä hinta (esim. 50€)")
 	}
 }
 
 // promptForAttribute shows a keyboard to select an attribute value
 func (b *Bot) promptForAttribute(session *UserSession, attr tori.Attribute) {
-	msg := tgbotapi.NewMessage(session.userId, fmt.Sprintf("Valitse %s:", attr.Label))
+	msg := tgbotapi.NewMessage(session.userId, fmt.Sprintf("Valitse %s", strings.ToLower(attr.Label)))
 	msg.ParseMode = tgbotapi.ModeMarkdown
 	msg.ReplyMarkup = makeAttributeKeyboard(attr)
 	session.replyWithMessage(msg)
@@ -432,7 +432,7 @@ func (b *Bot) handleAttributeInput(session *UserSession, text string) {
 	if idx >= len(attrs) {
 		// Shouldn't happen, but handle gracefully
 		session.currentDraft.State = AdFlowStateAwaitingPrice
-		session.reply("Syötä hinta (esim. 50€):")
+		session.reply("Syötä hinta (esim. 50€)")
 		return
 	}
 
@@ -442,7 +442,7 @@ func (b *Bot) handleAttributeInput(session *UserSession, text string) {
 	opt := tori.FindOptionByLabel(&currentAttr, text)
 	if opt == nil {
 		// Invalid selection, prompt again
-		session.reply(fmt.Sprintf("Valitse jokin vaihtoehdoista %s:", currentAttr.Label))
+		session.reply(fmt.Sprintf("Valitse jokin vaihtoehdoista: %s", strings.ToLower(currentAttr.Label)))
 		b.promptForAttribute(session, currentAttr)
 		return
 	}
@@ -458,7 +458,7 @@ func (b *Bot) handleAttributeInput(session *UserSession, text string) {
 		b.promptForAttribute(session, nextAttr)
 	} else {
 		session.currentDraft.State = AdFlowStateAwaitingPrice
-		session.replyAndRemoveCustomKeyboard("Syötä hinta (esim. 50€):")
+		session.replyAndRemoveCustomKeyboard("Syötä hinta (esim. 50€)")
 	}
 }
 
@@ -467,7 +467,7 @@ func (b *Bot) handlePriceInput(session *UserSession, text string) {
 	// Parse price from text
 	price, err := parsePriceMessage(text)
 	if err != nil {
-		session.reply("En ymmärtänyt hintaa. Syötä hinta numerona (esim. 50€ tai 50):")
+		session.reply("En ymmärtänyt hintaa. Syötä hinta numerona (esim. 50€ tai 50)")
 		return
 	}
 
