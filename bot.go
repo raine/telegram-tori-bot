@@ -288,6 +288,12 @@ func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	// Handle attribute input if awaiting attribute
 	session.mu.Lock()
 	if session.currentDraft != nil && session.currentDraft.State == AdFlowStateAwaitingAttribute {
+		if update.Message.Text == "/peru" {
+			session.reset()
+			session.replyAndRemoveCustomKeyboard(okText)
+			session.mu.Unlock()
+			return
+		}
 		b.handleAttributeInput(session, update.Message.Text)
 		session.mu.Unlock()
 		return
@@ -297,6 +303,12 @@ func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	// Handle price input if awaiting price
 	session.mu.Lock()
 	if session.currentDraft != nil && session.currentDraft.State == AdFlowStateAwaitingPrice {
+		if update.Message.Text == "/peru" {
+			session.reset()
+			session.replyAndRemoveCustomKeyboard(okText)
+			session.mu.Unlock()
+			return
+		}
 		b.handlePriceInput(session, update.Message.Text)
 		session.mu.Unlock()
 		return

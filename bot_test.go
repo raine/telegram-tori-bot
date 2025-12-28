@@ -598,3 +598,71 @@ func TestHandleUpdate_ReplyToDescriptionEdits(t *testing.T) {
 		t.Errorf("expected description='New description', got '%s'", session.currentDraft.Description)
 	}
 }
+
+func TestHandleUpdate_PeruDuringAttributeInput(t *testing.T) {
+	ts := makeAdInputTestServer(t)
+	defer ts.Close()
+	_, userId, tg, bot, session := setupAdInputSession(t, ts)
+
+	// Set up session with draft awaiting attribute
+	session.currentDraft = &AdInputDraft{
+		State:          AdFlowStateAwaitingAttribute,
+		CollectedAttrs: make(map[string]string),
+		RequiredAttrs: []tori.Attribute{
+			{
+				Name:  "condition",
+				Type:  "SELECT",
+				Label: "Kunto",
+				Options: []tori.AttributeOption{
+					{ID: 1, Label: "Uusi"},
+				},
+			},
+		},
+		CurrentAttrIndex: 0,
+	}
+
+	update := makeUpdateWithMessageText(userId, "/peru")
+
+	// Expect "Ok!" message with keyboard removal
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		_, hasRemoveKeyboard := msg.ReplyMarkup.(tgbotapi.ReplyKeyboardRemove)
+		return msg.Text == okText && hasRemoveKeyboard
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	bot.handleUpdate(context.Background(), update)
+	tg.AssertExpectations(t)
+
+	// Verify session was reset
+	if session.currentDraft != nil {
+		t.Errorf("expected currentDraft to be nil after /peru")
+	}
+}
+
+func TestHandleUpdate_PeruDuringPriceInput(t *testing.T) {
+	ts := makeAdInputTestServer(t)
+	defer ts.Close()
+	_, userId, tg, bot, session := setupAdInputSession(t, ts)
+
+	// Set up session with draft awaiting price
+	session.currentDraft = &AdInputDraft{
+		State:       AdFlowStateAwaitingPrice,
+		Title:       "Test item",
+		Description: "Test description",
+	}
+
+	update := makeUpdateWithMessageText(userId, "/peru")
+
+	// Expect "Ok!" message with keyboard removal
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		_, hasRemoveKeyboard := msg.ReplyMarkup.(tgbotapi.ReplyKeyboardRemove)
+		return msg.Text == okText && hasRemoveKeyboard
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	bot.handleUpdate(context.Background(), update)
+	tg.AssertExpectations(t)
+
+	// Verify session was reset
+	if session.currentDraft != nil {
+		t.Errorf("expected currentDraft to be nil after /peru")
+	}
+}
