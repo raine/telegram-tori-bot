@@ -44,6 +44,7 @@ const (
 	loginAlreadyLoggedInText = "Olet jo kirjautunut sisään."
 	loginRequiredText        = "Sinun täytyy kirjautua sisään ensin. Käytä komentoa /login"
 	loginCancelledText       = "Kirjautuminen peruutettu."
+	loginInProgressText      = "Kirjautuminen kesken. Syötä pyydetty tieto tai peru komennolla /peru"
 )
 
 func makeCategoriesInlineKeyboard(categories []tori.Category) tgbotapi.InlineKeyboardMarkup {

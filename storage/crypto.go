@@ -7,6 +7,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+
+	"golang.org/x/crypto/scrypt"
 )
 
 // Encrypt encrypts plaintext using AES-GCM with the provided key.
@@ -65,10 +67,15 @@ func Decrypt(encoded string, key []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-// DeriveKey creates a 32-byte key from a passphrase using simple padding/truncation.
-// For production, consider using a proper KDF like Argon2 or PBKDF2.
-func DeriveKey(passphrase string) []byte {
-	key := make([]byte, 32)
-	copy(key, []byte(passphrase))
-	return key
+// DeriveKey creates a 32-byte key from a passphrase using scrypt.
+// Uses a fixed salt which is acceptable for a single-database scenario.
+// The salt is versioned to allow future changes.
+func DeriveKey(passphrase string) ([]byte, error) {
+	// Fixed salt - acceptable for single-user/single-db scenario
+	// Versioned to allow changing parameters in the future
+	salt := []byte("tori-bot-token-key-salt-v1")
+
+	// scrypt parameters: N=32768, r=8, p=1, keyLen=32
+	// These are reasonable defaults balancing security and performance
+	return scrypt.Key([]byte(passphrase), salt, 32768, 8, 1, 32)
 }

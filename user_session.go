@@ -39,6 +39,9 @@ type UserSession struct {
 
 	// Auth flow state for login
 	authFlow *AuthFlow
+
+	// Refresh token for token refresh (stored when logging in)
+	refreshToken string
 }
 
 func (s *UserSession) reset() {

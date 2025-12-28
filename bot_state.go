@@ -27,6 +27,7 @@ func (bs *BotState) newUserSession(userId int64) (*UserSession, error) {
 			log.Warn().Err(err).Int64("userId", userId).Msg("failed to get stored session")
 		} else if storedSession != nil {
 			session.toriAccountId = storedSession.ToriUserID
+			session.refreshToken = storedSession.Tokens.RefreshToken
 			session.client = tori.NewClient(tori.ClientOpts{
 				Auth:    "Bearer " + storedSession.Tokens.BearerToken,
 				BaseURL: bs.bot.toriApiBaseUrl,

@@ -9,12 +9,20 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"regexp"
 	"strings"
+)
+
+// Package-level compiled regexes for performance
+var (
+	bffDataRegex   = regexp.MustCompile(`<div id="bffData"[^>]*>([^<]+)</div>`)
+	csrfJSONRegex  = regexp.MustCompile(`"csrfToken"\s*:\s*"([^"]+)"`)
+	csrfOtherRegex = regexp.MustCompile(`csrfToken['\":\s]+=?\s*['"]([^'"]+)['"]`)
 )
 
 // Authenticator handles the multi-step Tori authentication flow.
@@ -238,13 +246,9 @@ func (a *Authenticator) parseLoginPage(resp *http.Response) error {
 	body, _ := io.ReadAll(resp.Body)
 
 	// Look for bffData div with HTML-encoded JSON
-	bffRegex := regexp.MustCompile(`<div id="bffData"[^>]*>([^<]+)</div>`)
-	if matches := bffRegex.FindSubmatch(body); len(matches) > 1 {
-		htmlContent := string(matches[1])
-		htmlContent = strings.ReplaceAll(htmlContent, "&quot;", `"`)
-		htmlContent = strings.ReplaceAll(htmlContent, "&#x2F;", "/")
-		htmlContent = strings.ReplaceAll(htmlContent, "&#x3D;", "=")
-		htmlContent = strings.ReplaceAll(htmlContent, "&amp;", "&")
+	if matches := bffDataRegex.FindSubmatch(body); len(matches) > 1 {
+		// Use html.UnescapeString instead of manual replacements
+		htmlContent := html.UnescapeString(string(matches[1]))
 
 		var bffData struct {
 			CsrfToken string `json:"csrfToken"`
@@ -254,16 +258,10 @@ func (a *Authenticator) parseLoginPage(resp *http.Response) error {
 		}
 	}
 
-	// Fallback patterns
+	// Fallback patterns using package-level compiled regexes
 	if a.csrfToken == "" {
-		patterns := []string{
-			`"csrfToken"\s*:\s*"([^"]+)"`,
-			`csrfToken['\":\s]+=?\s*['"]([^'"]+)['"]`,
-		}
-		for _, pattern := range patterns {
-			re := regexp.MustCompile(pattern)
-			matches := re.FindSubmatch(body)
-			if len(matches) > 1 {
+		for _, re := range []*regexp.Regexp{csrfJSONRegex, csrfOtherRegex} {
+			if matches := re.FindSubmatch(body); len(matches) > 1 {
 				a.csrfToken = string(matches[1])
 				break
 			}
@@ -785,6 +783,142 @@ func generateUUID() string {
 	rand.Read(b)
 	return fmt.Sprintf("%08X-%04X-%04X-%04X-%012X",
 		b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// RefreshTokens uses a refresh token to obtain new access tokens.
+// Returns a new TokenSet with updated tokens.
+func RefreshTokens(refreshToken string) (*TokenSet, error) {
+	// Step 1: Use refresh token to get new OAuth tokens
+	endpoint := fmt.Sprintf("%s/oauth/token", LoginBaseURL)
+
+	data := url.Values{}
+	data.Set("grant_type", "refresh_token")
+	data.Set("client_id", AndroidClientID)
+	data.Set("refresh_token", refreshToken)
+
+	req, err := http.NewRequest("POST", endpoint, strings.NewReader(data.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create refresh request: %w", err)
+	}
+
+	req.Header.Set("User-Agent", AndroidSDKUserAgent)
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-Oidc", "v1")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("refresh request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("token refresh failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var tokenResult struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+		IDToken      string `json:"id_token"`
+	}
+	if err := json.Unmarshal(body, &tokenResult); err != nil {
+		return nil, fmt.Errorf("failed to parse refresh response: %w", err)
+	}
+
+	// Step 2: Exchange for SPP code
+	exchangeEndpoint := fmt.Sprintf("%s/api/2/oauth/exchange", LoginBaseURL)
+
+	exchangeData := url.Values{}
+	exchangeData.Set("clientId", ExchangeClientID)
+	exchangeData.Set("type", "code")
+
+	exchangeReq, err := http.NewRequest("POST", exchangeEndpoint, strings.NewReader(exchangeData.Encode()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create exchange request: %w", err)
+	}
+
+	exchangeReq.Header.Set("User-Agent", "AccountSDKIOSWeb/7.0.2 (iPhone; iOS 26.1)")
+	exchangeReq.Header.Set("Accept", "*/*")
+	exchangeReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	exchangeReq.Header.Set("Authorization", "Bearer "+tokenResult.AccessToken)
+
+	exchangeResp, err := client.Do(exchangeReq)
+	if err != nil {
+		return nil, fmt.Errorf("exchange request failed: %w", err)
+	}
+	defer exchangeResp.Body.Close()
+
+	exchangeBody, _ := io.ReadAll(exchangeResp.Body)
+
+	if exchangeResp.StatusCode != 200 {
+		return nil, fmt.Errorf("SPP exchange failed with status %d: %s", exchangeResp.StatusCode, string(exchangeBody))
+	}
+
+	var exchangeResult struct {
+		Data struct {
+			Code string `json:"code"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(exchangeBody, &exchangeResult); err != nil {
+		return nil, fmt.Errorf("failed to parse exchange response: %w", err)
+	}
+
+	// Step 3: Final Tori login
+	loginEndpoint := fmt.Sprintf("%s/public/login", ToriBaseURL)
+
+	loginPayload := map[string]string{
+		"deviceId": AndroidClientID,
+		"idToken":  tokenResult.IDToken,
+		"spidCode": exchangeResult.Data.Code,
+	}
+	loginBody, _ := json.Marshal(loginPayload)
+
+	loginReq, err := http.NewRequest("POST", loginEndpoint, bytes.NewReader(loginBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create login request: %w", err)
+	}
+
+	gwService := "LOGIN-SERVER-AUTH"
+	gwKey := CalculateGatewayHMAC("POST", "/public/login", "", gwService, loginBody)
+
+	loginReq.Header.Set("User-Agent", ToriAppUserAgent)
+	loginReq.Header.Set("Accept", "application/json; charset=UTF-8")
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginReq.Header.Set("finn-gw-service", gwService)
+	loginReq.Header.Set("finn-gw-key", gwKey)
+
+	loginResp, err := client.Do(loginReq)
+	if err != nil {
+		return nil, fmt.Errorf("login request failed: %w", err)
+	}
+	defer loginResp.Body.Close()
+
+	loginRespBody, _ := io.ReadAll(loginResp.Body)
+
+	if loginResp.StatusCode != 200 && loginResp.StatusCode != 201 {
+		return nil, fmt.Errorf("tori login failed with status %d: %s", loginResp.StatusCode, string(loginRespBody))
+	}
+
+	var loginResult struct {
+		UserID int `json:"userId"`
+		Token  struct {
+			Value string `json:"value"`
+		} `json:"token"`
+	}
+	if err := json.Unmarshal(loginRespBody, &loginResult); err != nil {
+		return nil, fmt.Errorf("failed to parse login response: %w", err)
+	}
+
+	return &TokenSet{
+		UserID:       fmt.Sprintf("%d", loginResult.UserID),
+		BearerToken:  loginResult.Token.Value,
+		AccessToken:  tokenResult.AccessToken,
+		RefreshToken: tokenResult.RefreshToken,
+		IDToken:      tokenResult.IDToken,
+	}, nil
 }
 
 // CalculateGatewayHMAC calculates the FINN-GW-KEY header value.

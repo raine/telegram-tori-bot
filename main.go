@@ -43,8 +43,14 @@ func main() {
 	tg.Debug = false
 	log.Info().Str("username", tg.Self.UserName).Msg("authorized on account")
 
+	// Derive encryption key from passphrase
+	encryptionKey, err := storage.DeriveKey(tokenKey)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to derive encryption key")
+	}
+
 	// Initialize session store
-	sessionStore, err := storage.NewSQLiteStore(dbPath, storage.DeriveKey(tokenKey))
+	sessionStore, err := storage.NewSQLiteStore(dbPath, encryptionKey)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to initialize session store")
 	}

@@ -184,7 +184,7 @@ func (b *Bot) handleNewListing(ctx context.Context, session *UserSession, text s
 	// Do the best we can to ensure listing can be eventually sent
 	// successfully, instead of failing after user has input all details and
 	// bot tries to POST the listing to Tori
-	msgText := checkUserPreconditions(ctx, session)
+	msgText := b.checkUserPreconditions(ctx, session)
 	if msgText != "" {
 		session.reply(msgText)
 		return
@@ -634,6 +634,12 @@ func (b *Bot) handleAuthFlowMessage(ctx context.Context, session *UserSession, t
 		return
 	}
 
+	// Reject other commands during auth flow
+	if strings.HasPrefix(text, "/") {
+		session.reply(loginInProgressText)
+		return
+	}
+
 	session.authFlow.Touch()
 
 	switch session.authFlow.State {
@@ -650,7 +656,7 @@ func (b *Bot) handleAuthEmail(ctx context.Context, session *UserSession, email s
 	session.authFlow.Email = email
 
 	if err := session.authFlow.Authenticator.StartLogin(email); err != nil {
-		log.Error().Err(err).Str("email", email).Msg("login start failed")
+		log.Error().Err(err).Msg("login start failed")
 		session.reply(loginFailedText, err)
 		session.authFlow.Reset()
 		return
@@ -723,6 +729,7 @@ func (b *Bot) finalizeAuth(ctx context.Context, session *UserSession) {
 
 	// Update session with new client
 	session.toriAccountId = tokens.UserID
+	session.refreshToken = tokens.RefreshToken
 	session.client = tori.NewClient(tori.ClientOpts{
 		Auth:    "Bearer " + tokens.BearerToken,
 		BaseURL: b.toriApiBaseUrl,
@@ -780,12 +787,24 @@ func fetchNewadFiltersWithCache(ctx context.Context, cache *FilterCache, get fun
 	}
 }
 
-func checkUserPreconditions(ctx context.Context, session *UserSession) string {
+func (b *Bot) checkUserPreconditions(ctx context.Context, session *UserSession) string {
 	// Check that access token is valid
 	account, err := session.client.GetAccount(ctx, session.toriAccountId)
 	if err != nil {
-		log.Error().Err(err).Msg("precondition check failed: could not get account from tori")
-		return sessionMaybeExpiredText
+		log.Warn().Err(err).Msg("precondition check failed, attempting token refresh")
+
+		// Try to refresh tokens
+		if refreshErr := b.tryRefreshTokens(session); refreshErr != nil {
+			log.Error().Err(refreshErr).Msg("token refresh failed")
+			return sessionMaybeExpiredText
+		}
+
+		// Retry with refreshed token
+		account, err = session.client.GetAccount(ctx, session.toriAccountId)
+		if err != nil {
+			log.Error().Err(err).Msg("precondition check failed after token refresh")
+			return sessionMaybeExpiredText
+		}
 	}
 
 	// Tori account needs to have location set so that it can be added to listing
@@ -795,4 +814,42 @@ func checkUserPreconditions(ctx context.Context, session *UserSession) string {
 	}
 
 	return "" // OK
+}
+
+// tryRefreshTokens attempts to refresh the session's tokens using the stored refresh token.
+// If successful, updates the session's client and persists the new tokens.
+func (b *Bot) tryRefreshTokens(session *UserSession) error {
+	if session.refreshToken == "" {
+		return fmt.Errorf("no refresh token available")
+	}
+
+	log.Info().Int64("userId", session.userId).Msg("attempting token refresh")
+
+	newTokens, err := auth.RefreshTokens(session.refreshToken)
+	if err != nil {
+		return fmt.Errorf("refresh failed: %w", err)
+	}
+
+	// Update session with new tokens
+	session.refreshToken = newTokens.RefreshToken
+	session.client = tori.NewClient(tori.ClientOpts{
+		Auth:    "Bearer " + newTokens.BearerToken,
+		BaseURL: b.toriApiBaseUrl,
+	})
+
+	// Persist new tokens to storage
+	if b.sessionStore != nil {
+		storedSession := &storage.StoredSession{
+			TelegramID: session.userId,
+			ToriUserID: newTokens.UserID,
+			Tokens:     *newTokens,
+		}
+		if err := b.sessionStore.Save(storedSession); err != nil {
+			log.Warn().Err(err).Msg("failed to persist refreshed tokens")
+			// Don't fail - the refresh itself succeeded
+		}
+	}
+
+	log.Info().Int64("userId", session.userId).Msg("token refresh successful")
+	return nil
 }
