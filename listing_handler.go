@@ -846,13 +846,14 @@ func (h *ListingHandler) updateAndPublishAd(
 		return fmt.Errorf("failed to update ad: %w", err)
 	}
 
-	// Set delivery options
+	// Set delivery options - always use meetup mode since ToriDiili shipping
+	// requires full address/phone/package info that we don't collect
 	err = client.SetDeliveryOptions(ctx, draftID, tori.DeliveryOptions{
 		BuyNow:             false,
 		Client:             "ANDROID",
 		Meetup:             true,
 		SellerPaysShipping: false,
-		Shipping:           draft.ShippingPossible,
+		Shipping:           false,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to set delivery options: %w", err)
