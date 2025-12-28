@@ -7,10 +7,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/raine/telegram-tori-bot/storage"
+	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/raine/telegram-tori-bot/tori/auth"
 	"github.com/raine/telegram-tori-bot/vision"
 	"github.com/stretchr/testify/mock"
@@ -216,4 +218,298 @@ func TestHandleUpdate_RemovePhotosCommand(t *testing.T) {
 
 	bot.handleUpdate(context.Background(), update)
 	tg.AssertExpectations(t)
+}
+
+// makeAdInputTestServer creates a test server that mocks the adinput API endpoints
+func makeAdInputTestServer(t *testing.T) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/item/") && r.Method == "PATCH":
+			// Mock PATCH /item/{draftId} - set category, etc.
+			w.Header().Set("ETag", "new-etag-123")
+			w.Write([]byte(`{"id":"draft-123"}`))
+
+		case strings.HasPrefix(r.URL.Path, "/attributes/"):
+			// Mock GET /attributes/{draftId} - return test attributes
+			w.Write([]byte(`{
+				"attributes": [
+					{
+						"name": "condition",
+						"type": "SELECT",
+						"label": "Kunto",
+						"isPredictable": true,
+						"options": [
+							{"id": 1, "label": "Uusi"},
+							{"id": 2, "label": "Erinomainen"},
+							{"id": 3, "label": "Hyvä"},
+							{"id": 4, "label": "Tyydyttävä"}
+						]
+					},
+					{
+						"name": "computeracc_type",
+						"type": "SELECT",
+						"label": "Tyyppi",
+						"isPredictable": false,
+						"options": [
+							{"id": 10, "label": "Hiiri"},
+							{"id": 11, "label": "Näppäimistö"},
+							{"id": 12, "label": "Kuulokkeet"}
+						]
+					}
+				],
+				"category": {"id": 5012, "label": "Tietokoneen oheislaitteet"}
+			}`))
+
+		default:
+			w.Write([]byte("{}"))
+		}
+	}))
+}
+
+// setupAdInputSession creates a test session with adinput API ready
+func setupAdInputSession(t *testing.T, ts *httptest.Server) (*httptest.Server, int64, *botApiMock, *Bot, *UserSession) {
+	userId := int64(1)
+	tg := new(botApiMock)
+
+	store := newMockSessionStore()
+	store.sessions[userId] = &storage.StoredSession{
+		TelegramID: userId,
+		ToriUserID: "123123",
+		Tokens: auth.TokenSet{
+			BearerToken: "test-token",
+		},
+	}
+
+	bot := NewBot(tg, ts.URL, store)
+	session, err := bot.state.getUserSession(userId)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Initialize adinput client with test server URL
+	session.adInputClient = tori.NewAdinputClientWithBaseURL("test-token", ts.URL)
+	session.draftID = "draft-123"
+	session.etag = "test-etag"
+
+	return ts, userId, tg, bot, session
+}
+
+func TestHandleCategorySelection_FetchesAttributes(t *testing.T) {
+	ts := makeAdInputTestServer(t)
+	defer ts.Close()
+	_, userId, tg, bot, session := setupAdInputSession(t, ts)
+
+	// Set up session with draft awaiting category
+	session.currentDraft = &AdInputDraft{
+		State:          AdFlowStateAwaitingCategory,
+		CollectedAttrs: make(map[string]string),
+		CategoryPredictions: []tori.CategoryPrediction{
+			{ID: 5012, Label: "Tietokoneen oheislaitteet"},
+		},
+	}
+
+	// Create callback query
+	query := &tgbotapi.CallbackQuery{
+		ID:   "callback-1",
+		From: &tgbotapi.User{ID: userId},
+		Data: "cat:5012",
+		Message: &tgbotapi.Message{
+			MessageID: 100,
+			Chat:      &tgbotapi.Chat{ID: userId},
+		},
+	}
+
+	// Expect: edit keyboard, send category confirmation, send attribute prompt
+	tg.On("Request", mock.AnythingOfType("tgbotapi.EditMessageReplyMarkupConfig")).
+		Return(&tgbotapi.APIResponse{Ok: true}, nil).Once()
+	tg.On("Send", makeMessage(userId, "Osasto: *Tietokoneen oheislaitteet*")).
+		Return(tgbotapi.Message{}, nil).Once()
+	// Attribute prompt with reply keyboard
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		return msg.Text == "Valitse kunto" && msg.ReplyMarkup != nil
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	bot.handleCategorySelection(context.Background(), session, query)
+	tg.AssertExpectations(t)
+
+	// Verify state was updated
+	if session.currentDraft.State != AdFlowStateAwaitingAttribute {
+		t.Errorf("expected state AwaitingAttribute, got %v", session.currentDraft.State)
+	}
+	if len(session.currentDraft.RequiredAttrs) != 2 {
+		t.Errorf("expected 2 required attrs, got %d", len(session.currentDraft.RequiredAttrs))
+	}
+}
+
+func TestHandleAttributeInput_SelectsOption(t *testing.T) {
+	ts := makeAdInputTestServer(t)
+	defer ts.Close()
+	_, _, tg, _, session := setupAdInputSession(t, ts)
+
+	// Create a minimal bot with the session's tg mock
+	bot := &Bot{tg: tg}
+
+	// Set up session with draft awaiting attribute
+	session.currentDraft = &AdInputDraft{
+		State:          AdFlowStateAwaitingAttribute,
+		CollectedAttrs: make(map[string]string),
+		RequiredAttrs: []tori.Attribute{
+			{
+				Name:  "condition",
+				Type:  "SELECT",
+				Label: "Kunto",
+				Options: []tori.AttributeOption{
+					{ID: 1, Label: "Uusi"},
+					{ID: 2, Label: "Erinomainen"},
+					{ID: 3, Label: "Hyvä"},
+				},
+			},
+			{
+				Name:  "computeracc_type",
+				Type:  "SELECT",
+				Label: "Tyyppi",
+				Options: []tori.AttributeOption{
+					{ID: 10, Label: "Hiiri"},
+					{ID: 11, Label: "Näppäimistö"},
+				},
+			},
+		},
+		CurrentAttrIndex: 0,
+	}
+
+	// Expect prompt for next attribute (tyyppi)
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		return msg.Text == "Valitse tyyppi" && msg.ReplyMarkup != nil
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	session.mu.Lock()
+	bot.handleAttributeInput(session, "Erinomainen")
+	session.mu.Unlock()
+
+	tg.AssertExpectations(t)
+
+	// Verify attribute was stored
+	if session.currentDraft.CollectedAttrs["condition"] != "2" {
+		t.Errorf("expected condition=2, got %s", session.currentDraft.CollectedAttrs["condition"])
+	}
+	if session.currentDraft.CurrentAttrIndex != 1 {
+		t.Errorf("expected CurrentAttrIndex=1, got %d", session.currentDraft.CurrentAttrIndex)
+	}
+}
+
+func TestHandleAttributeInput_LastAttribute_MovesToPrice(t *testing.T) {
+	ts := makeAdInputTestServer(t)
+	defer ts.Close()
+	_, _, tg, _, session := setupAdInputSession(t, ts)
+
+	bot := &Bot{tg: tg}
+
+	// Set up session with only one attribute left (the last one)
+	session.currentDraft = &AdInputDraft{
+		State:          AdFlowStateAwaitingAttribute,
+		CollectedAttrs: map[string]string{"condition": "2"},
+		RequiredAttrs: []tori.Attribute{
+			{
+				Name:  "condition",
+				Type:  "SELECT",
+				Label: "Kunto",
+				Options: []tori.AttributeOption{
+					{ID: 2, Label: "Erinomainen"},
+				},
+			},
+			{
+				Name:  "computeracc_type",
+				Type:  "SELECT",
+				Label: "Tyyppi",
+				Options: []tori.AttributeOption{
+					{ID: 10, Label: "Hiiri"},
+					{ID: 11, Label: "Näppäimistö"},
+				},
+			},
+		},
+		CurrentAttrIndex: 1, // On the last attribute
+	}
+
+	// Expect price prompt with keyboard removal
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		return msg.Text == "Syötä hinta (esim. 50€)"
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	session.mu.Lock()
+	bot.handleAttributeInput(session, "Hiiri")
+	session.mu.Unlock()
+
+	tg.AssertExpectations(t)
+
+	// Verify state moved to price
+	if session.currentDraft.State != AdFlowStateAwaitingPrice {
+		t.Errorf("expected state AwaitingPrice, got %v", session.currentDraft.State)
+	}
+	if session.currentDraft.CollectedAttrs["computeracc_type"] != "10" {
+		t.Errorf("expected computeracc_type=10, got %s", session.currentDraft.CollectedAttrs["computeracc_type"])
+	}
+}
+
+func TestHandlePriceInput_ValidPrice(t *testing.T) {
+	ts := makeAdInputTestServer(t)
+	defer ts.Close()
+	_, _, tg, _, session := setupAdInputSession(t, ts)
+
+	bot := &Bot{tg: tg}
+
+	session.currentDraft = &AdInputDraft{
+		State:       AdFlowStateAwaitingPrice,
+		Title:       "Logitech hiiri",
+		Description: "Langaton pelihiiri",
+	}
+	session.photos = []tgbotapi.PhotoSize{{FileID: "1"}}
+
+	// Expect summary message
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		return strings.Contains(msg.Text, "Ilmoitus valmis") &&
+			strings.Contains(msg.Text, "Logitech hiiri") &&
+			strings.Contains(msg.Text, "50€")
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	session.mu.Lock()
+	bot.handlePriceInput(session, "50€")
+	session.mu.Unlock()
+
+	tg.AssertExpectations(t)
+
+	if session.currentDraft.Price != 50 {
+		t.Errorf("expected price=50, got %d", session.currentDraft.Price)
+	}
+	if session.currentDraft.State != AdFlowStateReadyToPublish {
+		t.Errorf("expected state ReadyToPublish, got %v", session.currentDraft.State)
+	}
+}
+
+func TestHandlePriceInput_InvalidPrice(t *testing.T) {
+	ts := makeAdInputTestServer(t)
+	defer ts.Close()
+	_, userId, tg, _, session := setupAdInputSession(t, ts)
+
+	bot := &Bot{tg: tg}
+
+	session.currentDraft = &AdInputDraft{
+		State: AdFlowStateAwaitingPrice,
+	}
+
+	// Expect error message
+	tg.On("Send", makeMessage(userId, "En ymmärtänyt hintaa. Syötä hinta numerona (esim. 50€ tai 50)")).
+		Return(tgbotapi.Message{}, nil).Once()
+
+	session.mu.Lock()
+	bot.handlePriceInput(session, "ilmainen")
+	session.mu.Unlock()
+
+	tg.AssertExpectations(t)
+
+	// State should remain awaiting price
+	if session.currentDraft.State != AdFlowStateAwaitingPrice {
+		t.Errorf("expected state to remain AwaitingPrice, got %v", session.currentDraft.State)
+	}
 }

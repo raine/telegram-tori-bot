@@ -31,6 +31,7 @@ type AdinputClient struct {
 	httpClient     *http.Client
 	bearerToken    string
 	installationID string
+	baseURL        string
 }
 
 // NewAdinputClient creates a new client for the adinput APIs
@@ -39,6 +40,17 @@ func NewAdinputClient(bearerToken string) *AdinputClient {
 		httpClient:     &http.Client{},
 		bearerToken:    bearerToken,
 		installationID: "cliTool001",
+		baseURL:        GatewayBaseURL,
+	}
+}
+
+// NewAdinputClientWithBaseURL creates a client with a custom base URL (for testing)
+func NewAdinputClientWithBaseURL(bearerToken, baseURL string) *AdinputClient {
+	return &AdinputClient{
+		httpClient:     &http.Client{},
+		bearerToken:    bearerToken,
+		installationID: "cliTool001",
+		baseURL:        baseURL,
 	}
 }
 
@@ -182,7 +194,7 @@ type CategoryPredictionsResponse struct {
 // GetCategoryPredictions gets AI-suggested categories based on the uploaded image
 func (c *AdinputClient) GetCategoryPredictions(ctx context.Context, adID string) ([]CategoryPrediction, error) {
 	path := fmt.Sprintf("/categories/predictions/%s", adID)
-	reqURL := GatewayBaseURL + path
+	reqURL := c.baseURL + path
 
 	req, err := http.NewRequestWithContext(ctx, "POST", reqURL, nil)
 	if err != nil {
@@ -220,7 +232,7 @@ type PatchItemResponse struct {
 // PatchItem updates item data (used to set image, category, etc.)
 func (c *AdinputClient) PatchItem(ctx context.Context, adID, etag string, data map[string]any) (*PatchItemResponse, error) {
 	path := fmt.Sprintf("/items/%s", adID)
-	reqURL := GatewayBaseURL + path
+	reqURL := c.baseURL + path
 
 	body, err := json.Marshal(map[string]any{"data": data})
 	if err != nil {
@@ -282,7 +294,7 @@ type AttributesResponse struct {
 // GetAttributes gets category-specific attributes for the current category
 func (c *AdinputClient) GetAttributes(ctx context.Context, adID string) (*AttributesResponse, error) {
 	path := fmt.Sprintf("/attributes/%s", adID)
-	reqURL := GatewayBaseURL + path
+	reqURL := c.baseURL + path
 
 	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
 	if err != nil {
@@ -416,7 +428,7 @@ type DeliveryOptions struct {
 // SetDeliveryOptions sets delivery options for the ad
 func (c *AdinputClient) SetDeliveryOptions(ctx context.Context, adID string, opts DeliveryOptions) error {
 	path := fmt.Sprintf("/ads/%s/delivery", adID)
-	reqURL := GatewayBaseURL + path
+	reqURL := c.baseURL + path
 
 	body, err := json.Marshal(opts)
 	if err != nil {
