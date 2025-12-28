@@ -65,8 +65,13 @@ func (s *UserSession) initAdInputClient() {
 	}
 }
 
-// ErrNotLoggedIn is returned when the user tries to create an ad without being logged in
-var ErrNotLoggedIn = fmt.Errorf("user not logged in")
+// Common errors
+var (
+	ErrNotLoggedIn    = fmt.Errorf("user not logged in")
+	ErrNoRefreshToken = fmt.Errorf("no refresh token available")
+	ErrNoDeviceID     = fmt.Errorf("no device ID available")
+	ErrNoDraft        = fmt.Errorf("no active draft")
+)
 
 // startNewAdFlow creates a draft and returns the ID and ETag.
 // Does NOT mutate session - caller must update session with returned values.
