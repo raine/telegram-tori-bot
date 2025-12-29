@@ -29,6 +29,7 @@ type Bot struct {
 	// Handlers
 	authHandler    *AuthHandler
 	listingHandler *ListingHandler
+	bulkHandler    *BulkHandler
 }
 
 // NewBot creates a new Bot instance.
@@ -53,6 +54,7 @@ func (b *Bot) SetVisionAnalyzer(analyzer llm.Analyzer) {
 		editParser = ep
 	}
 	b.listingHandler = NewListingHandler(b.tg, analyzer, editParser, b.sessionStore)
+	b.bulkHandler = NewBulkHandler(b.tg, analyzer, b.sessionStore)
 }
 
 // handleUpdate is the main message router.
@@ -138,6 +140,15 @@ func (b *Bot) HandleSessionMessage(ctx context.Context, session *UserSession, ms
 		b.handleTextMessage(ctx, session, msg.Message)
 	case "album_timeout":
 		b.listingHandler.ProcessAlbumTimeout(msg.Ctx, session, msg.AlbumBuffer)
+	// Bulk mode message types
+	case "bulk_album_timeout":
+		b.bulkHandler.ProcessBulkAlbumTimeout(msg.Ctx, session, msg.AlbumBuffer)
+	case "bulk_analysis_complete":
+		b.bulkHandler.HandleBulkAnalysisComplete(msg.Ctx, session, msg.BulkAnalysisResult)
+	case "bulk_draft_error":
+		b.bulkHandler.HandleBulkDraftError(session, msg.BulkDraftError)
+	case "bulk_status_update":
+		b.bulkHandler.HandleStatusUpdate(session)
 	}
 }
 
@@ -148,6 +159,13 @@ func (b *Bot) handlePhotoMessage(ctx context.Context, session *UserSession, mess
 		session.reply(loginRequiredText)
 		return
 	}
+
+	// Check if in bulk mode first
+	if session.IsInBulkMode() {
+		b.bulkHandler.HandlePhoto(ctx, session, message)
+		return
+	}
+
 	b.listingHandler.HandlePhoto(ctx, session, message)
 }
 
@@ -162,6 +180,13 @@ func (b *Bot) handleTextMessage(ctx context.Context, session *UserSession, messa
 	// Handle postal code command input
 	if b.handlePostalCodeInput(session, message.Text) {
 		return
+	}
+
+	// Handle bulk mode text input (for editing fields)
+	if session.IsInBulkMode() && !strings.HasPrefix(message.Text, "/") {
+		if b.bulkHandler.HandleBulkTextInput(session, message.Text) {
+			return
+		}
 	}
 
 	// Handle listing flow inputs (replies, attributes, prices)
@@ -186,7 +211,8 @@ func (b *Bot) handleTextMessage(ctx context.Context, session *UserSession, messa
 // handleCommand processes bot commands.
 // Called from session worker - no locking needed.
 func (b *Bot) handleCommand(ctx context.Context, session *UserSession, message *tgbotapi.Message) {
-	command, _ := parseCommand(message.Text)
+	command, args := parseCommand(message.Text)
+	argsStr := strings.Join(args, " ")
 	switch command {
 	case "/start":
 		if !session.isLoggedIn() {
@@ -197,10 +223,32 @@ func (b *Bot) handleCommand(ctx context.Context, session *UserSession, message *
 	case "/login":
 		b.authHandler.HandleLoginCommand(session)
 	case "/peru":
+		// Handle bulk mode cancellation
+		if session.IsInBulkMode() {
+			b.bulkHandler.HandlePeruCommand(session)
+			return
+		}
 		session.reset()
 		session.replyAndRemoveCustomKeyboard(okText)
 	case "/laheta":
+		// Handle bulk mode publishing
+		if session.IsInBulkMode() {
+			b.bulkHandler.HandleLahetaCommand(ctx, session, argsStr)
+			return
+		}
 		b.listingHandler.HandleSendListingCommand(ctx, session)
+	case "/era":
+		if !session.isLoggedIn() {
+			session.reply(loginRequiredText)
+			return
+		}
+		b.bulkHandler.HandleEräCommand(ctx, session)
+	case "/valmis":
+		if !session.IsInBulkMode() {
+			session.reply("Et ole erätilassa. Aloita /era komennolla.")
+			return
+		}
+		b.bulkHandler.HandleValmisCommand(ctx, session)
 	case "/poistakuvat":
 		session.photos = nil
 		session.pendingPhotos = nil
@@ -219,6 +267,10 @@ func (b *Bot) handleCommand(ctx context.Context, session *UserSession, message *
 			session.reply(loginRequiredText)
 			return
 		}
+		if session.IsInBulkMode() {
+			session.reply("Lähetä kuvia tai käytä /valmis kun olet valmis.")
+			return
+		}
 		session.reply("Lähetä kuva aloittaaksesi ilmoituksen teon")
 	}
 }
@@ -231,7 +283,9 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, session *UserSession, que
 	b.tg.Request(callback)
 
 	// Route to appropriate handler
-	if strings.HasPrefix(query.Data, "cat:") {
+	if strings.HasPrefix(query.Data, "bulk:") {
+		b.bulkHandler.HandleBulkCallback(ctx, session, query)
+	} else if strings.HasPrefix(query.Data, "cat:") {
 		b.listingHandler.HandleCategorySelection(ctx, session, query)
 	} else if strings.HasPrefix(query.Data, "shipping:") {
 		b.listingHandler.HandleShippingSelection(ctx, session, query)

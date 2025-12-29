@@ -31,6 +31,14 @@ func NewSearchClient() *SearchClient {
 	}
 }
 
+// NewSearchClientWithBaseURL creates a search client with a custom base URL (for testing)
+func NewSearchClientWithBaseURL(baseURL string) *SearchClient {
+	return &SearchClient{
+		httpClient: &http.Client{},
+		baseURL:    baseURL,
+	}
+}
+
 // SearchParams contains search query parameters
 type SearchParams struct {
 	Query    string // Free text search query

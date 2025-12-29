@@ -16,6 +16,8 @@ type Command struct {
 var botCommands = []Command{
 	{Name: "peru", Description: "Peru ilmoituksen teko"},
 	{Name: "laheta", Description: "Lähetä ilmoitus"},
+	{Name: "era", Description: "Aloita erätila (useita ilmoituksia)"},
+	{Name: "valmis", Description: "Lopeta kuvien lähetys erätilassa"},
 	{Name: "poistakuvat", Description: "Poista ilmoituksen kuvat"},
 	{Name: "osasto", Description: "Vaihda osastoa"},
 	{Name: "malli", Description: "Näytä/aseta kuvauspohja"},

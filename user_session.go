@@ -25,6 +25,10 @@ type SessionMessage struct {
 	CallbackQuery *tgbotapi.CallbackQuery
 	Text          string       // For auth flow messages
 	AlbumBuffer   *AlbumBuffer // For album_timeout messages
+
+	// Bulk mode message data
+	BulkAnalysisResult *BulkAnalysisResult // For bulk_analysis_complete messages
+	BulkDraftError     *BulkDraftError     // For bulk_draft_error messages
 }
 
 // isLoggedIn returns true if the user has a valid bearer token (internal, no lock)
@@ -120,6 +124,9 @@ type UserSession struct {
 
 	// Postal code command state
 	awaitingPostalCodeInput bool
+
+	// Bulk listing mode
+	bulkSession *BulkSession
 }
 
 // --- Thread-safe accessors ---
@@ -237,6 +244,58 @@ func (s *UserSession) reset() {
 	s.currentDraft = nil
 	s.isCreatingDraft = false
 	s.awaitingPostalCodeInput = false
+	// Note: bulk session is NOT reset here - use EndBulkSession() explicitly
+}
+
+// --- Bulk session methods ---
+
+// IsInBulkMode returns true if the session is in bulk listing mode.
+// Called from session worker - no locking needed.
+func (s *UserSession) IsInBulkMode() bool {
+	return s.bulkSession != nil && s.bulkSession.Active
+}
+
+// GetBulkSession returns the current bulk session, or nil if not in bulk mode.
+// Called from session worker - no locking needed.
+func (s *UserSession) GetBulkSession() *BulkSession {
+	return s.bulkSession
+}
+
+// StartBulkSession starts a new bulk listing session.
+// Called from session worker - no locking needed.
+func (s *UserSession) StartBulkSession() {
+	// Clean up any existing single listing state
+	s.reset()
+	s.bulkSession = NewBulkSession()
+	log.Info().Int64("userId", s.userId).Msg("started bulk session")
+}
+
+// EndBulkSession ends the current bulk listing session.
+// Called from session worker - no locking needed.
+func (s *UserSession) EndBulkSession() {
+	if s.bulkSession == nil {
+		return
+	}
+
+	// Cancel any ongoing analyses
+	for _, draft := range s.bulkSession.Drafts {
+		if draft.CancelAnalysis != nil {
+			draft.CancelAnalysis()
+		}
+	}
+
+	// Stop update timer
+	if s.bulkSession.UpdateTimer != nil {
+		s.bulkSession.UpdateTimer.Stop()
+	}
+
+	// Stop album buffer timer
+	if s.bulkSession.AlbumBuffer != nil && s.bulkSession.AlbumBuffer.Timer != nil {
+		s.bulkSession.AlbumBuffer.Timer.Stop()
+	}
+
+	s.bulkSession = nil
+	log.Info().Int64("userId", s.userId).Msg("ended bulk session")
 }
 
 func (s *UserSession) replyWithError(err error) tgbotapi.Message {
