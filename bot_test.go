@@ -469,13 +469,16 @@ func TestHandlePriceInput_ValidPrice(t *testing.T) {
 	})).Return(tgbotapi.Message{}, nil).Once()
 
 	session.mu.Lock()
-	listingHandler.HandlePriceInput(session, "50€")
+	listingHandler.HandlePriceInput(context.Background(), session, "50€")
 	session.mu.Unlock()
 
 	tg.AssertExpectations(t)
 
 	if session.currentDraft.Price != 50 {
 		t.Errorf("expected price=50, got %d", session.currentDraft.Price)
+	}
+	if session.currentDraft.TradeType != TradeTypeSell {
+		t.Errorf("expected trade_type=TradeTypeSell, got %s", session.currentDraft.TradeType)
 	}
 	if session.currentDraft.State != AdFlowStateAwaitingShipping {
 		t.Errorf("expected state AwaitingShipping, got %v", session.currentDraft.State)
@@ -498,7 +501,7 @@ func TestHandlePriceInput_InvalidPrice(t *testing.T) {
 		Return(tgbotapi.Message{}, nil).Once()
 
 	session.mu.Lock()
-	listingHandler.HandlePriceInput(session, "ilmainen")
+	listingHandler.HandlePriceInput(context.Background(), session, "ilmainen")
 	session.mu.Unlock()
 
 	tg.AssertExpectations(t)
@@ -506,6 +509,42 @@ func TestHandlePriceInput_InvalidPrice(t *testing.T) {
 	// State should remain awaiting price
 	if session.currentDraft.State != AdFlowStateAwaitingPrice {
 		t.Errorf("expected state to remain AwaitingPrice, got %v", session.currentDraft.State)
+	}
+}
+
+func TestHandlePriceInput_Giveaway(t *testing.T) {
+	ts := makeAdInputTestServer(t)
+	defer ts.Close()
+	_, _, tg, _, session := setupAdInputSession(t, ts)
+
+	listingHandler := NewListingHandler(tg, nil, nil)
+
+	session.currentDraft = &AdInputDraft{
+		State:       AdFlowStateAwaitingPrice,
+		Title:       "Logitech hiiri",
+		Description: "Myydään langaton pelihiiri",
+	}
+	session.photos = []tgbotapi.PhotoSize{{FileID: "1"}}
+
+	// Expect shipping question after giveaway selection
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		return strings.Contains(msg.Text, "Onko postitus mahdollinen?")
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	session.mu.Lock()
+	listingHandler.HandlePriceInput(context.Background(), session, "🎁 Annetaan")
+	session.mu.Unlock()
+
+	tg.AssertExpectations(t)
+
+	if session.currentDraft.Price != 0 {
+		t.Errorf("expected price=0, got %d", session.currentDraft.Price)
+	}
+	if session.currentDraft.TradeType != TradeTypeGive {
+		t.Errorf("expected trade_type=TradeTypeGive, got %s", session.currentDraft.TradeType)
+	}
+	if session.currentDraft.State != AdFlowStateAwaitingShipping {
+		t.Errorf("expected state AwaitingShipping, got %v", session.currentDraft.State)
 	}
 }
 

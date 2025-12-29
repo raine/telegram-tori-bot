@@ -21,6 +21,12 @@ const (
 	AdFlowStateReadyToPublish
 )
 
+// TradeType constants for listing type
+const (
+	TradeTypeSell = "1" // Selling an item
+	TradeTypeGive = "2" // Giving away for free
+)
+
 // AdInputDraft tracks the state of a new-API ad creation
 type AdInputDraft struct {
 	State            AdFlowState
@@ -165,8 +171,8 @@ func buildFinalPayload(
 		payload.Extra[k] = v
 	}
 
-	// Add price if selling
-	if draft.TradeType == "1" && draft.Price > 0 {
+	// Add price if selling (not for giveaways)
+	if draft.TradeType == TradeTypeSell && draft.Price > 0 {
 		payload.Extra["price"] = []map[string]any{
 			{"price_amount": strconv.Itoa(draft.Price)},
 		}

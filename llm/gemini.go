@@ -65,6 +65,19 @@ Attributes:
 Respond ONLY with a JSON object mapping attribute names to option IDs.
 Example: {"condition": 123, "color": 456, "size": null}`
 
+const giveawayDescriptionRewritePrompt = `Transform this marketplace listing description from a selling context to a giveaway context.
+
+Original description:
+%s
+
+Rules:
+- Replace "Myydään" with "Annetaan" if present at the start
+- Replace other selling phrases with giveaway equivalents
+- Keep all other details about the item unchanged
+- Do not add any new information
+- Keep the same language (Finnish)
+- Return ONLY the transformed description text, no JSON or other formatting`
+
 // GeminiAnalyzer uses Google's Gemini API for image analysis and category selection.
 type GeminiAnalyzer struct {
 	client *genai.Client
@@ -298,4 +311,51 @@ func (g *GeminiAnalyzer) SelectAttributes(ctx context.Context, title, descriptio
 	}
 
 	return finalMap, nil
+}
+
+// RewriteDescriptionForGiveaway rewrites a description from selling to giveaway context.
+// Uses Gemini Lite to transform "Myydään" to "Annetaan" and similar phrases.
+func (g *GeminiAnalyzer) RewriteDescriptionForGiveaway(ctx context.Context, description string) (string, error) {
+	if description == "" {
+		return description, nil
+	}
+
+	prompt := fmt.Sprintf(giveawayDescriptionRewritePrompt, description)
+
+	result, err := g.client.Models.GenerateContent(ctx, geminiLiteModel, []*genai.Content{
+		genai.NewContentFromParts([]*genai.Part{genai.NewPartFromText(prompt)}, genai.RoleUser),
+	}, nil)
+	if err != nil {
+		return "", fmt.Errorf("gemini giveaway rewrite failed: %w", err)
+	}
+
+	if len(result.Candidates) == 0 || len(result.Candidates[0].Content.Parts) == 0 {
+		return "", fmt.Errorf("empty response from gemini")
+	}
+
+	text := strings.TrimSpace(result.Text())
+
+	// Strip markdown code blocks if present (LLM may occasionally add them)
+	text = strings.TrimPrefix(text, "```text")
+	text = strings.TrimPrefix(text, "```")
+	text = strings.TrimSuffix(text, "```")
+	text = strings.TrimSpace(text)
+
+	// Log usage and cost
+	if result.UsageMetadata != nil {
+		cost := calculateGeminiCost(
+			int64(result.UsageMetadata.PromptTokenCount),
+			int64(result.UsageMetadata.CandidatesTokenCount),
+			geminiLiteInputPricePerMillion,
+			geminiLiteOutputPricePerMillion,
+		)
+		log.Info().
+			Str("model", geminiLiteModel).
+			Int("inputTokens", int(result.UsageMetadata.PromptTokenCount)).
+			Int("outputTokens", int(result.UsageMetadata.CandidatesTokenCount)).
+			Float64("costUSD", cost).
+			Msg("giveaway description rewrite llm call")
+	}
+
+	return text, nil
 }

@@ -73,7 +73,7 @@ func (h *ListingHandler) HandleInput(ctx context.Context, session *UserSession, 
 	// Handle price input
 	if state == AdFlowStateAwaitingPrice {
 		session.mu.Lock()
-		h.HandlePriceInput(session, message.Text)
+		h.HandlePriceInput(ctx, session, message.Text)
 		session.mu.Unlock()
 		return true
 	}
@@ -488,7 +488,13 @@ func (h *ListingHandler) HandleAttributeInput(ctx context.Context, session *User
 
 // HandlePriceInput handles price input when awaiting price.
 // Caller must hold session.mu.Lock().
-func (h *ListingHandler) HandlePriceInput(session *UserSession, text string) {
+func (h *ListingHandler) HandlePriceInput(ctx context.Context, session *UserSession, text string) {
+	// Check for giveaway selection
+	if strings.Contains(text, "Annetaan") || strings.Contains(text, "🎁") {
+		h.handleGiveawaySelection(ctx, session)
+		return
+	}
+
 	// Parse price from text
 	price, err := parsePriceMessage(text)
 	if err != nil {
@@ -497,6 +503,7 @@ func (h *ListingHandler) HandlePriceInput(session *UserSession, text string) {
 	}
 
 	session.currentDraft.Price = price
+	session.currentDraft.TradeType = TradeTypeSell
 	session.currentDraft.State = AdFlowStateAwaitingShipping
 
 	// Ask about shipping
@@ -534,6 +541,73 @@ func (h *ListingHandler) HandlePostalCodeInput(session *UserSession, text string
 
 	session.reply(fmt.Sprintf(postalCodeUpdatedText, postalCode))
 	h.showAdSummary(session)
+}
+
+// handleGiveawaySelection handles the user selecting "Annetaan" (give away) mode.
+// Caller must hold session.mu.Lock().
+func (h *ListingHandler) handleGiveawaySelection(ctx context.Context, session *UserSession) {
+	session.currentDraft.Price = 0
+	session.currentDraft.TradeType = TradeTypeGive
+
+	// Get current description for LLM rewrite
+	originalDescription := session.currentDraft.Description
+	descMsgID := session.currentDraft.DescriptionMessageID
+	userId := session.userId
+
+	// Release lock for LLM call
+	session.mu.Unlock()
+
+	// Rewrite description to use "Annetaan" phrasing
+	var newDescription string
+	gemini, ok := h.visionAnalyzer.(*llm.GeminiAnalyzer)
+	if ok {
+		rewritten, err := gemini.RewriteDescriptionForGiveaway(ctx, originalDescription)
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to rewrite description for giveaway, using original")
+			newDescription = originalDescription
+		} else {
+			newDescription = rewritten
+		}
+	} else {
+		newDescription = originalDescription
+	}
+
+	// Re-acquire lock
+	session.mu.Lock()
+
+	// Check if session state is still valid AND state hasn't changed
+	// (another handler may have processed input while we were unlocked)
+	if session.currentDraft == nil || session.currentDraft.State != AdFlowStateAwaitingPrice {
+		return
+	}
+
+	// Update description if it was rewritten
+	if newDescription != originalDescription {
+		session.currentDraft.Description = newDescription
+
+		// Update the description message in chat
+		if descMsgID != 0 {
+			editMsg := tgbotapi.NewEditMessageText(
+				userId,
+				descMsgID,
+				fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(newDescription)),
+			)
+			editMsg.ParseMode = tgbotapi.ModeMarkdown
+			h.tg.Request(editMsg)
+		}
+	}
+
+	session.currentDraft.State = AdFlowStateAwaitingShipping
+
+	// Ask about shipping (meetup possible even for giveaways)
+	msg := tgbotapi.NewMessage(session.userId, "Onko postitus mahdollinen?")
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Kyllä", "shipping:yes"),
+			tgbotapi.NewInlineKeyboardButtonData("Ei", "shipping:no"),
+		),
+	)
+	session.replyWithMessage(msg)
 }
 
 // HandleShippingSelection handles the shipping yes/no callback.
@@ -899,17 +973,23 @@ func (h *ListingHandler) promptForPrice(ctx context.Context, session *UserSessio
 	msg := tgbotapi.NewMessage(session.userId, msgText)
 	msg.ParseMode = tgbotapi.ModeMarkdown
 
-	// Add suggestion button if we have a recommendation
+	// Build keyboard with price suggestion (if available) and giveaway button
+	var rows [][]tgbotapi.KeyboardButton
 	if recommendedPrice > 0 {
-		keyboard := tgbotapi.NewReplyKeyboard(
-			tgbotapi.NewKeyboardButtonRow(
-				tgbotapi.NewKeyboardButton(fmt.Sprintf("%d€", recommendedPrice)),
-			),
-		)
-		keyboard.OneTimeKeyboard = true
-		keyboard.ResizeKeyboard = true
-		msg.ReplyMarkup = keyboard
+		rows = append(rows, tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton(fmt.Sprintf("%d€", recommendedPrice)),
+			tgbotapi.NewKeyboardButton("🎁 Annetaan"),
+		))
+	} else {
+		rows = append(rows, tgbotapi.NewKeyboardButtonRow(
+			tgbotapi.NewKeyboardButton("🎁 Annetaan"),
+		))
 	}
+
+	keyboard := tgbotapi.NewReplyKeyboard(rows...)
+	keyboard.OneTimeKeyboard = true
+	keyboard.ResizeKeyboard = true
+	msg.ReplyMarkup = keyboard
 
 	session.replyWithMessage(msg)
 }
@@ -923,17 +1003,25 @@ func (h *ListingHandler) showAdSummary(session *UserSession) {
 		shippingText = "Kyllä"
 	}
 
+	// Show "Annetaan" for giveaways, price for sales
+	var priceText string
+	if session.currentDraft.TradeType == TradeTypeGive {
+		priceText = "🎁 Annetaan"
+	} else {
+		priceText = fmt.Sprintf("%d€", session.currentDraft.Price)
+	}
+
 	msg := fmt.Sprintf(`*Ilmoitus valmis:*
 📦 *Otsikko:* %s
 📝 *Kuvaus:* %s
-💰 *Hinta:* %d€
+💰 *Hinta:* %s
 🚚 *Postitus:* %s
 📷 *Kuvia:* %d
 
 Lähetä /laheta julkaistaksesi tai /peru peruuttaaksesi.`,
 		escapeMarkdown(session.currentDraft.Title),
 		escapeMarkdown(session.currentDraft.Description),
-		session.currentDraft.Price,
+		priceText,
 		shippingText,
 		len(session.photos),
 	)
