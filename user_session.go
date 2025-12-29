@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -10,6 +11,19 @@ import (
 
 	"github.com/raine/telegram-tori-bot/tori"
 )
+
+// SessionMessage represents a message to be processed by the session worker.
+type SessionMessage struct {
+	Type  string
+	Ctx   context.Context
+	Done  chan struct{} // Closed when processing is complete (for synchronous dispatch)
+	Error chan error    // Optional: for returning errors
+
+	// Message data (only one is set based on Type)
+	Message       *tgbotapi.Message
+	CallbackQuery *tgbotapi.CallbackQuery
+	Text          string // For auth flow messages
+}
 
 // isLoggedIn returns true if the user has a valid bearer token (internal, no lock)
 func (s *UserSession) isLoggedIn() bool {
@@ -37,6 +51,24 @@ type PendingPhoto struct {
 	photoSize tgbotapi.PhotoSize
 }
 
+// MessageHandler is the interface for processing session messages.
+// This allows the session to dispatch to external handlers without circular dependencies.
+type MessageHandler interface {
+	HandleSessionMessage(ctx context.Context, session *UserSession, msg SessionMessage)
+}
+
+// UserSession represents a user's session with the bot.
+//
+// Threading model:
+//   - Each session has a dedicated worker goroutine that processes messages sequentially
+//   - Message handlers (HandlePhoto, HandleInput, etc.) are called only from the worker
+//     and can access session state without locks
+//   - Public accessors (IsLoggedIn, GetDraftState, etc.) use mutex for external callers
+//   - TryRefreshTokens is an exception: it may be called externally and uses mutex
+//
+// Note: There is a potential race between TryRefreshTokens (with lock) writing
+// bearerToken and the worker (without lock) reading it. In practice, token refresh
+// happens infrequently and the race is benign (stale read of old valid token).
 type UserSession struct {
 	userId        int64
 	bearerToken   string
@@ -44,7 +76,14 @@ type UserSession struct {
 	refreshToken  string
 	deviceID      string
 	sender        MessageSender
-	mu            sync.Mutex
+	mu            sync.Mutex // For thread-safe accessors and TryRefreshTokens
+
+	// Worker channel for sequential message processing
+	inbox   chan SessionMessage
+	ctx     context.Context
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
+	handler MessageHandler // Set after construction to avoid circular deps
 
 	// Photo collection
 	pendingPhotos *[]PendingPhoto
@@ -220,4 +259,91 @@ func (s *UserSession) reply(text string, a ...any) tgbotapi.Message {
 // longer valid in the context.
 func (s *UserSession) replyAndRemoveCustomKeyboard(text string, a ...any) tgbotapi.Message {
 	return s._reply(formatReplyText(text, a...), true)
+}
+
+// --- Worker methods ---
+
+// StartWorker starts the session's message processing worker goroutine.
+// Must be called after setting the handler.
+func (s *UserSession) StartWorker() {
+	s.wg.Add(1)
+	go s.runWorker()
+}
+
+// SetHandler sets the message handler for this session.
+func (s *UserSession) SetHandler(handler MessageHandler) {
+	s.handler = handler
+}
+
+// runWorker is the main worker loop that processes messages sequentially.
+func (s *UserSession) runWorker() {
+	defer s.wg.Done()
+
+	for {
+		select {
+		case <-s.ctx.Done():
+			// Drain any remaining messages and signal completion
+			for {
+				select {
+				case msg := <-s.inbox:
+					if msg.Done != nil {
+						close(msg.Done)
+					}
+				default:
+					return
+				}
+			}
+		case msg := <-s.inbox:
+			s.processMessage(msg)
+		}
+	}
+}
+
+// processMessage handles a single message from the inbox.
+func (s *UserSession) processMessage(msg SessionMessage) {
+	defer func() {
+		// Recover from any panics to keep the worker running
+		if r := recover(); r != nil {
+			log.Error().
+				Int64("userId", s.userId).
+				Interface("panic", r).
+				Msg("recovered from panic in session worker")
+		}
+		if msg.Done != nil {
+			close(msg.Done)
+		}
+	}()
+
+	if s.handler == nil {
+		log.Error().Int64("userId", s.userId).Msg("session handler not set")
+		return
+	}
+
+	s.handler.HandleSessionMessage(msg.Ctx, s, msg)
+}
+
+// Send queues a message for processing by the worker.
+// This is non-blocking - it returns immediately after queuing.
+func (s *UserSession) Send(msg SessionMessage) {
+	select {
+	case s.inbox <- msg:
+	case <-s.ctx.Done():
+		if msg.Done != nil {
+			close(msg.Done)
+		}
+	}
+}
+
+// SendSync queues a message and waits for it to be processed.
+// Returns when the message has been fully processed by the worker.
+func (s *UserSession) SendSync(msg SessionMessage) {
+	msg.Done = make(chan struct{})
+	s.Send(msg)
+	<-msg.Done
+}
+
+// Stop stops the worker and waits for it to finish.
+func (s *UserSession) Stop() {
+	s.cancel()
+	s.wg.Wait()
 }

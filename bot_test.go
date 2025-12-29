@@ -181,7 +181,7 @@ func TestHandleUpdate_UnauthenticatedUser(t *testing.T) {
 	// Unauthenticated user should get login required message
 	tg.On("Send", makeMessage(userId, loginRequiredText)).Return(tgbotapi.Message{}, nil).Once()
 
-	bot.handleUpdate(context.Background(), update)
+	bot.handleUpdateSync(context.Background(), update)
 	tg.AssertExpectations(t)
 }
 
@@ -193,7 +193,7 @@ func TestHandleUpdate_AuthenticatedUserStart(t *testing.T) {
 	// Authenticated user should get start message
 	tg.On("Send", makeMessage(userId, startText)).Return(tgbotapi.Message{}, nil).Once()
 
-	bot.handleUpdate(context.Background(), update)
+	bot.handleUpdateSync(context.Background(), update)
 	tg.AssertExpectations(t)
 }
 
@@ -209,7 +209,7 @@ func TestHandleUpdate_RemovePhotosCommand(t *testing.T) {
 
 	tg.On("Send", makeMessage(userId, "Kuvat poistettu.")).Return(tgbotapi.Message{}, nil).Once()
 
-	bot.handleUpdate(context.Background(), update)
+	bot.handleUpdateSync(context.Background(), update)
 	tg.AssertExpectations(t)
 }
 
@@ -380,9 +380,7 @@ func TestHandleAttributeInput_SelectsOption(t *testing.T) {
 		return msg.Text == "Valitse tyyppi" && msg.ReplyMarkup != nil
 	})).Return(tgbotapi.Message{}, nil).Once()
 
-	session.mu.Lock()
 	listingHandler.HandleAttributeInput(context.Background(), session, "Erinomainen")
-	session.mu.Unlock()
 
 	tg.AssertExpectations(t)
 
@@ -434,9 +432,7 @@ func TestHandleAttributeInput_LastAttribute_MovesToPrice(t *testing.T) {
 		return strings.HasPrefix(msg.Text, "Syötä hinta (esim. 50€)")
 	})).Return(tgbotapi.Message{}, nil).Once()
 
-	session.mu.Lock()
 	listingHandler.HandleAttributeInput(context.Background(), session, "Hiiri")
-	session.mu.Unlock()
 
 	tg.AssertExpectations(t)
 
@@ -468,9 +464,7 @@ func TestHandlePriceInput_ValidPrice(t *testing.T) {
 		return strings.Contains(msg.Text, "Onko postitus mahdollinen?")
 	})).Return(tgbotapi.Message{}, nil).Once()
 
-	session.mu.Lock()
 	listingHandler.HandlePriceInput(context.Background(), session, "50€")
-	session.mu.Unlock()
 
 	tg.AssertExpectations(t)
 
@@ -500,9 +494,7 @@ func TestHandlePriceInput_InvalidPrice(t *testing.T) {
 	tg.On("Send", makeMessage(userId, "En ymmärtänyt hintaa. Syötä hinta numerona (esim. 50€ tai 50)")).
 		Return(tgbotapi.Message{}, nil).Once()
 
-	session.mu.Lock()
 	listingHandler.HandlePriceInput(context.Background(), session, "ilmainen")
-	session.mu.Unlock()
 
 	tg.AssertExpectations(t)
 
@@ -531,9 +523,7 @@ func TestHandlePriceInput_Giveaway(t *testing.T) {
 		return strings.Contains(msg.Text, "Onko postitus mahdollinen?")
 	})).Return(tgbotapi.Message{}, nil).Once()
 
-	session.mu.Lock()
 	listingHandler.HandlePriceInput(context.Background(), session, "🎁 Annetaan")
-	session.mu.Unlock()
 
 	tg.AssertExpectations(t)
 
@@ -585,7 +575,7 @@ func TestHandleUpdate_ReplyToTitleEdits(t *testing.T) {
 			strings.Contains(msg.Text, "New title")
 	})).Return(tgbotapi.Message{}, nil).Once()
 
-	bot.handleUpdate(context.Background(), update)
+	bot.handleUpdateSync(context.Background(), update)
 	tg.AssertExpectations(t)
 
 	// Verify title was updated
@@ -630,7 +620,7 @@ func TestHandleUpdate_ReplyToDescriptionEdits(t *testing.T) {
 		return strings.Contains(msg.Text, "Kuvaus päivitetty")
 	})).Return(tgbotapi.Message{}, nil).Once()
 
-	bot.handleUpdate(context.Background(), update)
+	bot.handleUpdateSync(context.Background(), update)
 	tg.AssertExpectations(t)
 
 	// Verify description was updated
@@ -672,7 +662,7 @@ func TestHandleUpdate_PeruDuringAttributeInput(t *testing.T) {
 		return msg.Text == okText && hasRemoveKeyboard
 	})).Return(tgbotapi.Message{}, nil).Once()
 
-	bot.handleUpdate(context.Background(), update)
+	bot.handleUpdateSync(context.Background(), update)
 	tg.AssertExpectations(t)
 
 	// Verify session was reset
@@ -704,7 +694,7 @@ func TestHandleUpdate_PeruDuringPriceInput(t *testing.T) {
 		return msg.Text == okText && hasRemoveKeyboard
 	})).Return(tgbotapi.Message{}, nil).Once()
 
-	bot.handleUpdate(context.Background(), update)
+	bot.handleUpdateSync(context.Background(), update)
 	tg.AssertExpectations(t)
 
 	// Verify session was reset
@@ -722,9 +712,7 @@ func TestHandleOsastoCommand_NoDraft(t *testing.T) {
 	tg.On("Send", makeMessage(userId, "Ei aktiivista ilmoitusta. Lähetä ensin kuva.")).
 		Return(tgbotapi.Message{}, nil).Once()
 
-	session.mu.Lock()
 	bot.handleOsastoCommand(session)
-	session.mu.Unlock()
 
 	tg.AssertExpectations(t)
 }
@@ -741,9 +729,7 @@ func TestHandleOsastoCommand_NoPredictions(t *testing.T) {
 	tg.On("Send", makeMessage(userId, "Ei osastoehdotuksia saatavilla.")).
 		Return(tgbotapi.Message{}, nil).Once()
 
-	session.mu.Lock()
 	bot.handleOsastoCommand(session)
-	session.mu.Unlock()
 
 	tg.AssertExpectations(t)
 }
@@ -769,9 +755,7 @@ func TestHandleOsastoCommand_ShowsMenuWhenPastCategorySelection(t *testing.T) {
 		return msg.Text == "Mitä haluat muuttaa?" && msg.ReplyMarkup != nil
 	})).Return(tgbotapi.Message{}, nil).Once()
 
-	session.mu.Lock()
 	bot.handleOsastoCommand(session)
-	session.mu.Unlock()
 
 	tg.AssertExpectations(t)
 
@@ -798,9 +782,7 @@ func TestHandleOsastoCommand_ShowsCategoryKeyboardWhenAwaitingCategory(t *testin
 		return msg.Text == "Valitse osasto" && msg.ReplyMarkup != nil
 	})).Return(tgbotapi.Message{}, nil).Once()
 
-	session.mu.Lock()
 	bot.handleOsastoCommand(session)
-	session.mu.Unlock()
 
 	tg.AssertExpectations(t)
 }
@@ -826,7 +808,7 @@ func TestHandleUpdate_OsastoDuringPriceInput(t *testing.T) {
 		return msg.Text == "Mitä haluat muuttaa?" && msg.ReplyMarkup != nil
 	})).Return(tgbotapi.Message{}, nil).Once()
 
-	bot.handleUpdate(context.Background(), update)
+	bot.handleUpdateSync(context.Background(), update)
 	tg.AssertExpectations(t)
 
 	// State should remain (menu was shown, user hasn't selected yet)

@@ -56,74 +56,134 @@ func (b *Bot) SetVisionAnalyzer(analyzer llm.Analyzer) {
 }
 
 // handleUpdate is the main message router.
-// Note: Handlers manage their own locking internally to avoid deadlocks.
+// It dispatches messages to the appropriate session worker for sequential processing.
 func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
-	// Handle callback queries (inline keyboard button presses)
+	b.dispatchUpdate(ctx, update, false)
+}
+
+// handleUpdateSync is like handleUpdate but waits for message processing to complete.
+// Used in tests where we need synchronous behavior.
+func (b *Bot) handleUpdateSync(ctx context.Context, update tgbotapi.Update) {
+	b.dispatchUpdate(ctx, update, true)
+}
+
+// dispatchUpdate routes updates to the appropriate session worker.
+// If sync is true, it waits for message processing to complete.
+func (b *Bot) dispatchUpdate(ctx context.Context, update tgbotapi.Update, sync bool) {
+	var userId int64
+
+	// Determine user ID from the update
 	if update.CallbackQuery != nil {
-		b.handleCallbackQuery(ctx, update.CallbackQuery)
+		userId = update.CallbackQuery.From.ID
+	} else if update.Message != nil {
+		userId = update.Message.From.ID
+	} else {
 		return
 	}
 
-	if update.Message == nil {
-		return
-	}
-
-	userId := update.Message.From.ID
 	session, err := b.state.getUserSession(userId)
 	if err != nil {
 		log.Error().Err(err).Send()
 		return
 	}
 
-	log.Info().Str("text", update.Message.Text).Str("caption", update.Message.Caption).Msg("got message")
+	// Helper to send sync or async based on flag
+	send := func(msg SessionMessage) {
+		if sync {
+			session.SendSync(msg)
+		} else {
+			session.Send(msg)
+		}
+	}
 
-	// Handle auth flow (handler manages its own locking)
-	if b.authHandler.HandleMessage(ctx, session, update.Message.Text) {
+	// Dispatch to session worker based on update type
+	if update.CallbackQuery != nil {
+		send(SessionMessage{
+			Type:          "callback",
+			Ctx:           ctx,
+			CallbackQuery: update.CallbackQuery,
+		})
 		return
 	}
 
-	// Handle photo messages (handler manages its own locking)
-	if len(update.Message.Photo) > 0 {
-		if !session.IsLoggedIn() {
-			session.mu.Lock()
-			session.reply(loginRequiredText)
-			session.mu.Unlock()
-			return
+	if update.Message != nil {
+		log.Info().Str("text", update.Message.Text).Str("caption", update.Message.Caption).Msg("got message")
+
+		if len(update.Message.Photo) > 0 {
+			send(SessionMessage{
+				Type:    "photo",
+				Ctx:     ctx,
+				Message: update.Message,
+			})
+		} else {
+			send(SessionMessage{
+				Type:    "text",
+				Ctx:     ctx,
+				Message: update.Message,
+			})
 		}
-		b.listingHandler.HandlePhoto(ctx, session, update.Message)
+	}
+}
+
+// HandleSessionMessage implements MessageHandler interface.
+// This is called by the session worker goroutine for sequential processing.
+// No mutex locking is needed here since only one goroutine accesses session state.
+func (b *Bot) HandleSessionMessage(ctx context.Context, session *UserSession, msg SessionMessage) {
+	switch msg.Type {
+	case "callback":
+		b.handleCallbackQuery(ctx, session, msg.CallbackQuery)
+	case "photo":
+		b.handlePhotoMessage(ctx, session, msg.Message)
+	case "text":
+		b.handleTextMessage(ctx, session, msg.Message)
+	}
+}
+
+// handlePhotoMessage processes photo messages.
+// Called from session worker - no locking needed.
+func (b *Bot) handlePhotoMessage(ctx context.Context, session *UserSession, message *tgbotapi.Message) {
+	if !session.isLoggedIn() {
+		session.reply(loginRequiredText)
+		return
+	}
+	b.listingHandler.HandlePhoto(ctx, session, message)
+}
+
+// handleTextMessage processes text messages.
+// Called from session worker - no locking needed.
+func (b *Bot) handleTextMessage(ctx context.Context, session *UserSession, message *tgbotapi.Message) {
+	// Handle auth flow
+	if b.authHandler.HandleMessage(ctx, session, message.Text) {
 		return
 	}
 
 	// Handle postal code command input
-	if b.handlePostalCodeInput(session, update.Message.Text) {
+	if b.handlePostalCodeInput(session, message.Text) {
 		return
 	}
 
 	// Handle listing flow inputs (replies, attributes, prices)
-	// Handler manages its own locking and checks state internally
-	if b.listingHandler.HandleInput(ctx, session, update.Message) {
+	if b.listingHandler.HandleInput(ctx, session, message) {
 		return
 	}
 
 	// Try to handle as natural language edit command if there's an active draft
 	// and the message looks like an edit command (not a regular command)
-	if update.Message.Text != "" && !strings.HasPrefix(update.Message.Text, "/") {
+	if message.Text != "" && !strings.HasPrefix(message.Text, "/") {
 		if session.HasActiveDraft() {
-			if b.listingHandler.HandleEditCommand(ctx, session, update.Message.Text) {
+			if b.listingHandler.HandleEditCommand(ctx, session, message.Text) {
 				return
 			}
 		}
 	}
 
-	// Handle commands (requires locking)
-	b.handleCommand(ctx, session, update.Message)
+	// Handle commands
+	b.handleCommand(ctx, session, message)
 }
 
 // handleCommand processes bot commands.
+// Called from session worker - no locking needed.
 func (b *Bot) handleCommand(ctx context.Context, session *UserSession, message *tgbotapi.Message) {
-	session.mu.Lock()
-	defer session.mu.Unlock()
-
 	command, _ := parseCommand(message.Text)
 	switch command {
 	case "/start":
@@ -133,18 +193,12 @@ func (b *Bot) handleCommand(ctx context.Context, session *UserSession, message *
 			session.reply(startText)
 		}
 	case "/login":
-		// Release lock before calling handler that manages its own locking
-		session.mu.Unlock()
 		b.authHandler.HandleLoginCommand(session)
-		session.mu.Lock()
 	case "/peru":
 		session.reset()
 		session.replyAndRemoveCustomKeyboard(okText)
 	case "/laheta":
-		// Release lock before calling handler that manages its own locking
-		session.mu.Unlock()
 		b.listingHandler.HandleSendListingCommand(ctx, session)
-		session.mu.Lock()
 	case "/poistakuvat":
 		session.photos = nil
 		session.pendingPhotos = nil
@@ -168,14 +222,8 @@ func (b *Bot) handleCommand(ctx context.Context, session *UserSession, message *
 }
 
 // handleCallbackQuery handles inline keyboard button presses.
-func (b *Bot) handleCallbackQuery(ctx context.Context, query *tgbotapi.CallbackQuery) {
-	userId := query.From.ID
-	session, err := b.state.getUserSession(userId)
-	if err != nil {
-		log.Error().Err(err).Send()
-		return
-	}
-
+// Called from session worker - no locking needed.
+func (b *Bot) handleCallbackQuery(ctx context.Context, session *UserSession, query *tgbotapi.CallbackQuery) {
 	// Answer the callback to remove the loading state
 	callback := tgbotapi.NewCallback(query.ID, "")
 	b.tg.Request(callback)
@@ -261,10 +309,8 @@ func (b *Bot) handlePostalCodeCommand(session *UserSession) {
 
 // handlePostalCodeInput handles text input when awaiting postal code from /postinumero command.
 // Returns true if the message was handled.
+// Called from session worker - no locking needed.
 func (b *Bot) handlePostalCodeInput(session *UserSession, text string) bool {
-	session.mu.Lock()
-	defer session.mu.Unlock()
-
 	if !session.awaitingPostalCodeInput {
 		return false
 	}
@@ -332,12 +378,10 @@ func (b *Bot) handleOsastoCommand(session *UserSession) {
 }
 
 // handleReselectCallback handles reselect:category and reselect:attrs callbacks
+// Called from session worker - no locking needed.
 func (b *Bot) handleReselectCallback(ctx context.Context, session *UserSession, query *tgbotapi.CallbackQuery) {
-	session.mu.Lock()
-
 	if session.currentDraft == nil {
 		session.reply("Ei aktiivista ilmoitusta.")
-		session.mu.Unlock()
 		return
 	}
 
@@ -364,18 +408,14 @@ func (b *Bot) handleReselectCallback(ctx context.Context, session *UserSession, 
 		msg.ParseMode = tgbotapi.ModeMarkdown
 		msg.ReplyMarkup = makeCategoryPredictionKeyboard(session.currentDraft.CategoryPredictions)
 		session.replyWithMessage(msg)
-		session.mu.Unlock()
 	} else if query.Data == "reselect:attrs" {
 		// Clear collected attributes but keep category
 		session.currentDraft.CollectedAttrs = make(map[string]string)
 		session.currentDraft.CurrentAttrIndex = 0
 		categoryID := session.currentDraft.CategoryID
-		session.mu.Unlock()
 
 		// Re-process category selection to fetch and prompt for attributes
 		b.listingHandler.ProcessCategorySelection(ctx, session, categoryID)
-	} else {
-		session.mu.Unlock()
 	}
 }
 

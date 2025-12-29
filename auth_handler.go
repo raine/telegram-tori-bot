@@ -22,13 +22,12 @@ func NewAuthHandler(sessionStore storage.SessionStore) *AuthHandler {
 
 // HandleMessage handles messages during auth flow.
 // Returns true if the message was handled (auth flow is active).
+// Called from session worker - no locking needed.
 func (h *AuthHandler) HandleMessage(ctx context.Context, session *UserSession, text string) bool {
 	// Check auth flow timeout
 	if session.IsAuthFlowTimedOut() {
-		session.mu.Lock()
 		session.authFlow.Reset()
 		session.reply(loginTimeoutText)
-		session.mu.Unlock()
 		return true
 	}
 
@@ -38,14 +37,12 @@ func (h *AuthHandler) HandleMessage(ctx context.Context, session *UserSession, t
 	}
 
 	// Handle auth flow message
-	session.mu.Lock()
 	h.handleAuthFlowMessage(ctx, session, text)
-	session.mu.Unlock()
 	return true
 }
 
 // handleAuthFlowMessage handles messages during the login flow.
-// Caller must hold session.mu.Lock().
+// Called from session worker - no locking needed.
 func (h *AuthHandler) handleAuthFlowMessage(ctx context.Context, session *UserSession, text string) {
 	// Handle /peru to cancel login
 	if text == "/peru" {
@@ -73,10 +70,8 @@ func (h *AuthHandler) handleAuthFlowMessage(ctx context.Context, session *UserSe
 }
 
 // HandleLoginCommand starts the login flow.
+// Called from session worker - no locking needed.
 func (h *AuthHandler) HandleLoginCommand(session *UserSession) {
-	session.mu.Lock()
-	defer session.mu.Unlock()
-
 	// Check if already logged in
 	if session.isLoggedIn() {
 		session.reply(loginAlreadyLoggedInText)
@@ -189,6 +184,8 @@ func (h *AuthHandler) finalizeAuth(ctx context.Context, session *UserSession) {
 }
 
 // TryRefreshTokens attempts to refresh the session's tokens using the stored refresh token.
+// Note: This method uses locking because it may be called from outside the session worker
+// (e.g., during startup or automatic token refresh).
 func (h *AuthHandler) TryRefreshTokens(session *UserSession) error {
 	session.mu.Lock()
 	defer session.mu.Unlock()

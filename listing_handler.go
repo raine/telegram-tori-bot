@@ -36,13 +36,11 @@ func NewListingHandler(tg BotAPI, visionAnalyzer llm.Analyzer, editIntentParser 
 
 // HandleInput handles text inputs during the listing flow (replies, attributes, prices).
 // Returns true if the message was handled.
+// Called from session worker - no locking needed.
 func (h *ListingHandler) HandleInput(ctx context.Context, session *UserSession, message *tgbotapi.Message) bool {
 	// Handle replies to title/description messages (editing)
 	if message.ReplyToMessage != nil {
-		session.mu.Lock()
-		handled := h.HandleTitleDescriptionReply(session, message)
-		session.mu.Unlock()
-		if handled {
+		if h.HandleTitleDescriptionReply(session, message) {
 			return true
 		}
 	}
@@ -52,10 +50,8 @@ func (h *ListingHandler) HandleInput(ctx context.Context, session *UserSession, 
 
 	// Handle /peru during input states
 	if message.Text == "/peru" && (state == AdFlowStateAwaitingAttribute || state == AdFlowStateAwaitingPrice || state == AdFlowStateAwaitingPostalCode) {
-		session.mu.Lock()
 		session.reset()
 		session.replyAndRemoveCustomKeyboard(okText)
-		session.mu.Unlock()
 		return true
 	}
 
@@ -66,25 +62,19 @@ func (h *ListingHandler) HandleInput(ctx context.Context, session *UserSession, 
 
 	// Handle attribute input
 	if state == AdFlowStateAwaitingAttribute {
-		session.mu.Lock()
 		h.HandleAttributeInput(ctx, session, message.Text)
-		session.mu.Unlock()
 		return true
 	}
 
 	// Handle price input
 	if state == AdFlowStateAwaitingPrice {
-		session.mu.Lock()
 		h.HandlePriceInput(ctx, session, message.Text)
-		session.mu.Unlock()
 		return true
 	}
 
 	// Handle postal code input
 	if state == AdFlowStateAwaitingPostalCode {
-		session.mu.Lock()
 		h.HandlePostalCodeInput(session, message.Text)
-		session.mu.Unlock()
 		return true
 	}
 
@@ -92,26 +82,21 @@ func (h *ListingHandler) HandleInput(ctx context.Context, session *UserSession, 
 }
 
 // HandleSendListingCommand handles the /laheta command.
-// This function manages its own locking and returns without holding the lock.
+// Called from session worker - no locking needed.
 func (h *ListingHandler) HandleSendListingCommand(ctx context.Context, session *UserSession) {
-	session.mu.Lock()
 	h.HandleSendListing(ctx, session)
-	// HandleSendListing returns with lock held in all paths
-	session.mu.Unlock()
 }
 
 // HandlePhoto processes a photo message and starts or adds to the listing flow.
+// Called from session worker - no locking needed.
 func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, message *tgbotapi.Message) {
 	// Get the largest photo size
 	largestPhoto := message.Photo[len(message.Photo)-1]
 
-	// Check state and reserve draft creation if needed
-	session.mu.Lock()
-
-	// If another goroutine is already creating a draft (album race), wait for it
+	// Since we're in the worker, sequential processing means no race with album photos.
+	// The isCreatingDraft flag is still useful to track state during async operations.
 	if session.isCreatingDraft {
 		session.reply("Odota hetki, luodaan ilmoitusta...")
-		session.mu.Unlock()
 		return
 	}
 
@@ -119,7 +104,7 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 	client := session.adInputClient
 
 	if !existingDraft {
-		// Reserve the right to create the draft (prevents album race)
+		// Mark that we're creating a draft
 		session.isCreatingDraft = true
 		session.reply("Analysoidaan kuvaa...")
 		session.initAdInputClient()
@@ -129,26 +114,21 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 	}
 	draftID := session.draftID
 	etag := session.etag
-	session.mu.Unlock()
 
 	if client == nil {
-		session.mu.Lock()
 		session.isCreatingDraft = false
 		session.reply("Virhe: ei voitu alustaa yhteyttä")
-		session.mu.Unlock()
 		return
 	}
 
-	// Download the photo (NO LOCK - network I/O)
+	// Download the photo (network I/O)
 	photoData, err := downloadFileID(h.tg.GetFileDirectURL, largestPhoto.FileID)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to download photo")
-		session.mu.Lock()
 		if !existingDraft {
 			session.isCreatingDraft = false
 		}
 		session.replyWithError(err)
-		session.mu.Unlock()
 		return
 	}
 
@@ -157,22 +137,18 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 	var categories []tori.CategoryPrediction
 
 	if !existingDraft {
-		// Analyze with Gemini vision (NO LOCK - network I/O)
+		// Analyze with Gemini vision (network I/O)
 		if h.visionAnalyzer == nil {
-			session.mu.Lock()
 			session.isCreatingDraft = false
 			session.reply("Kuva-analyysi ei ole käytettävissä")
-			session.mu.Unlock()
 			return
 		}
 
 		result, err = h.visionAnalyzer.AnalyzeImage(ctx, photoData, "image/jpeg")
 		if err != nil {
 			log.Error().Err(err).Msg("failed to analyze image")
-			session.mu.Lock()
 			session.isCreatingDraft = false
 			session.replyWithError(err)
-			session.mu.Unlock()
 			return
 		}
 
@@ -181,54 +157,47 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 			Float64("cost", result.Usage.CostUSD).
 			Msg("image analyzed")
 
-		// Create draft ad (NO LOCK - network I/O)
+		// Create draft ad (network I/O)
 		draftID, etag, err = h.startNewAdFlow(ctx, client)
 		if err != nil {
-			session.mu.Lock()
 			session.isCreatingDraft = false
 			session.replyWithError(err)
-			session.mu.Unlock()
 			return
 		}
 
-		// Set image on draft (NO LOCK - network I/O)
+		// Set image on draft (network I/O)
 		allImages := []UploadedImage{{
 			ImagePath: "", // Will be set after upload
 			Width:     largestPhoto.Width,
 			Height:    largestPhoto.Height,
 		}}
 
-		// Upload photo to draft (NO LOCK - network I/O)
+		// Upload photo to draft (network I/O)
 		uploaded, err := h.uploadPhotoToAd(ctx, client, draftID, photoData, largestPhoto.Width, largestPhoto.Height)
 		if err != nil {
-			session.mu.Lock()
 			session.isCreatingDraft = false
 			session.replyWithError(err)
-			session.mu.Unlock()
 			return
 		}
 		allImages[0] = *uploaded
 
-		// Set image on draft (NO LOCK - network I/O)
+		// Set image on draft (network I/O)
 		newEtag, err := h.setImageOnDraft(ctx, client, draftID, etag, allImages)
 		if err != nil {
-			session.mu.Lock()
 			session.isCreatingDraft = false
 			session.replyWithError(err)
-			session.mu.Unlock()
 			return
 		}
 		etag = newEtag
 
-		// Get category predictions (NO LOCK - network I/O)
+		// Get category predictions (network I/O)
 		categories, err = h.getCategoryPredictions(ctx, client, draftID)
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to get category predictions")
 			categories = []tori.CategoryPrediction{}
 		}
 
-		// Now update session state (LOCK)
-		session.mu.Lock()
+		// Update session state
 		session.isCreatingDraft = false
 		session.photos = append(session.photos, largestPhoto)
 		session.draftID = draftID
@@ -262,8 +231,6 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 			// Try LLM-based category selection
 			autoSelectedID := h.tryAutoSelectCategory(ctx, result.Item.Title, result.Item.Description, categories)
 			if autoSelectedID > 0 {
-				// Release lock and process category selection (which acquires its own lock)
-				session.mu.Unlock()
 				h.ProcessCategorySelection(ctx, session, autoSelectedID)
 				return
 			}
@@ -277,27 +244,20 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 			// No categories predicted, use default
 			session.currentDraft.CategoryID = 76 // "Muu" category
 			session.reply("Ei osastoehdotuksia, käytetään oletusta.")
-			// promptForPrice releases and re-acquires lock internally
 			h.promptForPrice(ctx, session)
-			// Lock is held after promptForPrice returns
 		}
-		session.mu.Unlock()
 	} else {
-		// Adding to existing draft - upload photo (NO LOCK - network I/O)
+		// Adding to existing draft - upload photo (network I/O)
 		uploaded, err := h.uploadPhotoToAd(ctx, client, draftID, photoData, largestPhoto.Width, largestPhoto.Height)
 		if err != nil {
-			session.mu.Lock()
 			session.replyWithError(err)
-			session.mu.Unlock()
 			return
 		}
 
-		// Update session and set images on draft
-		session.mu.Lock()
+		// Update session state
 		if session.currentDraft == nil {
 			// Draft was cancelled during upload
 			log.Info().Int64("userId", session.userId).Msg("draft cancelled during photo upload")
-			session.mu.Unlock()
 			return
 		}
 		session.photos = append(session.photos, largestPhoto)
@@ -305,31 +265,26 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 		images := make([]UploadedImage, len(session.currentDraft.Images))
 		copy(images, session.currentDraft.Images)
 		currentEtag := session.etag
-		session.mu.Unlock()
 
-		// Update images on draft (NO LOCK - network I/O)
+		// Update images on draft (network I/O)
 		newEtag, err := h.setImageOnDraft(ctx, client, draftID, currentEtag, images)
 		if err != nil {
-			session.mu.Lock()
 			session.replyWithError(err)
-			session.mu.Unlock()
 			return
 		}
 
-		session.mu.Lock()
 		if session.currentDraft == nil {
 			// Draft was cancelled during image update
 			log.Info().Int64("userId", session.userId).Msg("draft cancelled during image update")
-			session.mu.Unlock()
 			return
 		}
 		session.etag = newEtag
 		session.reply(fmt.Sprintf("Kuva lisätty! Kuvia yhteensä: %d", len(session.photos)))
-		session.mu.Unlock()
 	}
 }
 
 // HandleCategorySelection processes category selection from callback query.
+// Called from session worker - no locking needed.
 func (h *ListingHandler) HandleCategorySelection(ctx context.Context, session *UserSession, query *tgbotapi.CallbackQuery) {
 	categoryIDStr := strings.TrimPrefix(query.Data, "cat:")
 	categoryID, err := strconv.Atoi(categoryIDStr)
@@ -338,10 +293,8 @@ func (h *ListingHandler) HandleCategorySelection(ctx context.Context, session *U
 		return
 	}
 
-	session.mu.Lock()
 	if session.currentDraft == nil || session.currentDraft.State != AdFlowStateAwaitingCategory {
 		session.reply("Ei aktiivista ilmoitusta")
-		session.mu.Unlock()
 		return
 	}
 
@@ -354,18 +307,15 @@ func (h *ListingHandler) HandleCategorySelection(ctx context.Context, session *U
 		)
 		h.tg.Request(edit)
 	}
-	session.mu.Unlock()
 
 	h.ProcessCategorySelection(ctx, session, categoryID)
 }
 
 // ProcessCategorySelection handles the common category selection logic.
 // It sets category, fetches attributes, and prompts for next step.
+// Called from session worker - no locking needed.
 func (h *ListingHandler) ProcessCategorySelection(ctx context.Context, session *UserSession, categoryID int) {
-	session.mu.Lock()
-
 	if session.currentDraft == nil {
-		session.mu.Unlock()
 		return
 	}
 
@@ -387,38 +337,28 @@ func (h *ListingHandler) ProcessCategorySelection(ctx context.Context, session *
 	client := session.adInputClient
 	draftID := session.draftID
 	etag := session.etag
-	session.mu.Unlock()
 
-	// Set category on draft (NO LOCK - network I/O)
+	// Set category on draft (network I/O)
 	newEtag, err := h.setCategoryOnDraft(ctx, client, draftID, etag, categoryID)
 	if err != nil {
-		session.mu.Lock()
 		session.replyWithError(err)
-		session.mu.Unlock()
 		return
 	}
 
-	// Fetch attributes for this category (NO LOCK - network I/O)
+	// Fetch attributes for this category (network I/O)
 	attrs, err := client.GetAttributes(ctx, draftID)
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to get attributes, skipping to price")
-		session.mu.Lock()
 		if session.currentDraft == nil {
 			// Draft was cancelled during attribute fetch
 			log.Info().Int64("userId", session.userId).Msg("draft cancelled during attribute fetch (error path)")
-			session.mu.Unlock()
 			return
 		}
 		session.etag = newEtag
 		session.currentDraft.State = AdFlowStateAwaitingPrice
 		session.reply("Syötä hinta (esim. 50€)")
-		session.mu.Unlock()
 		return
 	}
-
-	// Re-acquire lock to update session
-	session.mu.Lock()
-	defer session.mu.Unlock()
 
 	if session.currentDraft == nil {
 		// Draft was cancelled during attribute fetch
@@ -448,7 +388,7 @@ func (h *ListingHandler) ProcessCategorySelection(ctx context.Context, session *
 }
 
 // HandleAttributeInput handles user selection of an attribute value.
-// Caller must hold session.mu.Lock().
+// Called from session worker - no locking needed.
 func (h *ListingHandler) HandleAttributeInput(ctx context.Context, session *UserSession, text string) {
 	if session.currentDraft == nil || session.currentDraft.State != AdFlowStateAwaitingAttribute {
 		return
@@ -489,7 +429,7 @@ func (h *ListingHandler) HandleAttributeInput(ctx context.Context, session *User
 }
 
 // HandlePriceInput handles price input when awaiting price.
-// Caller must hold session.mu.Lock().
+// Called from session worker - no locking needed.
 func (h *ListingHandler) HandlePriceInput(ctx context.Context, session *UserSession, text string) {
 	// Check for giveaway selection
 	if strings.Contains(text, "Annetaan") || strings.Contains(text, "🎁") {
@@ -520,7 +460,7 @@ func (h *ListingHandler) HandlePriceInput(ctx context.Context, session *UserSess
 }
 
 // HandlePostalCodeInput handles postal code input when awaiting postal code.
-// Caller must hold session.mu.Lock().
+// Called from session worker - no locking needed.
 func (h *ListingHandler) HandlePostalCodeInput(session *UserSession, text string) {
 	if session.currentDraft == nil || session.currentDraft.State != AdFlowStateAwaitingPostalCode {
 		return
@@ -546,7 +486,7 @@ func (h *ListingHandler) HandlePostalCodeInput(session *UserSession, text string
 }
 
 // handleGiveawaySelection handles the user selecting "Annetaan" (give away) mode.
-// Caller must hold session.mu.Lock().
+// Called from session worker - no locking needed.
 func (h *ListingHandler) handleGiveawaySelection(ctx context.Context, session *UserSession) {
 	session.currentDraft.Price = 0
 	session.currentDraft.TradeType = TradeTypeGive
@@ -556,10 +496,7 @@ func (h *ListingHandler) handleGiveawaySelection(ctx context.Context, session *U
 	descMsgID := session.currentDraft.DescriptionMessageID
 	userId := session.userId
 
-	// Release lock for LLM call
-	session.mu.Unlock()
-
-	// Rewrite description to use "Annetaan" phrasing
+	// Rewrite description to use "Annetaan" phrasing (network I/O)
 	var newDescription string
 	gemini, ok := h.visionAnalyzer.(*llm.GeminiAnalyzer)
 	if ok {
@@ -574,11 +511,7 @@ func (h *ListingHandler) handleGiveawaySelection(ctx context.Context, session *U
 		newDescription = originalDescription
 	}
 
-	// Re-acquire lock
-	session.mu.Lock()
-
-	// Check if session state is still valid AND state hasn't changed
-	// (another handler may have processed input while we were unlocked)
+	// Check if session state is still valid after network I/O
 	if session.currentDraft == nil || session.currentDraft.State != AdFlowStateAwaitingPrice {
 		return
 	}
@@ -613,11 +546,9 @@ func (h *ListingHandler) handleGiveawaySelection(ctx context.Context, session *U
 }
 
 // HandleShippingSelection handles the shipping yes/no callback.
+// Called from session worker - no locking needed.
 func (h *ListingHandler) HandleShippingSelection(ctx context.Context, session *UserSession, query *tgbotapi.CallbackQuery) {
 	isYes := strings.HasSuffix(query.Data, ":yes")
-
-	session.mu.Lock()
-	defer session.mu.Unlock()
 
 	if session.currentDraft == nil || session.currentDraft.State != AdFlowStateAwaitingShipping {
 		return
@@ -675,7 +606,7 @@ func (h *ListingHandler) HandleShippingSelection(ctx context.Context, session *U
 }
 
 // HandleSendListing sends the listing using the adinput API.
-// Caller must hold session.mu.Lock(). Function returns with lock held.
+// Called from session worker - no locking needed.
 func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSession) {
 	if session.currentDraft == nil || len(session.photos) == 0 {
 		session.reply("Ei ilmoitusta lähetettäväksi. Lähetä ensin kuva.")
@@ -711,9 +642,6 @@ func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSes
 
 	session.reply("Lähetetään ilmoitusta...")
 
-	// Release lock for network I/O
-	session.mu.Unlock()
-
 	// Get postal code from storage
 	var postalCode string
 	if h.sessionStore != nil {
@@ -725,32 +653,25 @@ func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSes
 	}
 	if postalCode == "" {
 		// This shouldn't happen as we prompt for postal code before ReadyToPublish
-		session.mu.Lock()
 		session.currentDraft.State = AdFlowStateAwaitingPostalCode
 		session.reply(postalCodePromptText)
 		return
 	}
 
-	// Set category on draft
+	// Set category on draft (network I/O)
 	newEtag, err := h.setCategoryOnDraft(ctx, client, draftID, etag, draftCopy.CategoryID)
 	if err != nil {
-		session.mu.Lock()
-		// Note: Even if draft was cancelled, we still report the error
 		session.replyWithError(err)
 		return
 	}
 	etag = newEtag
 
-	// Update and publish
+	// Update and publish (network I/O)
 	if err := h.updateAndPublishAd(ctx, client, draftID, etag, &draftCopy, images, postalCode); err != nil {
-		session.mu.Lock()
-		// Note: Even if draft was cancelled, we still report the error
 		session.replyWithError(err)
 		return
 	}
 
-	// Re-acquire lock for final state update
-	session.mu.Lock()
 	// Check if draft was cancelled during publish - if so, the listing was still published
 	// successfully on Tori's side, so just log it and clean up
 	if session.currentDraft == nil {
@@ -767,7 +688,7 @@ func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSes
 }
 
 // HandleTitleDescriptionReply handles replies to title/description messages for editing.
-// Caller must hold session.mu.Lock().
+// Called from session worker - no locking needed.
 func (h *ListingHandler) HandleTitleDescriptionReply(session *UserSession, message *tgbotapi.Message) bool {
 	draft := session.currentDraft
 	if draft == nil {
@@ -909,15 +830,12 @@ func (h *ListingHandler) promptForAttribute(session *UserSession, attr tori.Attr
 }
 
 // promptForPrice fetches price recommendations and prompts the user.
-// Caller must hold session.mu.Lock().
+// Called from session worker - no locking needed.
 func (h *ListingHandler) promptForPrice(ctx context.Context, session *UserSession) {
 	session.currentDraft.State = AdFlowStateAwaitingPrice
 	title := session.currentDraft.Title
 
-	// Release lock for network search
-	session.mu.Unlock()
-
-	// Search for similar items
+	// Search for similar items (network I/O)
 	results, err := h.searchClient.Search(ctx, tori.SearchKeyBapCommon, tori.SearchParams{
 		Query: title,
 		Rows:  20,
@@ -962,9 +880,6 @@ func (h *ListingHandler) promptForPrice(ctx context.Context, session *UserSessio
 			Int("count", len(prices)).
 			Msg("price recommendation")
 	}
-
-	// Re-acquire lock
-	session.mu.Lock()
 
 	// Check if state is still valid (user may have cancelled during search)
 	if session.currentDraft == nil || session.currentDraft.State != AdFlowStateAwaitingPrice {
