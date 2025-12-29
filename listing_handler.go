@@ -283,6 +283,12 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 
 		// Update session and set images on draft
 		session.mu.Lock()
+		if session.currentDraft == nil {
+			// Draft was cancelled during upload
+			log.Info().Int64("userId", session.userId).Msg("draft cancelled during photo upload")
+			session.mu.Unlock()
+			return
+		}
 		session.photos = append(session.photos, largestPhoto)
 		session.currentDraft.Images = append(session.currentDraft.Images, *uploaded)
 		images := make([]UploadedImage, len(session.currentDraft.Images))
@@ -300,6 +306,12 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 		}
 
 		session.mu.Lock()
+		if session.currentDraft == nil {
+			// Draft was cancelled during image update
+			log.Info().Int64("userId", session.userId).Msg("draft cancelled during image update")
+			session.mu.Unlock()
+			return
+		}
 		session.etag = newEtag
 		session.reply(fmt.Sprintf("Kuva lisätty! Kuvia yhteensä: %d", len(session.photos)))
 		session.mu.Unlock()
@@ -341,6 +353,11 @@ func (h *ListingHandler) HandleCategorySelection(ctx context.Context, session *U
 func (h *ListingHandler) ProcessCategorySelection(ctx context.Context, session *UserSession, categoryID int) {
 	session.mu.Lock()
 
+	if session.currentDraft == nil {
+		session.mu.Unlock()
+		return
+	}
+
 	// Find category label for logging
 	var categoryLabel string
 	for _, cat := range session.currentDraft.CategoryPredictions {
@@ -375,6 +392,12 @@ func (h *ListingHandler) ProcessCategorySelection(ctx context.Context, session *
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to get attributes, skipping to price")
 		session.mu.Lock()
+		if session.currentDraft == nil {
+			// Draft was cancelled during attribute fetch
+			log.Info().Int64("userId", session.userId).Msg("draft cancelled during attribute fetch (error path)")
+			session.mu.Unlock()
+			return
+		}
 		session.etag = newEtag
 		session.currentDraft.State = AdFlowStateAwaitingPrice
 		session.reply("Syötä hinta (esim. 50€)")
@@ -385,6 +408,12 @@ func (h *ListingHandler) ProcessCategorySelection(ctx context.Context, session *
 	// Re-acquire lock to update session
 	session.mu.Lock()
 	defer session.mu.Unlock()
+
+	if session.currentDraft == nil {
+		// Draft was cancelled during attribute fetch
+		log.Info().Int64("userId", session.userId).Msg("draft cancelled during attribute fetch")
+		return
+	}
 
 	session.etag = newEtag
 	session.adAttributes = attrs
@@ -561,6 +590,7 @@ func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSes
 	newEtag, err := h.setCategoryOnDraft(ctx, client, draftID, etag, draftCopy.CategoryID)
 	if err != nil {
 		session.mu.Lock()
+		// Note: Even if draft was cancelled, we still report the error
 		session.replyWithError(err)
 		return
 	}
@@ -572,12 +602,23 @@ func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSes
 	// Update and publish
 	if err := h.updateAndPublishAd(ctx, client, draftID, etag, &draftCopy, images, postalCode); err != nil {
 		session.mu.Lock()
+		// Note: Even if draft was cancelled, we still report the error
 		session.replyWithError(err)
 		return
 	}
 
 	// Re-acquire lock for final state update
 	session.mu.Lock()
+	// Check if draft was cancelled during publish - if so, the listing was still published
+	// successfully on Tori's side, so just log it and clean up
+	if session.currentDraft == nil {
+		log.Info().
+			Int64("userId", session.userId).
+			Str("title", draftCopy.Title).
+			Msg("draft cancelled during publish but listing was published successfully")
+		session.replyAndRemoveCustomKeyboard(listingSentText)
+		return
+	}
 	session.replyAndRemoveCustomKeyboard(listingSentText)
 	log.Info().Str("title", draftCopy.Title).Int("price", draftCopy.Price).Msg("listing published")
 	session.reset()
