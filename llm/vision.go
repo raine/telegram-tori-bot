@@ -29,3 +29,9 @@ type Analyzer interface {
 	// AnalyzeImage takes image data and returns a description suitable for selling.
 	AnalyzeImage(ctx context.Context, imageData []byte, mimeType string) (*AnalysisResult, error)
 }
+
+// EditIntentParser can parse natural language edit commands.
+type EditIntentParser interface {
+	// ParseEditIntent parses a natural language edit command and returns the intended changes.
+	ParseEditIntent(ctx context.Context, message string, draft *CurrentDraftInfo) (*EditIntent, error)
+}

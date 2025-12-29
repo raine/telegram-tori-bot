@@ -16,19 +16,21 @@ import (
 
 // ListingHandler handles ad creation flow for the bot.
 type ListingHandler struct {
-	tg             BotAPI
-	visionAnalyzer llm.Analyzer
-	sessionStore   storage.SessionStore
-	searchClient   *tori.SearchClient
+	tg               BotAPI
+	visionAnalyzer   llm.Analyzer
+	editIntentParser llm.EditIntentParser
+	sessionStore     storage.SessionStore
+	searchClient     *tori.SearchClient
 }
 
 // NewListingHandler creates a new listing handler.
-func NewListingHandler(tg BotAPI, visionAnalyzer llm.Analyzer, sessionStore storage.SessionStore) *ListingHandler {
+func NewListingHandler(tg BotAPI, visionAnalyzer llm.Analyzer, editIntentParser llm.EditIntentParser, sessionStore storage.SessionStore) *ListingHandler {
 	return &ListingHandler{
-		tg:             tg,
-		visionAnalyzer: visionAnalyzer,
-		sessionStore:   sessionStore,
-		searchClient:   tori.NewSearchClient(),
+		tg:               tg,
+		visionAnalyzer:   visionAnalyzer,
+		editIntentParser: editIntentParser,
+		sessionStore:     sessionStore,
+		searchClient:     tori.NewSearchClient(),
 	}
 }
 
@@ -1145,4 +1147,102 @@ func (h *ListingHandler) updateAndPublishAd(
 	}
 
 	return nil
+}
+
+// HandleEditCommand handles natural language edit commands.
+// Returns true if the message was processed as an edit command.
+func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSession, message string) bool {
+	if h.editIntentParser == nil {
+		return false
+	}
+
+	// Get current draft info (needs lock)
+	session.mu.Lock()
+	if session.currentDraft == nil {
+		session.mu.Unlock()
+		return false
+	}
+
+	draftInfo := &llm.CurrentDraftInfo{
+		Title:       session.currentDraft.Title,
+		Description: session.currentDraft.Description,
+		Price:       session.currentDraft.Price,
+	}
+	session.mu.Unlock()
+
+	// Parse edit intent (NO LOCK - network I/O)
+	intent, err := h.editIntentParser.ParseEditIntent(ctx, message, draftInfo)
+	if err != nil {
+		log.Warn().Err(err).Str("message", message).Msg("failed to parse edit intent")
+		return false
+	}
+
+	// Check if any changes were requested
+	if intent.NewPrice == nil && intent.NewTitle == nil && intent.NewDescription == nil {
+		return false
+	}
+
+	// Apply changes (needs lock)
+	session.mu.Lock()
+	defer session.mu.Unlock()
+
+	// Double-check draft still exists
+	if session.currentDraft == nil {
+		return false
+	}
+
+	var changes []string
+
+	// Apply price change
+	if intent.NewPrice != nil {
+		oldPrice := session.currentDraft.Price
+		session.currentDraft.Price = *intent.NewPrice
+		changes = append(changes, fmt.Sprintf("Hinta: %d€ → %d€", oldPrice, *intent.NewPrice))
+		log.Info().Int("oldPrice", oldPrice).Int("newPrice", *intent.NewPrice).Msg("price updated via edit command")
+	}
+
+	// Apply title change
+	if intent.NewTitle != nil {
+		oldTitle := session.currentDraft.Title
+		session.currentDraft.Title = *intent.NewTitle
+		changes = append(changes, fmt.Sprintf("Otsikko: %s", *intent.NewTitle))
+
+		// Update title message in chat
+		if session.currentDraft.TitleMessageID != 0 {
+			editMsg := tgbotapi.NewEditMessageText(
+				session.userId,
+				session.currentDraft.TitleMessageID,
+				fmt.Sprintf("📦 *Otsikko:* %s", escapeMarkdown(*intent.NewTitle)),
+			)
+			editMsg.ParseMode = tgbotapi.ModeMarkdown
+			h.tg.Request(editMsg)
+		}
+		log.Info().Str("oldTitle", oldTitle).Str("newTitle", *intent.NewTitle).Msg("title updated via edit command")
+	}
+
+	// Apply description change
+	if intent.NewDescription != nil {
+		session.currentDraft.Description = *intent.NewDescription
+		changes = append(changes, "Kuvaus päivitetty")
+
+		// Update description message in chat
+		if session.currentDraft.DescriptionMessageID != 0 {
+			editMsg := tgbotapi.NewEditMessageText(
+				session.userId,
+				session.currentDraft.DescriptionMessageID,
+				fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(*intent.NewDescription)),
+			)
+			editMsg.ParseMode = tgbotapi.ModeMarkdown
+			h.tg.Request(editMsg)
+		}
+		log.Info().Str("newDescription", *intent.NewDescription).Msg("description updated via edit command")
+	}
+
+	// Send confirmation message
+	if len(changes) > 0 {
+		confirmMsg := "✓ Muutokset tehty:\n- " + strings.Join(changes, "\n- ")
+		session.reply(confirmMsg)
+	}
+
+	return true
 }

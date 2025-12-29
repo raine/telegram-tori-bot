@@ -78,6 +78,29 @@ Rules:
 - Keep the same language (Finnish)
 - Return ONLY the transformed description text, no JSON or other formatting`
 
+const editIntentPrompt = `Olet avustaja, joka auttaa muokkaamaan myynti-ilmoituksen tietoja. Käyttäjä haluaa muokata ilmoitustaan luonnollisella kielellä.
+
+Nykyinen ilmoitus:
+- Otsikko: %s
+- Kuvaus: %s
+- Hinta: %d€
+
+Käyttäjän viesti: "%s"
+
+Analysoi käyttäjän viesti ja päättele mitä muutoksia hän haluaa tehdä. Palauta JSON-objekti seuraavilla kentillä (käytä null jos kenttää ei muuteta):
+
+- new_price: uusi hinta kokonaislukuna (ilman €-merkkiä), null jos ei muuteta
+- new_title: uusi otsikko kokonaisuudessaan, null jos ei muuteta
+- new_description: uusi kuvaus kokonaisuudessaan (jos käyttäjä haluaa lisätä, poistaa tai muuttaa kuvausta, palauta koko muokattu kuvaus), null jos ei muuteta
+
+Esimerkkejä (oletetaan kuvaus on "Toimiva hiiri, pieni naarmu"):
+- "Vaihda hinnaksi 40e" -> {"new_price": 40, "new_title": null, "new_description": null}
+- "Lisää että koirataloudesta" -> {"new_price": null, "new_title": null, "new_description": "Toimiva hiiri, pieni naarmu. Koirataloudesta."}
+- "Poista maininta naarmusta" -> {"new_price": null, "new_title": null, "new_description": "Toimiva hiiri."}
+- "Muuta otsikoksi Nintendo Switch" -> {"new_price": null, "new_title": "Nintendo Switch", "new_description": null}
+
+Vastaa VAIN JSON-objektilla, ei muuta tekstiä.`
+
 // GeminiAnalyzer uses Google's Gemini API for image analysis and category selection.
 type GeminiAnalyzer struct {
 	client *genai.Client
@@ -358,4 +381,69 @@ func (g *GeminiAnalyzer) RewriteDescriptionForGiveaway(ctx context.Context, desc
 	}
 
 	return text, nil
+}
+
+// EditIntent represents the parsed intent from a natural language edit command.
+type EditIntent struct {
+	NewPrice       *int    `json:"new_price"`
+	NewTitle       *string `json:"new_title"`
+	NewDescription *string `json:"new_description"`
+}
+
+// CurrentDraftInfo contains the current draft state for the LLM to make edit decisions.
+type CurrentDraftInfo struct {
+	Title       string
+	Description string
+	Price       int
+}
+
+// ParseEditIntent parses a natural language edit command and returns the intended changes.
+func (g *GeminiAnalyzer) ParseEditIntent(ctx context.Context, message string, draft *CurrentDraftInfo) (*EditIntent, error) {
+	prompt := fmt.Sprintf(editIntentPrompt, draft.Title, draft.Description, draft.Price, message)
+
+	result, err := g.client.Models.GenerateContent(ctx, geminiLiteModel, []*genai.Content{
+		genai.NewContentFromParts([]*genai.Part{genai.NewPartFromText(prompt)}, genai.RoleUser),
+	}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("gemini edit intent failed: %w", err)
+	}
+
+	if len(result.Candidates) == 0 || len(result.Candidates[0].Content.Parts) == 0 {
+		return nil, fmt.Errorf("empty response from gemini")
+	}
+
+	text := result.Text()
+
+	// Extract JSON object from response
+	text = strings.TrimSpace(text)
+	start := strings.Index(text, "{")
+	end := strings.LastIndex(text, "}")
+	if start == -1 || end == -1 || end <= start {
+		return nil, fmt.Errorf("no JSON object found in response: %s", text)
+	}
+	text = text[start : end+1]
+
+	var intent EditIntent
+	if err := json.Unmarshal([]byte(text), &intent); err != nil {
+		return nil, fmt.Errorf("failed to parse edit intent json: %w (response: %s)", err, text)
+	}
+
+	// Log usage and cost
+	if result.UsageMetadata != nil {
+		cost := calculateGeminiCost(
+			int64(result.UsageMetadata.PromptTokenCount),
+			int64(result.UsageMetadata.CandidatesTokenCount),
+			geminiLiteInputPricePerMillion,
+			geminiLiteOutputPricePerMillion,
+		)
+		log.Info().
+			Str("model", geminiLiteModel).
+			Int("inputTokens", int(result.UsageMetadata.PromptTokenCount)).
+			Int("outputTokens", int(result.UsageMetadata.CandidatesTokenCount)).
+			Float64("costUSD", cost).
+			Str("message", message).
+			Msg("edit intent llm call")
+	}
+
+	return &intent, nil
 }

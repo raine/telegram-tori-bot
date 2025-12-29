@@ -45,9 +45,14 @@ func NewBot(tg BotAPI, sessionStore storage.SessionStore) *Bot {
 }
 
 // SetVisionAnalyzer sets the vision analyzer for image analysis.
+// If the analyzer also implements EditIntentParser, it will be used for natural language editing.
 func (b *Bot) SetVisionAnalyzer(analyzer llm.Analyzer) {
 	b.visionAnalyzer = analyzer
-	b.listingHandler = NewListingHandler(b.tg, analyzer, b.sessionStore)
+	var editParser llm.EditIntentParser
+	if ep, ok := analyzer.(llm.EditIntentParser); ok {
+		editParser = ep
+	}
+	b.listingHandler = NewListingHandler(b.tg, analyzer, editParser, b.sessionStore)
 }
 
 // handleUpdate is the main message router.
@@ -98,6 +103,16 @@ func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 	// Handler manages its own locking and checks state internally
 	if b.listingHandler.HandleInput(ctx, session, update.Message) {
 		return
+	}
+
+	// Try to handle as natural language edit command if there's an active draft
+	// and the message looks like an edit command (not a regular command)
+	if update.Message.Text != "" && !strings.HasPrefix(update.Message.Text, "/") {
+		if session.HasActiveDraft() {
+			if b.listingHandler.HandleEditCommand(ctx, session, update.Message.Text) {
+				return
+			}
+		}
 	}
 
 	// Handle commands (requires locking)

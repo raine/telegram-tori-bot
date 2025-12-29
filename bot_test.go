@@ -295,7 +295,7 @@ func TestHandleCategorySelection_FetchesAttributes(t *testing.T) {
 	_, userId, tg, bot, session := setupAdInputSession(t, ts)
 
 	// Create listing handler for the bot
-	bot.listingHandler = NewListingHandler(tg, nil, nil)
+	bot.listingHandler = NewListingHandler(tg, nil, nil, nil)
 
 	// Set up session with draft awaiting category
 	session.currentDraft = &AdInputDraft{
@@ -345,7 +345,7 @@ func TestHandleAttributeInput_SelectsOption(t *testing.T) {
 	_, _, tg, _, session := setupAdInputSession(t, ts)
 
 	// Create a listing handler with the tg mock
-	listingHandler := NewListingHandler(tg, nil, nil)
+	listingHandler := NewListingHandler(tg, nil, nil, nil)
 
 	// Set up session with draft awaiting attribute
 	session.currentDraft = &AdInputDraft{
@@ -400,7 +400,7 @@ func TestHandleAttributeInput_LastAttribute_MovesToPrice(t *testing.T) {
 	defer ts.Close()
 	_, _, tg, _, session := setupAdInputSession(t, ts)
 
-	listingHandler := NewListingHandler(tg, nil, nil)
+	listingHandler := NewListingHandler(tg, nil, nil, nil)
 
 	// Set up session with only one attribute left (the last one)
 	session.currentDraft = &AdInputDraft{
@@ -454,7 +454,7 @@ func TestHandlePriceInput_ValidPrice(t *testing.T) {
 	defer ts.Close()
 	_, _, tg, _, session := setupAdInputSession(t, ts)
 
-	listingHandler := NewListingHandler(tg, nil, nil)
+	listingHandler := NewListingHandler(tg, nil, nil, nil)
 
 	session.currentDraft = &AdInputDraft{
 		State:       AdFlowStateAwaitingPrice,
@@ -490,7 +490,7 @@ func TestHandlePriceInput_InvalidPrice(t *testing.T) {
 	defer ts.Close()
 	_, userId, tg, _, session := setupAdInputSession(t, ts)
 
-	listingHandler := NewListingHandler(tg, nil, nil)
+	listingHandler := NewListingHandler(tg, nil, nil, nil)
 
 	session.currentDraft = &AdInputDraft{
 		State: AdFlowStateAwaitingPrice,
@@ -517,7 +517,7 @@ func TestHandlePriceInput_Giveaway(t *testing.T) {
 	defer ts.Close()
 	_, _, tg, _, session := setupAdInputSession(t, ts)
 
-	listingHandler := NewListingHandler(tg, nil, nil)
+	listingHandler := NewListingHandler(tg, nil, nil, nil)
 
 	session.currentDraft = &AdInputDraft{
 		State:       AdFlowStateAwaitingPrice,
@@ -554,7 +554,7 @@ func TestHandleUpdate_ReplyToTitleEdits(t *testing.T) {
 	_, userId, tg, bot, session := setupAdInputSession(t, ts)
 
 	// Set up the listing handler
-	bot.listingHandler = NewListingHandler(tg, nil, nil)
+	bot.listingHandler = NewListingHandler(tg, nil, nil, nil)
 
 	// Set up session with draft that has message IDs
 	session.currentDraft = &AdInputDraft{
@@ -600,7 +600,7 @@ func TestHandleUpdate_ReplyToDescriptionEdits(t *testing.T) {
 	_, userId, tg, bot, session := setupAdInputSession(t, ts)
 
 	// Set up the listing handler
-	bot.listingHandler = NewListingHandler(tg, nil, nil)
+	bot.listingHandler = NewListingHandler(tg, nil, nil, nil)
 
 	// Set up session with draft that has message IDs
 	session.currentDraft = &AdInputDraft{
@@ -645,7 +645,7 @@ func TestHandleUpdate_PeruDuringAttributeInput(t *testing.T) {
 	_, userId, tg, bot, session := setupAdInputSession(t, ts)
 
 	// Set up the listing handler
-	bot.listingHandler = NewListingHandler(tg, nil, nil)
+	bot.listingHandler = NewListingHandler(tg, nil, nil, nil)
 
 	// Set up session with draft awaiting attribute
 	session.currentDraft = &AdInputDraft{
@@ -687,7 +687,7 @@ func TestHandleUpdate_PeruDuringPriceInput(t *testing.T) {
 	_, userId, tg, bot, session := setupAdInputSession(t, ts)
 
 	// Set up the listing handler
-	bot.listingHandler = NewListingHandler(tg, nil, nil)
+	bot.listingHandler = NewListingHandler(tg, nil, nil, nil)
 
 	// Set up session with draft awaiting price
 	session.currentDraft = &AdInputDraft{
