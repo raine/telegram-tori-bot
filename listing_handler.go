@@ -49,7 +49,7 @@ func (h *ListingHandler) HandleInput(ctx context.Context, session *UserSession, 
 	state := session.GetDraftState()
 
 	// Handle /peru during input states
-	if message.Text == "/peru" && (state == AdFlowStateAwaitingAttribute || state == AdFlowStateAwaitingPrice) {
+	if message.Text == "/peru" && (state == AdFlowStateAwaitingAttribute || state == AdFlowStateAwaitingPrice || state == AdFlowStateAwaitingPostalCode) {
 		session.mu.Lock()
 		session.reset()
 		session.replyAndRemoveCustomKeyboard(okText)
@@ -58,7 +58,7 @@ func (h *ListingHandler) HandleInput(ctx context.Context, session *UserSession, 
 	}
 
 	// Let /osasto pass through to command handler during input states
-	if message.Text == "/osasto" && (state == AdFlowStateAwaitingAttribute || state == AdFlowStateAwaitingPrice) {
+	if message.Text == "/osasto" && (state == AdFlowStateAwaitingAttribute || state == AdFlowStateAwaitingPrice || state == AdFlowStateAwaitingPostalCode) {
 		return false
 	}
 
@@ -78,15 +78,24 @@ func (h *ListingHandler) HandleInput(ctx context.Context, session *UserSession, 
 		return true
 	}
 
+	// Handle postal code input
+	if state == AdFlowStateAwaitingPostalCode {
+		session.mu.Lock()
+		h.HandlePostalCodeInput(session, message.Text)
+		session.mu.Unlock()
+		return true
+	}
+
 	return false
 }
 
 // HandleSendListingCommand handles the /laheta command.
+// This function manages its own locking and returns without holding the lock.
 func (h *ListingHandler) HandleSendListingCommand(ctx context.Context, session *UserSession) {
 	session.mu.Lock()
 	h.HandleSendListing(ctx, session)
-	// Note: HandleSendListing releases and re-acquires lock internally
-	// The final session.mu.Unlock() is handled by the caller
+	// HandleSendListing returns with lock held in all paths
+	session.mu.Unlock()
 }
 
 // HandlePhoto processes a photo message and starts or adds to the listing flow.
@@ -501,6 +510,32 @@ func (h *ListingHandler) HandlePriceInput(session *UserSession, text string) {
 	session.replyWithMessage(msg)
 }
 
+// HandlePostalCodeInput handles postal code input when awaiting postal code.
+// Caller must hold session.mu.Lock().
+func (h *ListingHandler) HandlePostalCodeInput(session *UserSession, text string) {
+	if session.currentDraft == nil || session.currentDraft.State != AdFlowStateAwaitingPostalCode {
+		return
+	}
+
+	postalCode := strings.TrimSpace(text)
+	if !isValidPostalCode(postalCode) {
+		session.reply(postalCodeInvalidText)
+		return
+	}
+
+	// Save postal code
+	if h.sessionStore != nil {
+		if err := h.sessionStore.SetPostalCode(session.userId, postalCode); err != nil {
+			log.Error().Err(err).Msg("failed to save postal code")
+			session.replyWithError(err)
+			return
+		}
+	}
+
+	session.reply(fmt.Sprintf(postalCodeUpdatedText, postalCode))
+	h.showAdSummary(session)
+}
+
 // HandleShippingSelection handles the shipping yes/no callback.
 func (h *ListingHandler) HandleShippingSelection(ctx context.Context, session *UserSession, query *tgbotapi.CallbackQuery) {
 	isYes := strings.HasSuffix(query.Data, ":yes")
@@ -546,11 +581,25 @@ func (h *ListingHandler) HandleShippingSelection(ctx context.Context, session *U
 		}
 	}
 
+	// Check if postal code is set
+	if h.sessionStore != nil {
+		postalCode, err := h.sessionStore.GetPostalCode(session.userId)
+		if err != nil {
+			log.Error().Err(err).Msg("failed to get postal code")
+		}
+		if postalCode == "" {
+			// Prompt for postal code
+			session.currentDraft.State = AdFlowStateAwaitingPostalCode
+			session.reply(postalCodePromptText)
+			return
+		}
+	}
+
 	h.showAdSummary(session)
 }
 
 // HandleSendListing sends the listing using the adinput API.
-// Caller must hold session.mu.Lock().
+// Caller must hold session.mu.Lock(). Function returns with lock held.
 func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSession) {
 	if session.currentDraft == nil || len(session.photos) == 0 {
 		session.reply("Ei ilmoitusta lähetettäväksi. Lähetä ensin kuva.")
@@ -567,6 +616,8 @@ func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSes
 			session.reply("Syötä ensin hinta.")
 		case AdFlowStateAwaitingShipping:
 			session.reply("Valitse ensin postitusvaihtoehto.")
+		case AdFlowStateAwaitingPostalCode:
+			session.reply("Syötä ensin postinumero.")
 		default:
 			session.reply("Ilmoitus ei ole valmis lähetettäväksi.")
 		}
@@ -580,11 +631,29 @@ func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSes
 	images := make([]UploadedImage, len(session.currentDraft.Images))
 	copy(images, session.currentDraft.Images)
 	client := session.adInputClient
+	userId := session.userId
 
 	session.reply("Lähetetään ilmoitusta...")
 
 	// Release lock for network I/O
 	session.mu.Unlock()
+
+	// Get postal code from storage
+	var postalCode string
+	if h.sessionStore != nil {
+		var err error
+		postalCode, err = h.sessionStore.GetPostalCode(userId)
+		if err != nil {
+			log.Error().Err(err).Msg("failed to get postal code")
+		}
+	}
+	if postalCode == "" {
+		// This shouldn't happen as we prompt for postal code before ReadyToPublish
+		session.mu.Lock()
+		session.currentDraft.State = AdFlowStateAwaitingPostalCode
+		session.reply(postalCodePromptText)
+		return
+	}
 
 	// Set category on draft
 	newEtag, err := h.setCategoryOnDraft(ctx, client, draftID, etag, draftCopy.CategoryID)
@@ -595,9 +664,6 @@ func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSes
 		return
 	}
 	etag = newEtag
-
-	// TODO: get postal code from user profile or session
-	postalCode := "00420"
 
 	// Update and publish
 	if err := h.updateAndPublishAd(ctx, client, draftID, etag, &draftCopy, images, postalCode); err != nil {

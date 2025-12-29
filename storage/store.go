@@ -39,6 +39,10 @@ type SessionStore interface {
 	SetTemplate(telegramID int64, content string) error
 	GetTemplate(telegramID int64) (*Template, error)
 	DeleteTemplate(telegramID int64) error
+
+	// Postal code methods
+	SetPostalCode(telegramID int64, postalCode string) error
+	GetPostalCode(telegramID int64) (string, error)
 }
 
 // SQLiteStore implements SessionStore using SQLite with encrypted tokens.
@@ -100,6 +104,17 @@ func (s *SQLiteStore) init() error {
 	_, err = s.db.Exec(templatesQuery)
 	if err != nil {
 		return fmt.Errorf("failed to create templates table: %w", err)
+	}
+
+	userSettingsQuery := `
+	CREATE TABLE IF NOT EXISTS user_settings (
+		telegram_id INTEGER PRIMARY KEY,
+		postal_code TEXT
+	);
+	`
+	_, err = s.db.Exec(userSettingsQuery)
+	if err != nil {
+		return fmt.Errorf("failed to create user_settings table: %w", err)
 	}
 
 	return nil
@@ -288,4 +303,44 @@ func (s *SQLiteStore) DeleteTemplate(telegramID int64) error {
 		return fmt.Errorf("failed to delete template: %w", err)
 	}
 	return nil
+}
+
+// SetPostalCode sets the postal code for a user.
+func (s *SQLiteStore) SetPostalCode(telegramID int64, postalCode string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	query := `
+	INSERT INTO user_settings (telegram_id, postal_code)
+	VALUES (?, ?)
+	ON CONFLICT(telegram_id) DO UPDATE SET
+		postal_code = excluded.postal_code;
+	`
+	_, err := s.db.Exec(query, telegramID, postalCode)
+	if err != nil {
+		return fmt.Errorf("failed to set postal code: %w", err)
+	}
+	return nil
+}
+
+// GetPostalCode retrieves the postal code for a user.
+// Returns empty string if not set.
+func (s *SQLiteStore) GetPostalCode(telegramID int64) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var postalCode sql.NullString
+	err := s.db.QueryRow(
+		"SELECT postal_code FROM user_settings WHERE telegram_id = ?",
+		telegramID,
+	).Scan(&postalCode)
+
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to query postal code: %w", err)
+	}
+
+	return postalCode.String, nil
 }

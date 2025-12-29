@@ -60,6 +60,9 @@ type UserSession struct {
 	adAttributes    *tori.AttributesResponse
 	currentDraft    *AdInputDraft
 	isCreatingDraft bool // Prevents concurrent draft creation from album photos
+
+	// Postal code command state
+	awaitingPostalCodeInput bool
 }
 
 // --- Thread-safe accessors ---
@@ -171,6 +174,7 @@ func (s *UserSession) reset() {
 	s.adAttributes = nil
 	s.currentDraft = nil
 	s.isCreatingDraft = false
+	s.awaitingPostalCodeInput = false
 }
 
 func (s *UserSession) replyWithError(err error) tgbotapi.Message {

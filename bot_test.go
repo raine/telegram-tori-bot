@@ -70,6 +70,14 @@ func (m *mockSessionStore) DeleteTemplate(telegramID int64) error {
 	return nil
 }
 
+func (m *mockSessionStore) SetPostalCode(telegramID int64, postalCode string) error {
+	return nil
+}
+
+func (m *mockSessionStore) GetPostalCode(telegramID int64) (string, error) {
+	return "", nil
+}
+
 func setup(t *testing.T) (int64, *botApiMock, *Bot, *UserSession) {
 	userId := int64(1)
 	tg := new(botApiMock)

@@ -20,6 +20,7 @@ var botCommands = []Command{
 	{Name: "osasto", Description: "Vaihda osastoa"},
 	{Name: "malli", Description: "Näytä/aseta kuvauspohja"},
 	{Name: "poistamalli", Description: "Poista kuvauspohja"},
+	{Name: "postinumero", Description: "Näytä/vaihda postinumero"},
 	{Name: "login", Description: "Kirjaudu Toriin"},
 }
 

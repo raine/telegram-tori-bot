@@ -17,6 +17,7 @@ const (
 	AdFlowStateAwaitingAttribute
 	AdFlowStateAwaitingPrice
 	AdFlowStateAwaitingShipping
+	AdFlowStateAwaitingPostalCode
 	AdFlowStateReadyToPublish
 )
 

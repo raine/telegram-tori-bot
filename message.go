@@ -28,6 +28,14 @@ const (
 	loginRequiredText        = "Sinun täytyy kirjautua sisään ensin. Käytä komentoa /login"
 	loginCancelledText       = "Kirjautuminen peruutettu."
 	loginInProgressText      = "Kirjautuminen kesken. Syötä pyydetty tieto tai peru komennolla /peru"
+
+	// Postal code messages
+	postalCodePromptText        = "Mikä on postinumerosi? (esim. 00100)"
+	postalCodeInvalidText       = "Postinumeron tulee olla 5 numeroa (esim. 00100)"
+	postalCodeUpdatedText       = "✅ Postinumero päivitetty: %s"
+	postalCodeCurrentText       = "Nykyinen postinumerosi on *%s*.\n\nSyötä uusi postinumero tai peru komennolla /peru"
+	postalCodeNotSetText        = "Postinumeroa ei ole asetettu.\n\nSyötä postinumero (esim. 00100):"
+	postalCodeCommandCancelText = "Ok, postinumero ei muutettu."
 )
 
 func formatReplyText(text string, a ...any) string {
@@ -37,4 +45,17 @@ func formatReplyText(text string, a ...any) string {
 func parseCommand(s string) (string, []string) {
 	parts := strings.Split(s, " ")
 	return parts[0], parts[1:]
+}
+
+// isValidPostalCode validates Finnish postal codes (5 digits).
+func isValidPostalCode(code string) bool {
+	if len(code) != 5 {
+		return false
+	}
+	for _, c := range code {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }

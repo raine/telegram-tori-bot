@@ -89,6 +89,11 @@ func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
 		return
 	}
 
+	// Handle postal code command input
+	if b.handlePostalCodeInput(session, update.Message.Text) {
+		return
+	}
+
 	// Handle listing flow inputs (replies, attributes, prices)
 	// Handler manages its own locking and checks state internally
 	if b.listingHandler.HandleInput(ctx, session, update.Message) {
@@ -136,6 +141,8 @@ func (b *Bot) handleCommand(ctx context.Context, session *UserSession, message *
 		b.handleTemplateCommand(session, message.Text)
 	case "/poistamalli":
 		b.handleDeleteTemplate(session)
+	case "/postinumero":
+		b.handlePostalCodeCommand(session)
 	default:
 		if !session.isLoggedIn() {
 			session.reply(loginRequiredText)
@@ -214,6 +221,63 @@ func (b *Bot) handleDeleteTemplate(session *UserSession) {
 		return
 	}
 	session.reply("🗑 Malli poistettu.")
+}
+
+// handlePostalCodeCommand handles /postinumero command - view or change postal code.
+func (b *Bot) handlePostalCodeCommand(session *UserSession) {
+	if b.sessionStore == nil {
+		session.reply("Postinumerot eivät ole käytettävissä")
+		return
+	}
+
+	currentCode, err := b.sessionStore.GetPostalCode(session.userId)
+	if err != nil {
+		session.replyWithError(err)
+		return
+	}
+
+	session.awaitingPostalCodeInput = true
+	if currentCode != "" {
+		session.reply(postalCodeCurrentText, currentCode)
+	} else {
+		session.reply(postalCodeNotSetText)
+	}
+}
+
+// handlePostalCodeInput handles text input when awaiting postal code from /postinumero command.
+// Returns true if the message was handled.
+func (b *Bot) handlePostalCodeInput(session *UserSession, text string) bool {
+	session.mu.Lock()
+	defer session.mu.Unlock()
+
+	if !session.awaitingPostalCodeInput {
+		return false
+	}
+
+	// Handle /peru command to cancel
+	if text == "/peru" {
+		session.awaitingPostalCodeInput = false
+		session.reply(postalCodeCommandCancelText)
+		return true
+	}
+
+	postalCode := strings.TrimSpace(text)
+	if !isValidPostalCode(postalCode) {
+		session.reply(postalCodeInvalidText)
+		return true
+	}
+
+	// Save postal code
+	if b.sessionStore != nil {
+		if err := b.sessionStore.SetPostalCode(session.userId, postalCode); err != nil {
+			session.replyWithError(err)
+			return true
+		}
+	}
+
+	session.awaitingPostalCodeInput = false
+	session.reply(postalCodeUpdatedText, postalCode)
+	return true
 }
 
 // handleOsastoCommand handles /osasto command - re-select category or attributes
