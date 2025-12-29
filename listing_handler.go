@@ -947,7 +947,7 @@ Lähetä /laheta julkaistaksesi tai /peru peruuttaaksesi.`,
 }
 
 // startNewAdFlow creates a draft and returns the ID and ETag.
-func (h *ListingHandler) startNewAdFlow(ctx context.Context, client *tori.AdinputClient) (draftID string, etag string, err error) {
+func (h *ListingHandler) startNewAdFlow(ctx context.Context, client tori.AdService) (draftID string, etag string, err error) {
 	log.Info().Msg("creating draft ad")
 	draft, err := client.CreateDraftAd(ctx)
 	if err != nil {
@@ -959,7 +959,7 @@ func (h *ListingHandler) startNewAdFlow(ctx context.Context, client *tori.Adinpu
 }
 
 // uploadPhotoToAd uploads a photo to the draft ad.
-func (h *ListingHandler) uploadPhotoToAd(ctx context.Context, client *tori.AdinputClient, draftID string, photoData []byte, width, height int) (*UploadedImage, error) {
+func (h *ListingHandler) uploadPhotoToAd(ctx context.Context, client tori.AdService, draftID string, photoData []byte, width, height int) (*UploadedImage, error) {
 	if draftID == "" {
 		return nil, fmt.Errorf("no draft ad to upload to")
 	}
@@ -978,7 +978,7 @@ func (h *ListingHandler) uploadPhotoToAd(ctx context.Context, client *tori.Adinp
 }
 
 // setImageOnDraft sets the uploaded image(s) on the draft and returns new ETag.
-func (h *ListingHandler) setImageOnDraft(ctx context.Context, client *tori.AdinputClient, draftID, etag string, images []UploadedImage) (string, error) {
+func (h *ListingHandler) setImageOnDraft(ctx context.Context, client tori.AdService, draftID, etag string, images []UploadedImage) (string, error) {
 	if len(images) == 0 {
 		return etag, nil
 	}
@@ -1004,7 +1004,7 @@ func (h *ListingHandler) setImageOnDraft(ctx context.Context, client *tori.Adinp
 }
 
 // getCategoryPredictions gets AI-suggested categories from the uploaded image.
-func (h *ListingHandler) getCategoryPredictions(ctx context.Context, client *tori.AdinputClient, draftID string) ([]tori.CategoryPrediction, error) {
+func (h *ListingHandler) getCategoryPredictions(ctx context.Context, client tori.AdService, draftID string) ([]tori.CategoryPrediction, error) {
 	if draftID == "" {
 		return nil, fmt.Errorf("no draft ad")
 	}
@@ -1013,7 +1013,7 @@ func (h *ListingHandler) getCategoryPredictions(ctx context.Context, client *tor
 }
 
 // setCategoryOnDraft sets the category on the draft and returns new ETag.
-func (h *ListingHandler) setCategoryOnDraft(ctx context.Context, client *tori.AdinputClient, draftID, etag string, categoryID int) (string, error) {
+func (h *ListingHandler) setCategoryOnDraft(ctx context.Context, client tori.AdService, draftID, etag string, categoryID int) (string, error) {
 	patchResp, err := client.PatchItem(ctx, draftID, etag, map[string]any{
 		"category": categoryID,
 	})
@@ -1027,7 +1027,7 @@ func (h *ListingHandler) setCategoryOnDraft(ctx context.Context, client *tori.Ad
 // updateAndPublishAd updates the ad with all fields and publishes it.
 func (h *ListingHandler) updateAndPublishAd(
 	ctx context.Context,
-	client *tori.AdinputClient,
+	client tori.AdService,
 	draftID string,
 	etag string,
 	draft *AdInputDraft,

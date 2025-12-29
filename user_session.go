@@ -93,7 +93,7 @@ type UserSession struct {
 	authFlow *AuthFlow
 
 	// Adinput API state for ad creation
-	adInputClient   *tori.AdinputClient
+	adInputClient   tori.AdService
 	draftID         string
 	etag            string
 	adAttributes    *tori.AttributesResponse
@@ -114,7 +114,7 @@ func (s *UserSession) IsLoggedIn() bool {
 }
 
 // GetAdInputClient returns the adinput client (creates if needed).
-func (s *UserSession) GetAdInputClient() *tori.AdinputClient {
+func (s *UserSession) GetAdInputClient() tori.AdService {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.initAdInputClient()
@@ -139,7 +139,7 @@ func (s *UserSession) GetDraftState() AdFlowState {
 }
 
 // GetDraftInfo returns draft ID and etag for API calls.
-func (s *UserSession) GetDraftInfo() (draftID, etag string, client *tori.AdinputClient) {
+func (s *UserSession) GetDraftInfo() (draftID, etag string, client tori.AdService) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.draftID, s.etag, s.adInputClient
