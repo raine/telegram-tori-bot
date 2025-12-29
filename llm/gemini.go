@@ -38,6 +38,21 @@ Example response:
 
 Respond ONLY with the JSON object, no markdown or other text.`
 
+const geminiMultiImagePrompt = `Analyze these images showing the same item from different angles and identify it for selling on a secondhand marketplace.
+
+The images show the same item - use all images together to get a complete understanding of the item's condition, brand, model, and features.
+
+Respond in JSON format with these fields:
+- title: A short, descriptive title suitable for a marketplace listing (in Finnish if possible, otherwise English). Include brand and model if visible.
+- description: A longer description with relevant details about the item (2-3 sentences, in Finnish if possible). Mention notable features or condition details visible across the images.
+- brand: The brand name if identifiable (empty string if unknown)
+- model: The model name or number if identifiable (empty string if unknown)
+
+Example response:
+{"title": "Logitech G Pro X Superlight langaton pelihiiri", "description": "Kevyt langaton pelihiiri ammattipelaamiseen. Logitech Hero 25K -sensori, jopa 70 tunnin akunkesto. Hyvässä kunnossa, ei näkyviä käytön jälkiä.", "brand": "Logitech", "model": "G Pro X Superlight"}
+
+Respond ONLY with the JSON object, no markdown or other text.`
+
 const categorySelectionPrompt = `Select the most appropriate category for this item from the provided list.
 
 Item Title: %s
@@ -119,12 +134,45 @@ func NewGeminiAnalyzer(ctx context.Context) (*GeminiAnalyzer, error) {
 }
 
 // AnalyzeImage implements the Analyzer interface using Gemini.
+// It delegates to AnalyzeImages with a single-element slice.
 func (g *GeminiAnalyzer) AnalyzeImage(ctx context.Context, imageData []byte, mimeType string) (*AnalysisResult, error) {
-	parts := []*genai.Part{
-		genai.NewPartFromText(geminiPrompt),
-		{InlineData: &genai.Blob{Data: imageData, MIMEType: mimeType}},
+	return g.AnalyzeImages(ctx, [][]byte{imageData})
+}
+
+// AnalyzeImages analyzes one or more images together.
+// For single images, uses the single-image prompt. For multiple images,
+// uses the multi-image prompt for better context from different angles.
+func (g *GeminiAnalyzer) AnalyzeImages(ctx context.Context, images [][]byte) (*AnalysisResult, error) {
+	if len(images) == 0 {
+		return nil, fmt.Errorf("no images provided")
 	}
 
+	// Limit to 10 images (Telegram's album limit)
+	if len(images) > 10 {
+		images = images[:10]
+	}
+
+	// Choose prompt based on image count
+	prompt := geminiPrompt
+	if len(images) > 1 {
+		prompt = geminiMultiImagePrompt
+	}
+
+	// Build parts: prompt first, then all images
+	parts := []*genai.Part{
+		genai.NewPartFromText(prompt),
+	}
+	for _, imgData := range images {
+		parts = append(parts, &genai.Part{
+			InlineData: &genai.Blob{Data: imgData, MIMEType: "image/jpeg"},
+		})
+	}
+
+	return g.executeVisionRequest(ctx, parts, len(images))
+}
+
+// executeVisionRequest executes the Gemini API call and parses the response.
+func (g *GeminiAnalyzer) executeVisionRequest(ctx context.Context, parts []*genai.Part, imageCount int) (*AnalysisResult, error) {
 	contents := []*genai.Content{
 		genai.NewContentFromParts(parts, genai.RoleUser),
 	}
@@ -138,9 +186,7 @@ func (g *GeminiAnalyzer) AnalyzeImage(ctx context.Context, imageData []byte, mim
 		return nil, fmt.Errorf("no response from Gemini")
 	}
 
-	text := result.Text()
-
-	item, err := parseItemDescription(text)
+	item, err := parseItemDescription(result.Text())
 	if err != nil {
 		return nil, err
 	}
@@ -156,6 +202,7 @@ func (g *GeminiAnalyzer) AnalyzeImage(ctx context.Context, imageData []byte, mim
 
 	log.Info().
 		Str("model", geminiModel).
+		Int("imageCount", imageCount).
 		Int64("inputTokens", usage.InputTokens).
 		Int64("outputTokens", usage.OutputTokens).
 		Float64("costUSD", usage.CostUSD).

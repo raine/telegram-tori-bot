@@ -136,6 +136,8 @@ func (b *Bot) HandleSessionMessage(ctx context.Context, session *UserSession, ms
 		b.handlePhotoMessage(ctx, session, msg.Message)
 	case "text":
 		b.handleTextMessage(ctx, session, msg.Message)
+	case "album_timeout":
+		b.listingHandler.ProcessAlbumTimeout(msg.Ctx, session, msg.AlbumBuffer)
 	}
 }
 

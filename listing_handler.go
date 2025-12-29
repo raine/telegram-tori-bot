@@ -6,12 +6,20 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/raine/telegram-tori-bot/llm"
 	"github.com/raine/telegram-tori-bot/storage"
 	"github.com/raine/telegram-tori-bot/tori"
 	"github.com/rs/zerolog/log"
+)
+
+const (
+	// albumBufferTimeout is how long to wait for more photos before processing an album
+	albumBufferTimeout = 1500 * time.Millisecond
+	// maxAlbumPhotos is the maximum number of photos to process in an album
+	maxAlbumPhotos = 10
 )
 
 // ListingHandler handles ad creation flow for the bot.
@@ -88,32 +96,156 @@ func (h *ListingHandler) HandleSendListingCommand(ctx context.Context, session *
 }
 
 // HandlePhoto processes a photo message and starts or adds to the listing flow.
+// Detects album photos (MediaGroupID) and buffers them for multi-image analysis.
 // Called from session worker - no locking needed.
 func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, message *tgbotapi.Message) {
 	// Get the largest photo size
 	largestPhoto := message.Photo[len(message.Photo)-1]
+	mediaGroupID := message.MediaGroupID
 
-	// Since we're in the worker, sequential processing means no race with album photos.
-	// The isCreatingDraft flag is still useful to track state during async operations.
+	// Check if this is part of an album (has MediaGroupID)
+	if mediaGroupID != "" {
+		h.bufferAlbumPhoto(ctx, session, largestPhoto, mediaGroupID)
+		return
+	}
+
+	// Single photo - process immediately
+	h.processSinglePhoto(ctx, session, largestPhoto)
+}
+
+// bufferAlbumPhoto adds a photo to the album buffer and schedules processing.
+// Called from session worker - no locking needed for session state.
+func (h *ListingHandler) bufferAlbumPhoto(ctx context.Context, session *UserSession, photo tgbotapi.PhotoSize, mediaGroupID string) {
+	// If there's an existing draft, add photos directly without buffering
+	if session.draftID != "" {
+		h.processSinglePhoto(ctx, session, photo)
+		return
+	}
+
+	// If already creating a draft, reject this photo
 	if session.isCreatingDraft {
 		session.reply("Odota hetki, luodaan ilmoitusta...")
 		return
 	}
 
-	existingDraft := session.draftID != ""
-	client := session.adInputClient
-
-	if !existingDraft {
-		// Mark that we're creating a draft
-		session.isCreatingDraft = true
-		session.reply("Analysoidaan kuvaa...")
-		session.initAdInputClient()
-		client = session.adInputClient
-	} else {
-		session.reply("Lisätään kuva...")
+	// Initialize or update album buffer
+	isNewAlbum := false
+	if session.albumBuffer == nil || session.albumBuffer.MediaGroupID != mediaGroupID {
+		// If there's an existing buffer with photos from a different album, flush it first
+		if session.albumBuffer != nil && len(session.albumBuffer.Photos) > 0 {
+			if session.albumBuffer.Timer != nil {
+				session.albumBuffer.Timer.Stop()
+			}
+			// Process the previous album immediately (this may set isCreatingDraft=true,
+			// causing the current photo to be rejected, which is safer than dropping data)
+			h.ProcessAlbumTimeout(ctx, session, session.albumBuffer)
+		}
+		session.albumBuffer = &AlbumBuffer{
+			MediaGroupID:  mediaGroupID,
+			Photos:        []AlbumPhoto{},
+			FirstReceived: time.Now(),
+		}
+		isNewAlbum = true
 	}
-	draftID := session.draftID
-	etag := session.etag
+
+	// Add photo to buffer (respect max limit)
+	if len(session.albumBuffer.Photos) < maxAlbumPhotos {
+		session.albumBuffer.Photos = append(session.albumBuffer.Photos, AlbumPhoto{
+			FileID: photo.FileID,
+			Width:  photo.Width,
+			Height: photo.Height,
+		})
+	}
+
+	if isNewAlbum {
+		session.reply("Vastaanotetaan kuvia...")
+	}
+
+	// Reset or start timer - dispatch through worker channel when done
+	if session.albumBuffer.Timer != nil {
+		session.albumBuffer.Timer.Stop()
+	}
+
+	// Capture buffer reference for timer closure
+	albumBuffer := session.albumBuffer
+	session.albumBuffer.Timer = time.AfterFunc(albumBufferTimeout, func() {
+		// Dispatch album processing through the worker channel
+		// Use context.Background() since the original request context may be cancelled by now
+		session.Send(SessionMessage{
+			Type:        "album_timeout",
+			Ctx:         context.Background(),
+			AlbumBuffer: albumBuffer,
+		})
+	})
+}
+
+// ProcessAlbumTimeout handles the album timeout message from the worker channel.
+// Called from session worker - no locking needed.
+func (h *ListingHandler) ProcessAlbumTimeout(ctx context.Context, session *UserSession, albumBuffer *AlbumBuffer) {
+	// Verify this is still the active album buffer (wasn't replaced or cleared)
+	if session.albumBuffer != albumBuffer {
+		return
+	}
+
+	// Clear the album buffer
+	photos := albumBuffer.Photos
+	session.albumBuffer = nil
+
+	if len(photos) == 0 {
+		return
+	}
+
+	// Convert AlbumPhoto to tgbotapi.PhotoSize
+	photoSizes := make([]tgbotapi.PhotoSize, len(photos))
+	for i, p := range photos {
+		photoSizes[i] = tgbotapi.PhotoSize{
+			FileID: p.FileID,
+			Width:  p.Width,
+			Height: p.Height,
+		}
+	}
+
+	// Process all photos together
+	h.processPhotoBatch(ctx, session, photoSizes)
+}
+
+// processSinglePhoto processes a single photo (non-album).
+// Called from session worker - no locking needed.
+func (h *ListingHandler) processSinglePhoto(ctx context.Context, session *UserSession, photo tgbotapi.PhotoSize) {
+	if session.draftID != "" {
+		h.addPhotoToExistingDraft(ctx, session, photo)
+	} else {
+		h.processPhotoBatch(ctx, session, []tgbotapi.PhotoSize{photo})
+	}
+}
+
+// processPhotoBatch processes one or more photos to create a new draft.
+// Called from session worker - no locking needed.
+func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSession, photos []tgbotapi.PhotoSize) {
+	if len(photos) == 0 {
+		return
+	}
+
+	// Check if already creating a draft
+	if session.isCreatingDraft {
+		session.reply("Odota hetki, luodaan ilmoitusta...")
+		return
+	}
+
+	// Check if draft already exists (shouldn't happen but handle gracefully)
+	if session.draftID != "" {
+		return
+	}
+
+	// Mark that we're creating a draft
+	session.isCreatingDraft = true
+	if len(photos) > 1 {
+		session.reply(fmt.Sprintf("Analysoidaan %d kuvaa...", len(photos)))
+	} else {
+		session.reply("Analysoidaan kuvaa...")
+	}
+	session.initAdInputClient()
+	client := session.adInputClient
 
 	if client == nil {
 		session.isCreatingDraft = false
@@ -121,166 +253,190 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 		return
 	}
 
-	// Download the photo (network I/O)
-	photoData, err := downloadFileID(h.tg.GetFileDirectURL, largestPhoto.FileID)
-	if err != nil {
-		log.Error().Err(err).Msg("failed to download photo")
-		if !existingDraft {
-			session.isCreatingDraft = false
+	// Download all photos (network I/O)
+	var photoDataList [][]byte
+	var validPhotos []tgbotapi.PhotoSize
+	for _, photo := range photos {
+		data, err := downloadFileID(h.tg.GetFileDirectURL, photo.FileID)
+		if err != nil {
+			log.Error().Err(err).Str("fileID", photo.FileID).Msg("failed to download photo")
+			continue
 		}
+		photoDataList = append(photoDataList, data)
+		validPhotos = append(validPhotos, photo)
+	}
+
+	if len(photoDataList) == 0 {
+		session.isCreatingDraft = false
+		session.reply("Virhe: kuvien lataus epäonnistui")
+		return
+	}
+
+	// Analyze with Gemini vision (network I/O)
+	if h.visionAnalyzer == nil {
+		session.isCreatingDraft = false
+		session.reply("Kuva-analyysi ei ole käytettävissä")
+		return
+	}
+
+	result, err := h.visionAnalyzer.AnalyzeImages(ctx, photoDataList)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to analyze image(s)")
+		session.isCreatingDraft = false
 		session.replyWithError(err)
 		return
 	}
 
-	// If this is the first photo, analyze with Gemini and create draft
-	var result *llm.AnalysisResult
-	var categories []tori.CategoryPrediction
+	log.Info().
+		Str("title", result.Item.Title).
+		Int("imageCount", len(photoDataList)).
+		Float64("cost", result.Usage.CostUSD).
+		Msg("image(s) analyzed")
 
-	if !existingDraft {
-		// Analyze with Gemini vision (network I/O)
-		if h.visionAnalyzer == nil {
-			session.isCreatingDraft = false
-			session.reply("Kuva-analyysi ei ole käytettävissä")
-			return
-		}
-
-		result, err = h.visionAnalyzer.AnalyzeImage(ctx, photoData, "image/jpeg")
-		if err != nil {
-			log.Error().Err(err).Msg("failed to analyze image")
-			session.isCreatingDraft = false
-			session.replyWithError(err)
-			return
-		}
-
-		log.Info().
-			Str("title", result.Item.Title).
-			Float64("cost", result.Usage.CostUSD).
-			Msg("image analyzed")
-
-		// Create draft ad (network I/O)
-		draftID, etag, err = h.startNewAdFlow(ctx, client)
-		if err != nil {
-			session.isCreatingDraft = false
-			session.replyWithError(err)
-			return
-		}
-
-		// Set image on draft (network I/O)
-		allImages := []UploadedImage{{
-			ImagePath: "", // Will be set after upload
-			Width:     largestPhoto.Width,
-			Height:    largestPhoto.Height,
-		}}
-
-		// Upload photo to draft (network I/O)
-		uploaded, err := h.uploadPhotoToAd(ctx, client, draftID, photoData, largestPhoto.Width, largestPhoto.Height)
-		if err != nil {
-			session.isCreatingDraft = false
-			session.replyWithError(err)
-			return
-		}
-		allImages[0] = *uploaded
-
-		// Set image on draft (network I/O)
-		newEtag, err := h.setImageOnDraft(ctx, client, draftID, etag, allImages)
-		if err != nil {
-			session.isCreatingDraft = false
-			session.replyWithError(err)
-			return
-		}
-		etag = newEtag
-
-		// Get category predictions (network I/O)
-		categories, err = h.getCategoryPredictions(ctx, client, draftID)
-		if err != nil {
-			log.Warn().Err(err).Msg("failed to get category predictions")
-			categories = []tori.CategoryPrediction{}
-		}
-
-		// Update session state
+	// Create draft ad (network I/O)
+	draftID, etag, err := h.startNewAdFlow(ctx, client)
+	if err != nil {
 		session.isCreatingDraft = false
-		session.photos = append(session.photos, largestPhoto)
-		session.draftID = draftID
-		session.etag = etag
-
-		// Initialize the draft with vision results
-		session.currentDraft = &AdInputDraft{
-			State:               AdFlowStateAwaitingCategory,
-			Title:               result.Item.Title,
-			Description:         result.Item.Description,
-			TradeType:           "1", // Default to sell
-			CollectedAttrs:      make(map[string]string),
-			Images:              allImages,
-			CategoryPredictions: categories,
-		}
-
-		// Send title message (user can reply to edit)
-		titleMsg := tgbotapi.NewMessage(session.userId, fmt.Sprintf("📦 *Otsikko:* %s", escapeMarkdown(result.Item.Title)))
-		titleMsg.ParseMode = tgbotapi.ModeMarkdown
-		sentTitle := session.replyWithMessage(titleMsg)
-		session.currentDraft.TitleMessageID = sentTitle.MessageID
-
-		// Send description message (user can reply to edit)
-		descMsg := tgbotapi.NewMessage(session.userId, fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(result.Item.Description)))
-		descMsg.ParseMode = tgbotapi.ModeMarkdown
-		sentDesc := session.replyWithMessage(descMsg)
-		session.currentDraft.DescriptionMessageID = sentDesc.MessageID
-
-		// Auto-select category using LLM if possible
-		if len(categories) > 0 {
-			// Try LLM-based category selection
-			autoSelectedID := h.tryAutoSelectCategory(ctx, result.Item.Title, result.Item.Description, categories)
-			if autoSelectedID > 0 {
-				h.ProcessCategorySelection(ctx, session, autoSelectedID)
-				return
-			}
-
-			// Fall back to manual selection
-			msg := tgbotapi.NewMessage(session.userId, "Valitse osasto")
-			msg.ParseMode = tgbotapi.ModeMarkdown
-			msg.ReplyMarkup = makeCategoryPredictionKeyboard(categories)
-			session.replyWithMessage(msg)
-		} else {
-			// No categories predicted, use default
-			session.currentDraft.CategoryID = 76 // "Muu" category
-			session.reply("Ei osastoehdotuksia, käytetään oletusta.")
-			h.promptForPrice(ctx, session)
-		}
-	} else {
-		// Adding to existing draft - upload photo (network I/O)
-		uploaded, err := h.uploadPhotoToAd(ctx, client, draftID, photoData, largestPhoto.Width, largestPhoto.Height)
-		if err != nil {
-			session.replyWithError(err)
-			return
-		}
-
-		// Update session state
-		if session.currentDraft == nil {
-			// Draft was cancelled during upload
-			log.Info().Int64("userId", session.userId).Msg("draft cancelled during photo upload")
-			return
-		}
-		session.photos = append(session.photos, largestPhoto)
-		session.currentDraft.Images = append(session.currentDraft.Images, *uploaded)
-		images := make([]UploadedImage, len(session.currentDraft.Images))
-		copy(images, session.currentDraft.Images)
-		currentEtag := session.etag
-
-		// Update images on draft (network I/O)
-		newEtag, err := h.setImageOnDraft(ctx, client, draftID, currentEtag, images)
-		if err != nil {
-			session.replyWithError(err)
-			return
-		}
-
-		if session.currentDraft == nil {
-			// Draft was cancelled during image update
-			log.Info().Int64("userId", session.userId).Msg("draft cancelled during image update")
-			return
-		}
-		session.etag = newEtag
-		session.reply(fmt.Sprintf("Kuva lisätty! Kuvia yhteensä: %d", len(session.photos)))
+		session.replyWithError(err)
+		return
 	}
+
+	// Upload all photos (network I/O)
+	var allImages []UploadedImage
+	for i, photoData := range photoDataList {
+		uploaded, err := h.uploadPhotoToAd(ctx, client, draftID, photoData, validPhotos[i].Width, validPhotos[i].Height)
+		if err != nil {
+			log.Error().Err(err).Int("index", i).Msg("failed to upload photo")
+			continue
+		}
+		allImages = append(allImages, *uploaded)
+	}
+
+	if len(allImages) == 0 {
+		session.isCreatingDraft = false
+		session.reply("Virhe: kuvien lähetys epäonnistui")
+		return
+	}
+
+	// Set images on draft (network I/O)
+	newEtag, err := h.setImageOnDraft(ctx, client, draftID, etag, allImages)
+	if err != nil {
+		session.isCreatingDraft = false
+		session.replyWithError(err)
+		return
+	}
+	etag = newEtag
+
+	// Get category predictions (network I/O)
+	categories, err := h.getCategoryPredictions(ctx, client, draftID)
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to get category predictions")
+		categories = []tori.CategoryPrediction{}
+	}
+
+	// Update session state
+	session.isCreatingDraft = false
+	session.photos = append(session.photos, validPhotos...)
+	session.draftID = draftID
+	session.etag = etag
+
+	// Initialize the draft with vision results
+	session.currentDraft = &AdInputDraft{
+		State:               AdFlowStateAwaitingCategory,
+		Title:               result.Item.Title,
+		Description:         result.Item.Description,
+		TradeType:           "1", // Default to sell
+		CollectedAttrs:      make(map[string]string),
+		Images:              allImages,
+		CategoryPredictions: categories,
+	}
+
+	// Send title message (user can reply to edit)
+	titleMsg := tgbotapi.NewMessage(session.userId, fmt.Sprintf("📦 *Otsikko:* %s", escapeMarkdown(result.Item.Title)))
+	titleMsg.ParseMode = tgbotapi.ModeMarkdown
+	sentTitle := session.replyWithMessage(titleMsg)
+	session.currentDraft.TitleMessageID = sentTitle.MessageID
+
+	// Send description message (user can reply to edit)
+	descMsg := tgbotapi.NewMessage(session.userId, fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(result.Item.Description)))
+	descMsg.ParseMode = tgbotapi.ModeMarkdown
+	sentDesc := session.replyWithMessage(descMsg)
+	session.currentDraft.DescriptionMessageID = sentDesc.MessageID
+
+	// Auto-select category using LLM if possible
+	if len(categories) > 0 {
+		// Try LLM-based category selection
+		autoSelectedID := h.tryAutoSelectCategory(ctx, result.Item.Title, result.Item.Description, categories)
+		if autoSelectedID > 0 {
+			h.ProcessCategorySelection(ctx, session, autoSelectedID)
+			return
+		}
+
+		// Fall back to manual selection
+		msg := tgbotapi.NewMessage(session.userId, "Valitse osasto")
+		msg.ParseMode = tgbotapi.ModeMarkdown
+		msg.ReplyMarkup = makeCategoryPredictionKeyboard(categories)
+		session.replyWithMessage(msg)
+	} else {
+		// No categories predicted, use default
+		session.currentDraft.CategoryID = 76 // "Muu" category
+		session.reply("Ei osastoehdotuksia, käytetään oletusta.")
+		h.promptForPrice(ctx, session)
+	}
+}
+
+// addPhotoToExistingDraft adds a photo to an existing draft.
+// Called from session worker - no locking needed.
+func (h *ListingHandler) addPhotoToExistingDraft(ctx context.Context, session *UserSession, photo tgbotapi.PhotoSize) {
+	session.reply("Lisätään kuva...")
+	client := session.adInputClient
+	draftID := session.draftID
+
+	// Check for nil client (session may have been reset)
+	if client == nil || draftID == "" {
+		log.Warn().Int64("userId", session.userId).Msg("cannot add photo: no active draft")
+		return
+	}
+
+	// Download the photo (network I/O)
+	photoData, err := downloadFileID(h.tg.GetFileDirectURL, photo.FileID)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to download photo")
+		session.replyWithError(err)
+		return
+	}
+
+	// Upload photo to draft (network I/O)
+	uploaded, err := h.uploadPhotoToAd(ctx, client, draftID, photoData, photo.Width, photo.Height)
+	if err != nil {
+		session.replyWithError(err)
+		return
+	}
+
+	// Update session state
+	if session.currentDraft == nil {
+		log.Info().Int64("userId", session.userId).Msg("draft cancelled during photo upload")
+		return
+	}
+	session.photos = append(session.photos, photo)
+	session.currentDraft.Images = append(session.currentDraft.Images, *uploaded)
+	images := make([]UploadedImage, len(session.currentDraft.Images))
+	copy(images, session.currentDraft.Images)
+	currentEtag := session.etag
+
+	// Update images on draft (network I/O)
+	newEtag, err := h.setImageOnDraft(ctx, client, draftID, currentEtag, images)
+	if err != nil {
+		session.replyWithError(err)
+		return
+	}
+
+	if session.currentDraft == nil {
+		log.Info().Int64("userId", session.userId).Msg("draft cancelled during image update")
+		return
+	}
+	session.etag = newEtag
+	session.reply(fmt.Sprintf("Kuva lisätty! Kuvia yhteensä: %d", len(session.photos)))
 }
 
 // HandleCategorySelection processes category selection from callback query.

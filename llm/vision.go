@@ -28,6 +28,8 @@ type AnalysisResult struct {
 type Analyzer interface {
 	// AnalyzeImage takes image data and returns a description suitable for selling.
 	AnalyzeImage(ctx context.Context, imageData []byte, mimeType string) (*AnalysisResult, error)
+	// AnalyzeImages analyzes multiple images together for better context in album photos.
+	AnalyzeImages(ctx context.Context, images [][]byte) (*AnalysisResult, error)
 }
 
 // EditIntentParser can parse natural language edit commands.

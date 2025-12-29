@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/rs/zerolog/log"
@@ -22,7 +23,8 @@ type SessionMessage struct {
 	// Message data (only one is set based on Type)
 	Message       *tgbotapi.Message
 	CallbackQuery *tgbotapi.CallbackQuery
-	Text          string // For auth flow messages
+	Text          string       // For auth flow messages
+	AlbumBuffer   *AlbumBuffer // For album_timeout messages
 }
 
 // isLoggedIn returns true if the user has a valid bearer token (internal, no lock)
@@ -49,6 +51,21 @@ type MessageSender interface {
 type PendingPhoto struct {
 	messageId int
 	photoSize tgbotapi.PhotoSize
+}
+
+// AlbumPhoto holds a photo from an album with its Telegram data.
+type AlbumPhoto struct {
+	FileID string
+	Width  int
+	Height int
+}
+
+// AlbumBuffer collects photos from a Telegram album (MediaGroup) before processing.
+type AlbumBuffer struct {
+	MediaGroupID  string
+	Photos        []AlbumPhoto
+	Timer         *time.Timer
+	FirstReceived time.Time
 }
 
 // MessageHandler is the interface for processing session messages.
@@ -88,6 +105,7 @@ type UserSession struct {
 	// Photo collection
 	pendingPhotos *[]PendingPhoto
 	photos        []tgbotapi.PhotoSize
+	albumBuffer   *AlbumBuffer // Buffer for collecting album photos
 
 	// Auth flow state for login
 	authFlow *AuthFlow
@@ -203,6 +221,11 @@ func (s *UserSession) reset() {
 	log.Info().Int64("userId", s.userId).Msg("reset user session")
 	s.pendingPhotos = nil
 	s.photos = nil
+	// Stop album timer if running
+	if s.albumBuffer != nil && s.albumBuffer.Timer != nil {
+		s.albumBuffer.Timer.Stop()
+	}
+	s.albumBuffer = nil
 	if s.authFlow != nil {
 		s.authFlow.Reset()
 	}
