@@ -605,6 +605,9 @@ func (h *ListingHandler) HandlePriceInput(ctx context.Context, session *UserSess
 	session.currentDraft.TradeType = TradeTypeSell
 	session.currentDraft.State = AdFlowStateAwaitingShipping
 
+	// Remove reply keyboard and confirm price
+	session.replyAndRemoveCustomKeyboard(fmt.Sprintf("Hinta: *%d€*", price))
+
 	// Ask about shipping
 	msg := tgbotapi.NewMessage(session.userId, "Onko postitus mahdollinen?")
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
@@ -689,6 +692,9 @@ func (h *ListingHandler) handleGiveawaySelection(ctx context.Context, session *U
 	}
 
 	session.currentDraft.State = AdFlowStateAwaitingShipping
+
+	// Remove reply keyboard and confirm giveaway
+	session.replyAndRemoveCustomKeyboard("Hinta: *Annetaan*")
 
 	// Ask about shipping (meetup possible even for giveaways)
 	msg := tgbotapi.NewMessage(session.userId, "Onko postitus mahdollinen?")

@@ -471,6 +471,12 @@ func TestHandlePriceInput_ValidPrice(t *testing.T) {
 	}
 	session.photos = []tgbotapi.PhotoSize{{FileID: "1"}}
 
+	// Expect price confirmation message with keyboard removal
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		_, hasRemoveKeyboard := msg.ReplyMarkup.(tgbotapi.ReplyKeyboardRemove)
+		return strings.Contains(msg.Text, "Hinta: *50€*") && hasRemoveKeyboard
+	})).Return(tgbotapi.Message{}, nil).Once()
+
 	// Expect shipping question (flow now asks about shipping after price)
 	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
 		return strings.Contains(msg.Text, "Onko postitus mahdollinen?")
@@ -529,6 +535,12 @@ func TestHandlePriceInput_Giveaway(t *testing.T) {
 		Description: "Myydään langaton pelihiiri",
 	}
 	session.photos = []tgbotapi.PhotoSize{{FileID: "1"}}
+
+	// Expect giveaway confirmation message with keyboard removal
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		_, hasRemoveKeyboard := msg.ReplyMarkup.(tgbotapi.ReplyKeyboardRemove)
+		return strings.Contains(msg.Text, "Hinta: *Annetaan*") && hasRemoveKeyboard
+	})).Return(tgbotapi.Message{}, nil).Once()
 
 	// Expect shipping question after giveaway selection
 	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
