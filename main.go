@@ -68,11 +68,15 @@ func main() {
 	if os.Getenv("GEMINI_API_KEY") == "" {
 		log.Fatal().Msg("GEMINI_API_KEY environment variable is required")
 	}
-	visionAnalyzer, err := llm.NewGeminiAnalyzer(ctx)
+	geminiAnalyzer, err := llm.NewGeminiAnalyzer(ctx)
 	if err != nil {
 		log.Fatal().Err(err).Msg("failed to initialize gemini vision analyzer")
 	}
 	log.Info().Msg("gemini vision analyzer initialized")
+
+	// Wrap with cache
+	visionAnalyzer := llm.NewCachedAnalyzer(geminiAnalyzer, sessionStore)
+	log.Info().Msg("vision analysis caching enabled")
 
 	g, ctx := errgroup.WithContext(ctx)
 

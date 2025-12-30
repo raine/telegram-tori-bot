@@ -78,6 +78,14 @@ func (m *mockSessionStore) GetPostalCode(telegramID int64) (string, error) {
 	return "", nil
 }
 
+func (m *mockSessionStore) GetVisionCache(imageHash string) (*storage.VisionCacheEntry, error) {
+	return nil, nil
+}
+
+func (m *mockSessionStore) SetVisionCache(imageHash string, entry *storage.VisionCacheEntry) error {
+	return nil
+}
+
 func setup(t *testing.T) (int64, *botApiMock, *Bot, *UserSession) {
 	userId := int64(1)
 	tg := new(botApiMock)

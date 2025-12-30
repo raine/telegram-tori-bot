@@ -27,6 +27,14 @@ type Template struct {
 	Content    string
 }
 
+// VisionCacheEntry represents a cached vision analysis result.
+type VisionCacheEntry struct {
+	Title       string
+	Description string
+	Brand       string
+	Model       string
+}
+
 // SessionStore defines the interface for session persistence.
 type SessionStore interface {
 	Get(telegramID int64) (*StoredSession, error)
@@ -43,6 +51,10 @@ type SessionStore interface {
 	// Postal code methods
 	SetPostalCode(telegramID int64, postalCode string) error
 	GetPostalCode(telegramID int64) (string, error)
+
+	// Vision cache methods
+	GetVisionCache(imageHash string) (*VisionCacheEntry, error)
+	SetVisionCache(imageHash string, entry *VisionCacheEntry) error
 }
 
 // SQLiteStore implements SessionStore using SQLite with encrypted tokens.
@@ -115,6 +127,21 @@ func (s *SQLiteStore) init() error {
 	_, err = s.db.Exec(userSettingsQuery)
 	if err != nil {
 		return fmt.Errorf("failed to create user_settings table: %w", err)
+	}
+
+	visionCacheQuery := `
+	CREATE TABLE IF NOT EXISTS vision_cache (
+		image_hash TEXT PRIMARY KEY,
+		title TEXT NOT NULL,
+		description TEXT NOT NULL,
+		brand TEXT,
+		model TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	`
+	_, err = s.db.Exec(visionCacheQuery)
+	if err != nil {
+		return fmt.Errorf("failed to create vision_cache table: %w", err)
 	}
 
 	return nil
@@ -343,4 +370,52 @@ func (s *SQLiteStore) GetPostalCode(telegramID int64) (string, error) {
 	}
 
 	return postalCode.String, nil
+}
+
+// GetVisionCache retrieves a cached vision analysis result by image hash.
+// Returns nil, nil if no cache entry exists.
+func (s *SQLiteStore) GetVisionCache(imageHash string) (*VisionCacheEntry, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var entry VisionCacheEntry
+	var brand, model sql.NullString
+	err := s.db.QueryRow(
+		"SELECT title, description, brand, model FROM vision_cache WHERE image_hash = ?",
+		imageHash,
+	).Scan(&entry.Title, &entry.Description, &brand, &model)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query vision cache: %w", err)
+	}
+
+	entry.Brand = brand.String
+	entry.Model = model.String
+
+	return &entry, nil
+}
+
+// SetVisionCache stores a vision analysis result in the cache.
+func (s *SQLiteStore) SetVisionCache(imageHash string, entry *VisionCacheEntry) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, err := s.db.Exec(`
+		INSERT INTO vision_cache (image_hash, title, description, brand, model)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(image_hash) DO UPDATE SET
+			title = excluded.title,
+			description = excluded.description,
+			brand = excluded.brand,
+			model = excluded.model,
+			created_at = CURRENT_TIMESTAMP
+	`, imageHash, entry.Title, entry.Description, entry.Brand, entry.Model)
+
+	if err != nil {
+		return fmt.Errorf("failed to cache vision result: %w", err)
+	}
+	return nil
 }

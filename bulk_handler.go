@@ -376,8 +376,7 @@ func (h *BulkHandler) HandleBulkAnalysisComplete(ctx context.Context, session *U
 
 	// Auto-select category if possible
 	if len(result.CategoryPredictions) > 0 {
-		gemini, ok := h.visionAnalyzer.(*llm.GeminiAnalyzer)
-		if ok {
+		if gemini := llm.GetGeminiAnalyzer(h.visionAnalyzer); gemini != nil {
 			categoryID, err := gemini.SelectCategory(ctx, draft.Title, draft.Description, result.CategoryPredictions)
 			if err == nil && categoryID > 0 {
 				draft.CategoryID = categoryID

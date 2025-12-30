@@ -655,8 +655,7 @@ func (h *ListingHandler) handleGiveawaySelection(ctx context.Context, session *U
 
 	// Rewrite description to use "Annetaan" phrasing (network I/O)
 	var newDescription string
-	gemini, ok := h.visionAnalyzer.(*llm.GeminiAnalyzer)
-	if ok {
+	if gemini := llm.GetGeminiAnalyzer(h.visionAnalyzer); gemini != nil {
 		rewritten, err := gemini.RewriteDescriptionForGiveaway(ctx, originalDescription)
 		if err != nil {
 			log.Warn().Err(err).Msg("failed to rewrite description for giveaway, using original")
@@ -881,8 +880,8 @@ func (h *ListingHandler) HandleTitleDescriptionReply(session *UserSession, messa
 // Returns the selected category ID or 0 if auto-selection failed.
 func (h *ListingHandler) tryAutoSelectCategory(ctx context.Context, title, description string, predictions []tori.CategoryPrediction) int {
 	// Check if the analyzer supports category selection
-	gemini, ok := h.visionAnalyzer.(*llm.GeminiAnalyzer)
-	if !ok {
+	gemini := llm.GetGeminiAnalyzer(h.visionAnalyzer)
+	if gemini == nil {
 		return 0
 	}
 
@@ -904,8 +903,8 @@ var manualOnlyAttributes = map[string]bool{
 // Returns the list of attributes that still need manual selection.
 // Caller must hold session.mu.Lock().
 func (h *ListingHandler) tryAutoSelectAttributes(ctx context.Context, session *UserSession, attrs []tori.Attribute) []tori.Attribute {
-	gemini, ok := h.visionAnalyzer.(*llm.GeminiAnalyzer)
-	if !ok {
+	gemini := llm.GetGeminiAnalyzer(h.visionAnalyzer)
+	if gemini == nil {
 		return attrs
 	}
 
