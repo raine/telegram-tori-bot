@@ -53,6 +53,7 @@ func escapeMarkdown(text string) string {
 // improving testability.
 type MessageSender interface {
 	Send(c tgbotapi.Chattable) (tgbotapi.Message, error)
+	Request(c tgbotapi.Chattable) (*tgbotapi.APIResponse, error)
 }
 
 type PendingPhoto struct {
@@ -333,7 +334,8 @@ func (s *UserSession) replyWithError(err error) tgbotapi.Message {
 // The typing indicator automatically expires after ~5 seconds in Telegram.
 func (s *UserSession) sendTypingAction() {
 	action := tgbotapi.NewChatAction(s.userId, tgbotapi.ChatTyping)
-	_, err := s.sender.Send(action)
+	// Use Request instead of Send because sendChatAction returns a boolean, not a Message
+	_, err := s.sender.Request(action)
 	if err != nil {
 		log.Debug().Err(err).Int64("userId", s.userId).Msg("failed to send typing action")
 	}
