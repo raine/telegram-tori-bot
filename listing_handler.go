@@ -612,7 +612,7 @@ func (h *ListingHandler) ProcessCategorySelection(ctx context.Context, session *
 		}
 		session.etag = newEtag
 		session.currentDraft.State = AdFlowStateAwaitingPrice
-		session.reply("Syötä hinta (esim. 50€)")
+		session.reply("Syötä hinta")
 		return
 	}
 
@@ -1293,7 +1293,7 @@ func (h *ListingHandler) promptForPrice(ctx context.Context, session *UserSessio
 		return
 	}
 
-	msgText := fmt.Sprintf("Syötä hinta (esim. 50€)%s", recommendationMsg)
+	msgText := fmt.Sprintf("Syötä hinta%s", recommendationMsg)
 	msg := tgbotapi.NewMessage(session.userId, msgText)
 	msg.ParseMode = tgbotapi.ModeMarkdown
 

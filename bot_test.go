@@ -459,7 +459,7 @@ func TestHandleAttributeInput_LastAttribute_MovesToPrice(t *testing.T) {
 
 	// Expect price prompt (may include recommendation text)
 	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
-		return strings.HasPrefix(msg.Text, "Syötä hinta (esim. 50€)")
+		return strings.HasPrefix(msg.Text, "Syötä hinta")
 	})).Return(tgbotapi.Message{}, nil).Once()
 
 	listingHandler.HandleAttributeInput(context.Background(), session, "Hiiri")
