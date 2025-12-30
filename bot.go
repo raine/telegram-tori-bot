@@ -45,16 +45,13 @@ func NewBot(tg BotAPI, sessionStore storage.SessionStore) *Bot {
 	return bot
 }
 
-// SetVisionAnalyzer sets the vision analyzer for image analysis.
-// If the analyzer also implements EditIntentParser, it will be used for natural language editing.
-func (b *Bot) SetVisionAnalyzer(analyzer llm.Analyzer) {
-	b.visionAnalyzer = analyzer
-	var editParser llm.EditIntentParser
-	if ep, ok := analyzer.(llm.EditIntentParser); ok {
-		editParser = ep
-	}
-	b.listingHandler = NewListingHandler(b.tg, analyzer, editParser, b.sessionStore)
-	b.bulkHandler = NewBulkHandler(b.tg, analyzer, b.sessionStore)
+// SetLLMClients sets the LLM clients for vision and text analysis.
+// visionAnalyzer: handles image analysis (can be cached)
+// editParser: handles natural language editing (direct LLM access, not cached)
+func (b *Bot) SetLLMClients(visionAnalyzer llm.Analyzer, editParser llm.EditIntentParser) {
+	b.visionAnalyzer = visionAnalyzer
+	b.listingHandler = NewListingHandler(b.tg, visionAnalyzer, editParser, b.sessionStore)
+	b.bulkHandler = NewBulkHandler(b.tg, visionAnalyzer, b.sessionStore)
 }
 
 // handleUpdate is the main message router.

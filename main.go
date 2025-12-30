@@ -116,7 +116,11 @@ func runBot(ctx context.Context, tg *tgbotapi.BotAPI, sessionStore storage.Sessi
 
 	bot := NewBot(tg, sessionStore)
 	if visionAnalyzer != nil {
-		bot.SetVisionAnalyzer(visionAnalyzer)
+		var editParser llm.EditIntentParser
+		if gemini := llm.GetGeminiAnalyzer(visionAnalyzer); gemini != nil {
+			editParser = gemini
+		}
+		bot.SetLLMClients(visionAnalyzer, editParser)
 	}
 
 	var wg sync.WaitGroup
