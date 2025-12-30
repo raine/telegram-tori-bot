@@ -71,7 +71,7 @@ go install github.com/raine/telegram-tori-bot@latest
 
 3. **Find your Telegram user ID**
    - Message [@userinfobot](https://t.me/userinfobot) on Telegram
-   - It will reply with your user ID
+   - It will reply with your user ID (you'll use this as `ADMIN_TELEGRAM_ID` below)
 
 4. **Configure environment variables**
 
@@ -79,7 +79,7 @@ go install github.com/raine/telegram-tori-bot@latest
    export BOT_TOKEN="your_bot_token"
    export GEMINI_API_KEY="your_gemini_key"
    export TORI_TOKEN_KEY="any_secret_passphrase"
-   export ADMIN_TELEGRAM_ID="123456789"
+   export ADMIN_TELEGRAM_ID="your_user_id"
    ```
 
 5. **Run the bot**
