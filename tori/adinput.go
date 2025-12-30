@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/rs/zerolog/log"
 )
 
 const (
@@ -252,6 +254,19 @@ func (c *AdinputClient) GetCategoryPredictions(ctx context.Context, adID string)
 	if err != nil {
 		return nil, fmt.Errorf("get category predictions: %w", err)
 	}
+
+	// Log all returned category predictions
+	for i, cat := range result.Prediction.Categories {
+		logEvent := log.Debug().
+			Int("index", i).
+			Int("id", cat.ID).
+			Str("label", cat.Label)
+		if cat.Parent != nil {
+			logEvent = logEvent.Int("parentId", cat.Parent.ID).Str("parentLabel", cat.Parent.Label)
+		}
+		logEvent.Msg("category prediction from tori api")
+	}
+
 	return result.Prediction.Categories, nil
 }
 
