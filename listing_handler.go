@@ -1611,14 +1611,16 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 	}
 
 	// Send confirmation message
-	if len(changes) > 0 {
+	if len(changes) == 1 {
+		session.reply("✓ " + changes[0])
+	} else if len(changes) > 1 {
 		confirmMsg := "✓ Muutokset tehty:\n- " + strings.Join(changes, "\n- ")
 		session.reply(confirmMsg)
+	}
 
-		// Show updated summary if listing is ready to publish
-		if session.currentDraft.State == AdFlowStateReadyToPublish {
-			h.showAdSummary(session)
-		}
+	// Show updated summary if listing is ready to publish
+	if len(changes) > 0 && session.currentDraft.State == AdFlowStateReadyToPublish {
+		h.showAdSummary(session)
 	}
 
 	return true
