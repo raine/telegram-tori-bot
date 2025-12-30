@@ -102,6 +102,14 @@ go install github.com/raine/telegram-tori-bot@latest
 - `TORI_DB_PATH`: Path to SQLite database file. Defaults to `sessions.db`.
   optional
 
+## Deployment
+
+Tori's login uses reCAPTCHA validation based on IP reputation. The bot must run
+from an IP address where you have previously logged into Tori via browser or the
+official app. Untrusted IPs will fail with "reCaptcha was invalid" errors during
+login. A Raspberry Pi on your home network is an easy option since you likely
+already use Tori from that IP.
+
 ## User access control
 
 The bot uses a whitelist system. Only the admin (specified by
