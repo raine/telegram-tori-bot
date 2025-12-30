@@ -17,6 +17,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+var version = "dev"
+
 const logFileName = "telegram-tori-bot.log"
 
 func main() {

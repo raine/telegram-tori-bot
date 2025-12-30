@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/raine/telegram-tori-bot/tori/auth"
+	_ "modernc.org/sqlite"
 )
 
 // StoredSession represents a persisted user session.
@@ -81,7 +81,9 @@ type SQLiteStore struct {
 // The dbPath is the path to the SQLite database file.
 // The encryptionKey is used to encrypt/decrypt token data.
 func NewSQLiteStore(dbPath string, encryptionKey []byte) (*SQLiteStore, error) {
-	db, err := sql.Open("sqlite3", dbPath)
+	// Configure SQLite with WAL mode and busy timeout for better concurrency
+	dsn := fmt.Sprintf("%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)", dbPath)
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
