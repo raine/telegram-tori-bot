@@ -7,16 +7,60 @@ Reply Keyboards and Inline Keyboards.
 
 <video src="https://user-images.githubusercontent.com/11027/161634069-6462e726-bfe6-4340-8bec-1ae41a21ae6c.mp4"></video>
 
-## features
+## Features
 
-- Determines the listing category from subject, instead of having to browse
-  through endless list of nested categories
-- Add photos to listing by dragging them to chat at any point
-- Edit listing subject and body by editing the original message
-- Uploads a sent listing as an archive that can be relisted later by replying
-  `/tuojson` on the archive file
+### Vision-based listing creation
 
-## install
+Send a photo and the bot uses Gemini Vision API to automatically generate a
+title and description for your listing. Multiple photos (albums) are analyzed
+together for better context.
+
+### AI-powered automation
+
+- **Auto-category selection**: LLM automatically selects the most appropriate
+  category based on the item
+- **Auto-attribute selection**: Category-specific attributes (size, color,
+  condition, etc.) are automatically filled in
+- **Price recommendations**: Shows prices of similar listings to help you price
+  your item competitively
+
+### Natural language editing
+
+Edit your listing draft by typing in Finnish, e.g., "vaihda hinnaksi 40e" or
+"lisää että koiran taloudesta". The bot understands and applies the changes.
+
+### Bulk listing mode
+
+Create multiple listings at once using `/era`. Send photos (single photos create
+separate drafts, albums create one draft per album), then use `/valmis` to
+review and edit all drafts before publishing.
+
+### Giveaway mode
+
+List items for free by selecting the "Annetaan" button when prompted for price.
+The description is automatically rewritten to use "Annetaan" language.
+
+### Description templates
+
+Save a description template with `/malli` that gets appended to all your
+listings. Supports conditional text for shipping:
+
+```
+/malli Nouto Kannelmäestä{{#if shipping}} tai postitus{{/end}}. Mobilepay/käteinen.
+```
+
+### Other features
+
+- **Built-in login flow**: Login directly through the bot with `/login` (email
+  - verification code)
+- **Postal code management**: Set your postal code once with `/postinumero` and
+  it's remembered for all listings
+- **Category re-selection**: Use `/osasto` to change the category if
+  auto-selection was wrong
+- **Vision analysis caching**: Photo analysis results are cached in SQLite to
+  avoid re-analyzing the same photos
+
+## Install
 
 The Go Toolchain is required.
 
@@ -24,123 +68,88 @@ The Go Toolchain is required.
 go install github.com/raine/telegram-tori-bot@latest
 ```
 
-## usage
+## Usage
 
 1. Create a bot on Telegram by talking to [@botfather](https://t.me/botfather)
    and save the bot token it gives you.
    - https://core.telegram.org/bots#creating-a-new-bot
-2. Get the [user config](#user-config) template:
-   `curl https://github.com/raine/telegram-tori-bot/blob/master/user_config.example.toml > user_config.toml`.
-3. In `user_config.toml`, fill `token` and `toriAccountId` for your user with
-   the JavaScript snippet in [user config](#user-config). You can figure out
-   what your `telegramUserId` is by sending any message to the bot, so proceed
-   to run the bot with incomplete configuration, if you don't have your user id
-   at this point.
-4. Run `telegram-tori-bot` with the env variables set:
+2. Get a Gemini API key from
+   [Google AI Studio](https://aistudio.google.com/apikey)
+3. Run `telegram-tori-bot` with the required environment variables:
 
    ```sh
    BOT_TOKEN=<bot_token_from_step_1> \
-   USER_CONFIG_PATH=./user_config.toml \
+   GEMINI_API_KEY=<your_gemini_api_key> \
+   TORI_TOKEN_KEY=<any_secret_passphrase> \
+   ADMIN_TELEGRAM_ID=<your_telegram_user_id> \
       telegram-tori-bot
    ```
 
-5. Search for your bot in telegram with the username you gave to it.
-6. `/start` a conversation with the bot and tell what you're selling.
+4. Search for your bot in Telegram with the username you gave to it.
+5. `/start` a conversation with the bot, then use `/login` to authenticate with
+   your Tori account.
+6. Send a photo of the item you want to sell.
 
-## env vars
+## Environment variables
 
 - `BOT_TOKEN`: Telegram bot's token. You get this from @botfather. **required**
-- `USER_CONFIG_PATH`: Path to user config. See `user_config.toml.example` for an
-  example. If your telegram user id is not found in the user config, the bot
-  will disregard your message. **required**
+- `GEMINI_API_KEY`: Google Gemini API key for vision analysis and LLM features.
+  **required**
+- `TORI_TOKEN_KEY`: Secret passphrase used to encrypt stored Tori authentication
+  tokens. Can be any string. **required**
+- `ADMIN_TELEGRAM_ID`: Your Telegram user ID. The admin can add/remove users
+  allowed to use the bot. **required**
+- `TORI_DB_PATH`: Path to SQLite database file. Defaults to `sessions.db`.
+  optional
 
-## user config
+## User access control
 
-The program expects a TOML config file that contains telegram user to tori user
--pairs. The format is as follow:
+The bot uses a whitelist system. Only the admin (specified by
+`ADMIN_TELEGRAM_ID`) and explicitly allowed users can interact with the bot.
+Unauthorized users receive no response.
 
-```toml
-[[users]]
-telegramUserId = 123
-token = 'abc'
-toriAccountId = '123123'
+### Admin commands
 
-[[users]]
-telegramUserId = 124
-# etc...
-```
+The admin can manage allowed users with these commands (not shown in bot menu):
 
-No login mechanism with tori.fi (or whatever schibsted it is thesedays)
-credentials is implemented as of yet.
+- `/admin users add <user_id>` - Add a user to the whitelist
+- `/admin users remove <user_id>` - Remove a user from the whitelist
+- `/admin users list` - List all allowed users
 
-Here's a JavaScript snippet to get the access token and tori account id for
-`user_config.toml`. Run it in browser developer tools on tori.fi with active
-session. It will work as long as the cookie is readable in JS.
+## Commands
 
-```js
-const { access_token, token_type, account_id } = JSON.parse(
-  atob(
-    Object.fromEntries(
-      document.cookie.split('; ').map((v) => v.split(/=(.*)/s))
-    )['sessioninfo']
-  )
-)
-console.log(
-  `token = '${token_type} ${access_token}'\ntoriAccountId = '${
-    account_id.split('/')[3]
-  }'`
-)
-```
+| Command        | Description                         |
+| -------------- | ----------------------------------- |
+| `/login`       | Login to your Tori account          |
+| `/peru`        | Cancel current listing creation     |
+| `/laheta`      | Publish the listing                 |
+| `/era`         | Enter bulk mode (multiple listings) |
+| `/valmis`      | Finish adding photos in bulk mode   |
+| `/poistakuvat` | Remove listing photos               |
+| `/osasto`      | Change category                     |
+| `/malli`       | View or set description template    |
+| `/poistamalli` | Remove description template         |
+| `/postinumero` | View or change postal code          |
 
-## faq
+## FAQ
 
-### how to create "annetaan" type listings?
-
-Start the message with the listing subject with the word "annetaan". For
-example: "Annetaan Kylpyhuoneen matto".
-
-### how do i start over when making some kind of mistake that cannot be reversed?
+### How do I start over when making some kind of mistake that cannot be reversed?
 
 Use the command `/peru`. It will forget everything from the current listing
-creation. Note that subject and description can be edited by editing the
-original message.
+creation and delete any draft created on Tori.
 
-### which of the uploaded photos will be used as primary picture in listing?
+### Which of the uploaded photos will be used as primary picture in listing?
 
 The first uploaded picture. When uploading multiple photos in Telegram client,
 photos can be reorded both on desktop and mobile. Or you can just upload them
 separately -- that way works also.
 
-### bot is failing to guess the correct category based on listing subject, what do?
-
-The bot comes up with a subject for your listing based on the subject you enter.
-This works by searching tori.fi for existing listings with parts of the entered
-subject. If none can be found, there is currently no fallback to select the
-category manually. What you can do, however, is enter a noun as the last word in
-the subject. The bot will always search the last word of the subject
-independently if all else fails.
-
-For example,
-
-**Good**: Lake CX 176 maantiekengät
-
-Searching for "maantiekengät" is almost guaranteed to provide a result that we
-can get the correct category from.
-
-**Bad**: Lake CX 176
-
-If no one is currently selling Lake CX 176 road cycling shoes, we can't get a
-category.
-
-Another strategy is entering something that is guaranteed to be found, and then
-replacing the whole subject by editing the message.
-
-### does it add a phone number to listing?
+### Does it add a phone number to listing?
 
 No. Adding phone number to listing is an invitation for annoying Whatsapp scam
 messages.
 
-## development
+## Development
 
 The project uses [`just`](https://github.com/casey/just) as a command runner (or
 make alternative).
