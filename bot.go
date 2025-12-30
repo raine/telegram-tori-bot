@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -25,6 +26,7 @@ type Bot struct {
 	state          BotState
 	sessionStore   storage.SessionStore
 	visionAnalyzer llm.Analyzer
+	adminID        int64
 
 	// Handlers
 	authHandler    *AuthHandler
@@ -33,10 +35,11 @@ type Bot struct {
 }
 
 // NewBot creates a new Bot instance.
-func NewBot(tg BotAPI, sessionStore storage.SessionStore) *Bot {
+func NewBot(tg BotAPI, sessionStore storage.SessionStore, adminID int64) *Bot {
 	bot := &Bot{
 		tg:           tg,
 		sessionStore: sessionStore,
+		adminID:      adminID,
 	}
 
 	bot.state = bot.NewBotState()
@@ -78,6 +81,19 @@ func (b *Bot) dispatchUpdate(ctx context.Context, update tgbotapi.Update, sync b
 		userId = update.Message.From.ID
 	} else {
 		return
+	}
+
+	// Check if user is allowed (admin always allowed)
+	// MUST be before getUserSession to prevent memory exhaustion from random user IDs
+	if userId != b.adminID {
+		allowed, err := b.sessionStore.IsUserAllowed(userId)
+		if err != nil {
+			log.Error().Err(err).Int64("user_id", userId).Msg("whitelist check failed")
+			return // Fail closed
+		}
+		if !allowed {
+			return // Silent drop
+		}
 	}
 
 	session, err := b.state.getUserSession(userId)
@@ -267,6 +283,8 @@ func (b *Bot) handleCommand(ctx context.Context, session *UserSession, message *
 		b.handleDeleteTemplate(session)
 	case "/postinumero":
 		b.handlePostalCodeCommand(session)
+	case "/admin":
+		b.handleAdminCommand(session, argsStr)
 	default:
 		if !session.isLoggedIn() {
 			session.reply(loginRequiredText)
@@ -400,6 +418,89 @@ func (b *Bot) handlePostalCodeInput(session *UserSession, text string) bool {
 	session.awaitingPostalCodeInput = false
 	session.reply(postalCodeUpdatedText, postalCode)
 	return true
+}
+
+// handleAdminCommand handles /admin command with subcommands.
+// Only the admin user can use this command (defense in depth check).
+func (b *Bot) handleAdminCommand(session *UserSession, args string) {
+	// Defense in depth: verify caller is admin even though whitelist check passed
+	if session.userId != b.adminID {
+		return // Silent drop for non-admin users
+	}
+
+	parts := strings.Fields(args)
+	if len(parts) == 0 {
+		session.reply(adminUsageText)
+		return
+	}
+
+	switch parts[0] {
+	case "users":
+		if len(parts) < 2 {
+			session.reply(adminUsageText)
+			return
+		}
+		b.handleAdminUsersCommand(session, parts[1], parts[2:])
+	default:
+		session.reply(adminUsageText)
+	}
+}
+
+// handleAdminUsersCommand handles /admin users subcommands.
+func (b *Bot) handleAdminUsersCommand(session *UserSession, action string, args []string) {
+	switch action {
+	case "add":
+		if len(args) < 1 {
+			session.reply(adminUserAddUsageText)
+			return
+		}
+		userID, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			session.reply(adminUserInvalidIDText)
+			return
+		}
+		if err := b.sessionStore.AddAllowedUser(userID, session.userId); err != nil {
+			session.replyWithError(err)
+			return
+		}
+		session.reply(adminUserAddedText, userID)
+
+	case "remove":
+		if len(args) < 1 {
+			session.reply(adminUserRemoveUsageText)
+			return
+		}
+		userID, err := strconv.ParseInt(args[0], 10, 64)
+		if err != nil {
+			session.reply(adminUserInvalidIDText)
+			return
+		}
+		if err := b.sessionStore.RemoveAllowedUser(userID); err != nil {
+			session.replyWithError(err)
+			return
+		}
+		session.reply(adminUserRemovedText, userID)
+
+	case "list":
+		users, err := b.sessionStore.GetAllowedUsers()
+		if err != nil {
+			session.replyWithError(err)
+			return
+		}
+		if len(users) == 0 {
+			session.reply(adminNoUsersText)
+			return
+		}
+		var sb strings.Builder
+		sb.WriteString("*Sallitut käyttäjät:*\n")
+		for _, u := range users {
+			sb.WriteString(fmt.Sprintf("• `%d` (lisätty %s)\n", u.TelegramID, u.AddedAt.Format("2006-01-02")))
+		}
+		session.reply(sb.String())
+
+	default:
+		session.reply(adminUsageText)
+	}
 }
 
 // handleOsastoCommand handles /osasto command - re-select category or attributes

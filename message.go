@@ -36,6 +36,15 @@ const (
 	postalCodeCurrentText       = "Nykyinen postinumerosi on *%s*.\n\nSyötä uusi postinumero tai peru komennolla /peru"
 	postalCodeNotSetText        = "Postinumeroa ei ole asetettu.\n\nSyötä postinumero (esim. 00100):"
 	postalCodeCommandCancelText = "Ok, postinumero ei muutettu."
+
+	// Admin command messages
+	adminUsageText           = "Käyttö:\n`/admin users add <user_id>`\n`/admin users remove <user_id>`\n`/admin users list`"
+	adminUserAddUsageText    = "Käyttö: `/admin users add <user_id>`"
+	adminUserRemoveUsageText = "Käyttö: `/admin users remove <user_id>`"
+	adminUserInvalidIDText   = "Virheellinen käyttäjä-ID. Anna numero."
+	adminUserAddedText       = "✅ Käyttäjä `%d` lisätty."
+	adminUserRemovedText     = "🗑 Käyttäjä `%d` poistettu."
+	adminNoUsersText         = "Ei sallittuja käyttäjiä."
 )
 
 func formatReplyText(text string, a ...any) string {

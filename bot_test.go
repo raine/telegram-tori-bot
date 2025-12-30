@@ -86,6 +86,24 @@ func (m *mockSessionStore) SetVisionCache(imageHash string, entry *storage.Visio
 	return nil
 }
 
+func (m *mockSessionStore) IsUserAllowed(telegramID int64) (bool, error) {
+	return true, nil // All users allowed in tests by default
+}
+
+func (m *mockSessionStore) AddAllowedUser(telegramID, addedBy int64) error {
+	return nil
+}
+
+func (m *mockSessionStore) RemoveAllowedUser(telegramID int64) error {
+	return nil
+}
+
+func (m *mockSessionStore) GetAllowedUsers() ([]storage.AllowedUser, error) {
+	return nil, nil
+}
+
+const testAdminID int64 = 1 // Default admin ID for tests
+
 func setup(t *testing.T) (int64, *botApiMock, *Bot, *UserSession) {
 	userId := int64(1)
 	tg := new(botApiMock)
@@ -100,7 +118,7 @@ func setup(t *testing.T) (int64, *botApiMock, *Bot, *UserSession) {
 		},
 	}
 
-	bot := NewBot(tg, store)
+	bot := NewBot(tg, store, testAdminID)
 	session, err := bot.state.getUserSession(userId)
 	if err != nil {
 		t.Fatal(err)
@@ -176,7 +194,7 @@ func TestHandleUpdate_UnauthenticatedUser(t *testing.T) {
 	userId := int64(99999) // Not in session store
 	tg := new(botApiMock)
 	store := newMockSessionStore() // Empty store - no authenticated users
-	bot := NewBot(tg, store)
+	bot := NewBot(tg, store, testAdminID)
 
 	update := tgbotapi.Update{
 		Message: &tgbotapi.Message{
@@ -287,7 +305,7 @@ func setupAdInputSession(t *testing.T, ts *httptest.Server) (*httptest.Server, i
 		},
 	}
 
-	bot := NewBot(tg, store)
+	bot := NewBot(tg, store, testAdminID)
 	session, err := bot.state.getUserSession(userId)
 	if err != nil {
 		t.Fatal(err)

@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 
@@ -45,6 +46,16 @@ func main() {
 	tokenKey, ok := os.LookupEnv("TORI_TOKEN_KEY")
 	if !ok {
 		log.Fatal().Msg("TORI_TOKEN_KEY is not set")
+	}
+
+	// Admin Telegram ID (required)
+	adminIDStr, ok := os.LookupEnv("ADMIN_TELEGRAM_ID")
+	if !ok {
+		log.Fatal().Msg("ADMIN_TELEGRAM_ID is not set")
+	}
+	adminID, err := strconv.ParseInt(adminIDStr, 10, 64)
+	if err != nil {
+		log.Fatal().Err(err).Msg("ADMIN_TELEGRAM_ID must be a valid integer")
 	}
 
 	// Database path (optional, defaults to sessions.db)
@@ -99,7 +110,7 @@ func main() {
 
 	// Run bot update loop
 	g.Go(func() error {
-		return runBot(ctx, tg, sessionStore, visionAnalyzer)
+		return runBot(ctx, tg, sessionStore, visionAnalyzer, adminID)
 	})
 
 	if err := g.Wait(); err != nil && err != context.Canceled {
@@ -109,12 +120,12 @@ func main() {
 	}
 }
 
-func runBot(ctx context.Context, tg *tgbotapi.BotAPI, sessionStore storage.SessionStore, visionAnalyzer llm.Analyzer) error {
+func runBot(ctx context.Context, tg *tgbotapi.BotAPI, sessionStore storage.SessionStore, visionAnalyzer llm.Analyzer, adminID int64) error {
 	updateConfig := tgbotapi.NewUpdate(0)
 	updateConfig.Timeout = 60
 	updates := tg.GetUpdatesChan(updateConfig)
 
-	bot := NewBot(tg, sessionStore)
+	bot := NewBot(tg, sessionStore, adminID)
 	if visionAnalyzer != nil {
 		var editParser llm.EditIntentParser
 		if gemini := llm.GetGeminiAnalyzer(visionAnalyzer); gemini != nil {

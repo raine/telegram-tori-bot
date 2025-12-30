@@ -35,6 +35,13 @@ type VisionCacheEntry struct {
 	Model       string
 }
 
+// AllowedUser represents a user in the whitelist.
+type AllowedUser struct {
+	TelegramID int64
+	AddedAt    time.Time
+	AddedBy    int64
+}
+
 // SessionStore defines the interface for session persistence.
 type SessionStore interface {
 	Get(telegramID int64) (*StoredSession, error)
@@ -55,6 +62,12 @@ type SessionStore interface {
 	// Vision cache methods
 	GetVisionCache(imageHash string) (*VisionCacheEntry, error)
 	SetVisionCache(imageHash string, entry *VisionCacheEntry) error
+
+	// Allowed users methods
+	IsUserAllowed(telegramID int64) (bool, error)
+	AddAllowedUser(telegramID, addedBy int64) error
+	RemoveAllowedUser(telegramID int64) error
+	GetAllowedUsers() ([]AllowedUser, error)
 }
 
 // SQLiteStore implements SessionStore using SQLite with encrypted tokens.
@@ -142,6 +155,18 @@ func (s *SQLiteStore) init() error {
 	_, err = s.db.Exec(visionCacheQuery)
 	if err != nil {
 		return fmt.Errorf("failed to create vision_cache table: %w", err)
+	}
+
+	allowedUsersQuery := `
+	CREATE TABLE IF NOT EXISTS allowed_users (
+		telegram_id INTEGER PRIMARY KEY,
+		added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		added_by INTEGER
+	);
+	`
+	_, err = s.db.Exec(allowedUsersQuery)
+	if err != nil {
+		return fmt.Errorf("failed to create allowed_users table: %w", err)
 	}
 
 	return nil
@@ -418,4 +443,76 @@ func (s *SQLiteStore) SetVisionCache(imageHash string, entry *VisionCacheEntry) 
 		return fmt.Errorf("failed to cache vision result: %w", err)
 	}
 	return nil
+}
+
+// IsUserAllowed checks if a user is in the whitelist.
+func (s *SQLiteStore) IsUserAllowed(telegramID int64) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var count int
+	err := s.db.QueryRow(
+		"SELECT COUNT(*) FROM allowed_users WHERE telegram_id = ?",
+		telegramID,
+	).Scan(&count)
+
+	if err != nil {
+		return false, fmt.Errorf("failed to check allowed user: %w", err)
+	}
+
+	return count > 0, nil
+}
+
+// AddAllowedUser adds a user to the whitelist.
+func (s *SQLiteStore) AddAllowedUser(telegramID, addedBy int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, err := s.db.Exec(`
+		INSERT INTO allowed_users (telegram_id, added_by)
+		VALUES (?, ?)
+		ON CONFLICT(telegram_id) DO UPDATE SET
+			added_by = excluded.added_by,
+			added_at = CURRENT_TIMESTAMP
+	`, telegramID, addedBy)
+
+	if err != nil {
+		return fmt.Errorf("failed to add allowed user: %w", err)
+	}
+	return nil
+}
+
+// RemoveAllowedUser removes a user from the whitelist.
+func (s *SQLiteStore) RemoveAllowedUser(telegramID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, err := s.db.Exec("DELETE FROM allowed_users WHERE telegram_id = ?", telegramID)
+	if err != nil {
+		return fmt.Errorf("failed to remove allowed user: %w", err)
+	}
+	return nil
+}
+
+// GetAllowedUsers returns all users in the whitelist.
+func (s *SQLiteStore) GetAllowedUsers() ([]AllowedUser, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	rows, err := s.db.Query("SELECT telegram_id, added_at, added_by FROM allowed_users ORDER BY added_at")
+	if err != nil {
+		return nil, fmt.Errorf("failed to query allowed users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []AllowedUser
+	for rows.Next() {
+		var user AllowedUser
+		if err := rows.Scan(&user.TelegramID, &user.AddedAt, &user.AddedBy); err != nil {
+			return nil, fmt.Errorf("failed to scan allowed user: %w", err)
+		}
+		users = append(users, user)
+	}
+
+	return users, rows.Err()
 }
