@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"time"
@@ -21,7 +22,35 @@ import (
 	"golang.org/x/term"
 )
 
-const envFileName = ".env"
+const (
+	appName     = "telegram-tori-bot"
+	envFileName = "config.env"
+)
+
+// getConfigDir returns the application's config directory path.
+// Creates the directory if it doesn't exist.
+func getConfigDir() (string, error) {
+	configBase, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get user config directory: %w", err)
+	}
+
+	configDir := filepath.Join(configBase, appName)
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		return "", fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	return configDir, nil
+}
+
+// getConfigFilePath returns the full path to the config file.
+func getConfigFilePath() (string, error) {
+	configDir, err := getConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(configDir, envFileName), nil
+}
 
 // requiredEnvVars lists all environment variables that must be set for the bot to run.
 var requiredEnvVars = []string{"BOT_TOKEN", "GEMINI_API_KEY", "TORI_TOKEN_KEY", "ADMIN_TELEGRAM_ID"}
@@ -38,10 +67,14 @@ func checkRequiredConfig() []string {
 	return missing
 }
 
-// loadEnvFile attempts to load environment variables from .env file.
+// loadEnvFile attempts to load environment variables from the config file.
 // Errors are ignored since the file may not exist.
 func loadEnvFile() {
-	_ = godotenv.Load()
+	configPath, err := getConfigFilePath()
+	if err != nil {
+		return
+	}
+	_ = godotenv.Load(configPath)
 }
 
 // isInteractiveTerminal returns true if both stdin and stdout are TTYs.
@@ -128,7 +161,8 @@ func runSetupWizard() bool {
 		"TORI_TOKEN_KEY":    tokenKey,
 	}
 
-	if err := writeEnvFile(config); err != nil {
+	configPath, err := writeEnvFile(config)
+	if err != nil {
 		fmt.Printf("\nError saving configuration: %v\n", err)
 		waitOnWindows()
 		return false
@@ -143,8 +177,12 @@ func runSetupWizard() bool {
 		Foreground(lipgloss.Color("42")).
 		Bold(true)
 
+	pathStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("245"))
+
 	fmt.Println()
-	fmt.Println(successStyle.Render("✓ Configuration saved to .env"))
+	fmt.Println(successStyle.Render("✓ Configuration saved"))
+	fmt.Println(pathStyle.Render("  " + configPath))
 	fmt.Println()
 	fmt.Println("Starting bot...")
 	fmt.Println()
@@ -240,12 +278,18 @@ func validateGeminiKey(key string) error {
 	return nil
 }
 
-// writeEnvFile writes the configuration to a .env file.
+// writeEnvFile writes the configuration to the config file.
 // Uses restrictive permissions (0600) since the file contains secrets.
-func writeEnvFile(config map[string]string) error {
-	f, err := os.OpenFile(envFileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+// Returns the path where the config was written.
+func writeEnvFile(config map[string]string) (string, error) {
+	configPath, err := getConfigFilePath()
 	if err != nil {
-		return fmt.Errorf("failed to create .env file: %w", err)
+		return "", err
+	}
+
+	f, err := os.OpenFile(configPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		return "", fmt.Errorf("failed to create config file: %w", err)
 	}
 	defer f.Close()
 
@@ -254,12 +298,12 @@ func writeEnvFile(config map[string]string) error {
 	for _, key := range order {
 		if val, ok := config[key]; ok {
 			if _, err := fmt.Fprintf(f, "%s=%q\n", key, val); err != nil {
-				return fmt.Errorf("failed to write %s: %w", key, err)
+				return "", fmt.Errorf("failed to write %s: %w", key, err)
 			}
 		}
 	}
 
-	return nil
+	return configPath, nil
 }
 
 // waitOnWindows pauses execution on Windows so users can see error messages
