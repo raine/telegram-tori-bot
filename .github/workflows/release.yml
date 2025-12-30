@@ -2,8 +2,8 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -42,7 +42,7 @@ jobs:
           if [ "${{ matrix.goos }}" = "windows" ]; then
             BINARY_NAME="${BINARY_NAME}.exe"
           fi
-          go build -tags timetzdata -ldflags "-s -w -X main.version=${{ github.ref_name }}" -o "${BINARY_NAME}" .
+          go build -tags timetzdata -ldflags "-s -w -X main.version=${{ github.sha }}" -o "${BINARY_NAME}" .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -60,8 +60,19 @@ jobs:
           path: binaries
           merge-multiple: true
 
+      - name: Delete existing latest release
+        run: gh release delete latest --yes --cleanup-tag || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout for release
+        uses: actions/checkout@v4
+
       - name: Create Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: binaries/*
-          generate_release_notes: true
+        run: |
+          gh release create latest binaries/* \
+            --title "Latest Build" \
+            --notes "Built from commit ${{ github.sha }}" \
+            --latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
