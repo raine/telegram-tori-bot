@@ -93,7 +93,7 @@ func runSetupWizard() bool {
 		huh.NewGroup(
 			huh.NewInput().
 				Title("Your Telegram User ID").
-				Description("Message @userinfobot on Telegram to get your ID").
+				Description("Message @userinfobot to get your ID: https://t.me/userinfobot").
 				Value(&adminID).
 				Validate(func(s string) error {
 					if s == "" {
