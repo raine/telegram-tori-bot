@@ -320,12 +320,16 @@ func (g *GeminiAnalyzer) SelectAttributes(ctx context.Context, title, descriptio
 	var attrBuilder strings.Builder
 	for _, attr := range attrs {
 		attrBuilder.WriteString(fmt.Sprintf("\nAttribute: %s (name: %s)\nOptions:\n", attr.Label, attr.Name))
+		var optLabels []string
 		for _, opt := range attr.Options {
 			attrBuilder.WriteString(fmt.Sprintf("- %d: %s\n", opt.ID, opt.Label))
+			optLabels = append(optLabels, fmt.Sprintf("%d:%s", opt.ID, opt.Label))
 		}
+		log.Debug().Str("attribute", attr.Label).Str("name", attr.Name).Strs("options", optLabels).Msg("attribute options for llm selection")
 	}
 
 	prompt := fmt.Sprintf(attributeSelectionPrompt, title, description, attrBuilder.String())
+	log.Debug().Str("prompt", prompt).Msg("attribute selection llm input")
 
 	result, err := g.client.Models.GenerateContent(ctx, geminiLiteModel, []*genai.Content{
 		genai.NewContentFromParts([]*genai.Part{genai.NewPartFromText(prompt)}, genai.RoleUser),
@@ -339,6 +343,7 @@ func (g *GeminiAnalyzer) SelectAttributes(ctx context.Context, title, descriptio
 	}
 
 	text := result.Text()
+	log.Debug().Str("response", text).Msg("attribute selection llm output")
 
 	// Extract JSON object from response
 	text = strings.TrimSpace(text)
@@ -360,6 +365,9 @@ func (g *GeminiAnalyzer) SelectAttributes(ctx context.Context, title, descriptio
 	for k, v := range selections {
 		if v != nil {
 			finalMap[k] = *v
+			log.Debug().Str("attribute", k).Int("selectedOptionId", *v).Msg("attribute auto-selected by llm")
+		} else {
+			log.Debug().Str("attribute", k).Msg("attribute returned null by llm, will prompt user")
 		}
 	}
 
