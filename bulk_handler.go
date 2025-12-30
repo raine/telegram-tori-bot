@@ -412,6 +412,11 @@ func (h *BulkHandler) estimatePriceForDraft(ctx context.Context, draft *BulkDraf
 		return
 	}
 
+	log.Debug().
+		Str("query", draft.Title).
+		Str("draftID", draft.ID).
+		Msg("searching for similar prices")
+
 	results, err := h.searchClient.Search(ctx, tori.SearchKeyBapCommon, tori.SearchParams{
 		Query: draft.Title,
 		Rows:  20,
@@ -421,6 +426,15 @@ func (h *BulkHandler) estimatePriceForDraft(ctx context.Context, draft *BulkDraf
 		log.Warn().Err(err).Str("draftID", draft.ID).Msg("price search failed")
 		return
 	}
+
+	resultCount := 0
+	if results != nil {
+		resultCount = len(results.Docs)
+	}
+	log.Debug().
+		Int("count", resultCount).
+		Str("draftID", draft.ID).
+		Msg("price search returned results")
 
 	// Collect prices
 	var prices []int
@@ -432,7 +446,16 @@ func (h *BulkHandler) estimatePriceForDraft(ctx context.Context, draft *BulkDraf
 		}
 	}
 
+	log.Debug().
+		Ints("prices", prices).
+		Str("draftID", draft.ID).
+		Msg("found prices from search")
+
 	if len(prices) < 3 {
+		log.Debug().
+			Int("priceCount", len(prices)).
+			Str("draftID", draft.ID).
+			Msg("insufficient prices for estimation (need at least 3)")
 		return
 	}
 
@@ -459,6 +482,8 @@ func (h *BulkHandler) estimatePriceForDraft(ctx context.Context, draft *BulkDraf
 		Str("title", draft.Title).
 		Int("price", medianPrice).
 		Int("sampleCount", len(prices)).
+		Int("min", minPrice).
+		Int("max", maxPrice).
 		Msg("auto-estimated price for bulk draft")
 }
 
@@ -841,11 +866,29 @@ func (h *BulkHandler) handleEditCallback(ctx context.Context, session *UserSessi
 func (h *BulkHandler) promptForBulkPrice(ctx context.Context, session *UserSession, draft *BulkDraft, draftID string) {
 	title := draft.Title
 
+	log.Debug().
+		Str("query", title).
+		Str("draftID", draftID).
+		Msg("searching for price recommendation")
+
 	// Search for similar items
 	results, err := h.searchClient.Search(ctx, tori.SearchKeyBapCommon, tori.SearchParams{
 		Query: title,
 		Rows:  20,
 	})
+
+	if err != nil {
+		log.Warn().Err(err).Str("draftID", draftID).Msg("bulk price search failed")
+	}
+
+	resultCount := 0
+	if results != nil {
+		resultCount = len(results.Docs)
+	}
+	log.Debug().
+		Int("count", resultCount).
+		Str("draftID", draftID).
+		Msg("price search returned results")
 
 	// Collect prices from results
 	var prices []int
@@ -855,9 +898,12 @@ func (h *BulkHandler) promptForBulkPrice(ctx context.Context, session *UserSessi
 				prices = append(prices, doc.Price.Amount)
 			}
 		}
-	} else if err != nil {
-		log.Warn().Err(err).Msg("bulk price search failed")
 	}
+
+	log.Debug().
+		Ints("prices", prices).
+		Str("draftID", draftID).
+		Msg("found prices from search")
 
 	// Calculate recommendation
 	var recommendationMsg string
@@ -879,12 +925,18 @@ func (h *BulkHandler) promptForBulkPrice(ctx context.Context, session *UserSessi
 			len(prices), medianPrice, minPrice, maxPrice)
 
 		log.Info().
+			Str("draftID", draftID).
 			Str("title", title).
 			Int("median", medianPrice).
 			Int("min", minPrice).
 			Int("max", maxPrice).
 			Int("count", len(prices)).
 			Msg("bulk price recommendation")
+	} else {
+		log.Debug().
+			Int("priceCount", len(prices)).
+			Str("draftID", draftID).
+			Msg("insufficient prices for recommendation (need at least 3)")
 	}
 
 	// Check if session is still in edit mode (user may have cancelled during search)
