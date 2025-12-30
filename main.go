@@ -24,6 +24,18 @@ const logFileName = "telegram-tori-bot.log"
 func main() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 
+	// Try to load existing .env file
+	loadEnvFile()
+
+	// Check if required config is missing
+	if missing := checkRequiredConfig(); len(missing) > 0 {
+		// Run interactive setup wizard
+		if !runSetupWizard() {
+			waitOnWindows()
+			os.Exit(1)
+		}
+	}
+
 	// JOURNAL_STREAM is set by systemd when running as a service.
 	// Skip file logging under systemd (journald handles it, and ProtectSystem=strict
 	// makes the working directory read-only).
@@ -33,7 +45,7 @@ func main() {
 		// Local development: log to both stderr and file
 		logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
-			log.Fatal().Err(err).Msg("failed to open log file")
+			fatalWithWait("failed to open log file: %v", err)
 		}
 		defer logFile.Close()
 
@@ -45,25 +57,25 @@ func main() {
 		log.Info().Str("logFile", logFileName).Msg("logging to file")
 	}
 
-	botToken, ok := os.LookupEnv("BOT_TOKEN")
-	if !ok {
-		log.Fatal().Msg("BOT_TOKEN is not set")
+	botToken := os.Getenv("BOT_TOKEN")
+	if botToken == "" {
+		fatalWithWait("BOT_TOKEN is not set")
 	}
 
 	// Token encryption key (required)
-	tokenKey, ok := os.LookupEnv("TORI_TOKEN_KEY")
-	if !ok {
-		log.Fatal().Msg("TORI_TOKEN_KEY is not set")
+	tokenKey := os.Getenv("TORI_TOKEN_KEY")
+	if tokenKey == "" {
+		fatalWithWait("TORI_TOKEN_KEY is not set")
 	}
 
 	// Admin Telegram ID (required)
-	adminIDStr, ok := os.LookupEnv("ADMIN_TELEGRAM_ID")
-	if !ok {
-		log.Fatal().Msg("ADMIN_TELEGRAM_ID is not set")
+	adminIDStr := os.Getenv("ADMIN_TELEGRAM_ID")
+	if adminIDStr == "" {
+		fatalWithWait("ADMIN_TELEGRAM_ID is not set")
 	}
 	adminID, err := strconv.ParseInt(adminIDStr, 10, 64)
 	if err != nil {
-		log.Fatal().Err(err).Msg("ADMIN_TELEGRAM_ID must be a valid integer")
+		fatalWithWait("ADMIN_TELEGRAM_ID must be a valid integer: %v", err)
 	}
 
 	// Database path (optional, defaults to sessions.db)
@@ -74,7 +86,7 @@ func main() {
 
 	tg, err := tgbotapi.NewBotAPI(botToken)
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to initialize telegram bot; bad token?")
+		fatalWithWait("failed to initialize telegram bot: %v", err)
 	}
 	tg.Debug = false
 	log.Info().Str("username", tg.Self.UserName).Msg("authorized on account")
@@ -85,13 +97,13 @@ func main() {
 	// Derive encryption key from passphrase
 	encryptionKey, err := storage.DeriveKey(tokenKey)
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to derive encryption key")
+		fatalWithWait("failed to derive encryption key: %v", err)
 	}
 
 	// Initialize session store
 	sessionStore, err := storage.NewSQLiteStore(dbPath, encryptionKey)
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to initialize session store")
+		fatalWithWait("failed to initialize session store: %v", err)
 	}
 	defer sessionStore.Close()
 	log.Info().Str("dbPath", dbPath).Msg("session store initialized")
@@ -102,11 +114,11 @@ func main() {
 
 	// Initialize vision analyzer (GEMINI_API_KEY is required)
 	if os.Getenv("GEMINI_API_KEY") == "" {
-		log.Fatal().Msg("GEMINI_API_KEY environment variable is required")
+		fatalWithWait("GEMINI_API_KEY environment variable is required")
 	}
 	geminiAnalyzer, err := llm.NewGeminiAnalyzer(ctx)
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to initialize gemini vision analyzer")
+		fatalWithWait("failed to initialize gemini vision analyzer: %v", err)
 	}
 	log.Info().Msg("gemini vision analyzer initialized")
 
