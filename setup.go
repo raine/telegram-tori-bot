@@ -1,21 +1,21 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"runtime"
 	"strconv"
-	"strings"
 	"time"
 
+	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/joho/godotenv"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/term"
@@ -53,30 +53,67 @@ func isInteractiveTerminal() bool {
 // runSetupWizard runs an interactive wizard to collect required configuration.
 // Returns true if setup was successful and the bot should continue starting.
 func runSetupWizard() bool {
+	// Header style
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("99")).
+		MarginBottom(1)
+
 	fmt.Println()
-	fmt.Println("Telegram Tori Bot - First-time Setup")
-	fmt.Println("=====================================")
-	fmt.Println()
-	fmt.Println("Configuration file not found. Let's set up your bot!")
+	fmt.Println(titleStyle.Render("🤖 Telegram Tori Bot - First-time Setup"))
 	fmt.Println()
 
-	reader := bufio.NewReader(os.Stdin)
+	var botToken, geminiKey, adminID string
 
-	// Step 1: Telegram Bot Token
-	botToken := promptBotToken(reader)
-	if botToken == "" {
-		return false
-	}
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Telegram Bot Token").
+				Description("Message @BotFather on Telegram → /newbot → copy token").
+				Value(&botToken).
+				Validate(func(s string) error {
+					if s == "" {
+						return errors.New("token is required")
+					}
+					return validateTelegramToken(s)
+				}),
+		),
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Gemini API Key").
+				Description("Get yours at https://aistudio.google.com/apikey").
+				Value(&geminiKey).
+				Validate(func(s string) error {
+					if s == "" {
+						return errors.New("API key is required")
+					}
+					return validateGeminiKey(s)
+				}),
+		),
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Your Telegram User ID").
+				Description("Message @userinfobot on Telegram to get your ID").
+				Value(&adminID).
+				Validate(func(s string) error {
+					if s == "" {
+						return errors.New("user ID is required")
+					}
+					if _, err := strconv.ParseInt(s, 10, 64); err != nil {
+						return errors.New("must be a number")
+					}
+					return nil
+				}),
+		),
+	)
 
-	// Step 2: Gemini API Key
-	geminiKey := promptGeminiKey(reader)
-	if geminiKey == "" {
-		return false
-	}
-
-	// Step 3: Admin Telegram ID
-	adminID := promptAdminID(reader)
-	if adminID == "" {
+	err := form.Run()
+	if err != nil {
+		if errors.Is(err, huh.ErrUserAborted) {
+			fmt.Println("\nSetup cancelled.")
+			return false
+		}
+		fmt.Printf("\nError: %v\n", err)
 		return false
 	}
 
@@ -102,127 +139,17 @@ func runSetupWizard() bool {
 		os.Setenv(k, v)
 	}
 
+	successStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("42")).
+		Bold(true)
+
 	fmt.Println()
-	fmt.Println("Configuration saved to .env")
+	fmt.Println(successStyle.Render("✓ Configuration saved to .env"))
+	fmt.Println()
 	fmt.Println("Starting bot...")
 	fmt.Println()
 
 	return true
-}
-
-func promptBotToken(reader *bufio.Reader) string {
-	fmt.Println("Step 1: Telegram Bot Token")
-	fmt.Println("--------------------------")
-	fmt.Println("1. Open Telegram and message @BotFather")
-	fmt.Println("2. Send /newbot and follow the prompts")
-	fmt.Println("3. Copy the token you receive")
-	fmt.Println()
-
-	for {
-		fmt.Print("Enter your bot token: ")
-		token, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				fmt.Println("\nSetup cancelled.")
-				return ""
-			}
-			fmt.Printf("Error reading input: %v\n", err)
-			continue
-		}
-		token = strings.TrimSpace(token)
-
-		if token == "" {
-			fmt.Println("Token cannot be empty. Please try again.")
-			continue
-		}
-
-		fmt.Print("Validating token... ")
-		if err := validateTelegramToken(token); err != nil {
-			fmt.Printf("\nInvalid token: %v\n", err)
-			fmt.Println("Please check your token and try again.")
-			fmt.Println()
-			continue
-		}
-
-		fmt.Println("OK")
-		fmt.Println()
-		return token
-	}
-}
-
-func promptGeminiKey(reader *bufio.Reader) string {
-	fmt.Println("Step 2: Gemini API Key")
-	fmt.Println("----------------------")
-	fmt.Println("1. Visit https://aistudio.google.com/apikey")
-	fmt.Println("2. Create a new API key")
-	fmt.Println()
-
-	for {
-		fmt.Print("Enter your Gemini API key: ")
-		key, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				fmt.Println("\nSetup cancelled.")
-				return ""
-			}
-			fmt.Printf("Error reading input: %v\n", err)
-			continue
-		}
-		key = strings.TrimSpace(key)
-
-		if key == "" {
-			fmt.Println("API key cannot be empty. Please try again.")
-			continue
-		}
-
-		fmt.Print("Validating API key... ")
-		if err := validateGeminiKey(key); err != nil {
-			fmt.Printf("\nInvalid API key: %v\n", err)
-			fmt.Println("Please check your key and try again.")
-			fmt.Println()
-			continue
-		}
-
-		fmt.Println("OK")
-		fmt.Println()
-		return key
-	}
-}
-
-func promptAdminID(reader *bufio.Reader) string {
-	fmt.Println("Step 3: Your Telegram User ID")
-	fmt.Println("-----------------------------")
-	fmt.Println("1. Message @userinfobot on Telegram")
-	fmt.Println("2. It will reply with your user ID")
-	fmt.Println()
-
-	for {
-		fmt.Print("Enter your Telegram user ID: ")
-		id, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				fmt.Println("\nSetup cancelled.")
-				return ""
-			}
-			fmt.Printf("Error reading input: %v\n", err)
-			continue
-		}
-		id = strings.TrimSpace(id)
-
-		if id == "" {
-			fmt.Println("User ID cannot be empty. Please try again.")
-			continue
-		}
-
-		// Validate it's a valid integer
-		if _, err := strconv.ParseInt(id, 10, 64); err != nil {
-			fmt.Println("User ID must be a number. Please try again.")
-			continue
-		}
-
-		fmt.Println()
-		return id
-	}
 }
 
 func generateTokenKey() string {
@@ -248,9 +175,9 @@ func validateTelegramToken(token string) error {
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return fmt.Errorf("connection timed out - check your internet connection")
+			return errors.New("connection timed out - check your internet")
 		}
-		return fmt.Errorf("connection failed - check your internet connection: %w", err)
+		return errors.New("connection failed - check your internet")
 	}
 	defer resp.Body.Close()
 
@@ -265,9 +192,9 @@ func validateTelegramToken(token string) error {
 
 	if !result.OK {
 		if result.Description != "" {
-			return fmt.Errorf("%s", result.Description)
+			return errors.New(result.Description)
 		}
-		return fmt.Errorf("token rejected by Telegram")
+		return errors.New("token rejected by Telegram")
 	}
 
 	return nil
@@ -290,7 +217,7 @@ func validateGeminiKey(key string) error {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("connection failed: %w", err)
+		return errors.New("connection failed - check your internet")
 	}
 	defer resp.Body.Close()
 
@@ -301,7 +228,7 @@ func validateGeminiKey(key string) error {
 			} `json:"error"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&result); err == nil && result.Error.Message != "" {
-			return fmt.Errorf("%s", result.Error.Message)
+			return errors.New(result.Error.Message)
 		}
 		return fmt.Errorf("API key rejected (HTTP %d)", resp.StatusCode)
 	}
