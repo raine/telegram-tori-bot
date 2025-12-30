@@ -245,6 +245,13 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 	} else {
 		session.reply("Analysoidaan kuvaa...")
 	}
+
+	// Start typing indicator loop after the reply message (replies clear typing status).
+	// This keeps the indicator visible during the long-running image analysis.
+	typingCtx, cancelTyping := context.WithCancel(ctx)
+	defer cancelTyping()
+	go session.startTypingLoop(typingCtx)
+
 	session.initAdInputClient()
 	client := session.adInputClient
 
@@ -390,6 +397,8 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 // Called from session worker - no locking needed.
 func (h *ListingHandler) addPhotoToExistingDraft(ctx context.Context, session *UserSession, photo tgbotapi.PhotoSize) {
 	session.reply("Lisätään kuva...")
+	// Send typing indicator after the reply (replies clear typing status)
+	session.sendTypingAction()
 	client := session.adInputClient
 	draftID := session.draftID
 

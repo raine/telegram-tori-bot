@@ -315,6 +315,36 @@ func (s *UserSession) replyWithError(err error) tgbotapi.Message {
 	return s._reply(formatReplyText(unexpectedErrorText, err), false)
 }
 
+// sendTypingAction sends a "typing" chat action to show the user that the bot is processing.
+// The typing indicator automatically expires after ~5 seconds in Telegram.
+func (s *UserSession) sendTypingAction() {
+	action := tgbotapi.NewChatAction(s.userId, tgbotapi.ChatTyping)
+	_, err := s.sender.Send(action)
+	if err != nil {
+		log.Debug().Err(err).Int64("userId", s.userId).Msg("failed to send typing action")
+	}
+}
+
+// startTypingLoop sends a typing action every 4 seconds until the context is cancelled.
+// This keeps the typing indicator visible during long-running operations like image analysis.
+// Run this in a goroutine and cancel the context when done.
+func (s *UserSession) startTypingLoop(ctx context.Context) {
+	// Send immediately
+	s.sendTypingAction()
+
+	ticker := time.NewTicker(4 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.sendTypingAction()
+		}
+	}
+}
+
 func (s *UserSession) replyWithMessage(msg tgbotapi.MessageConfig) tgbotapi.Message {
 	msg.ChatID = s.userId
 	sent, err := s.sender.Send(msg)
