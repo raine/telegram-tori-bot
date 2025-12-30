@@ -127,6 +127,20 @@ Esimerkki: {"keywords": ["satulatuoli", "työtuoli", "tuolit"]}
 
 Vastaa VAIN JSON-objektilla, ei muuta tekstiä.`
 
+const hierarchicalCategoryPrompt = `Select the most appropriate category for this item from the list below.
+
+Item Title: %s
+Item Description: %s
+%s
+Available Categories:
+%s
+
+Respond with a JSON object containing the "category_id" of the best match.
+If NONE of the categories are appropriate, respond with {"category_id": 0}.
+Example: {"category_id": 123}
+
+Respond ONLY with the JSON object.`
+
 const editIntentPrompt = `Olet avustaja, joka auttaa muokkaamaan myynti-ilmoituksen tietoja. Käyttäjä haluaa muokata ilmoitustaan luonnollisella kielellä.
 
 Nykyinen ilmoitus:
@@ -338,6 +352,78 @@ func (g *GeminiAnalyzer) SelectCategory(ctx context.Context, title, description 
 			Float64("costUSD", cost).
 			Int("selectedCategoryID", resp.CategoryID).
 			Msg("category selection llm call")
+	}
+
+	return resp.CategoryID, nil
+}
+
+// SelectCategoryHierarchical selects a category from a list at a given tree level.
+// It's designed for hierarchical tree-climbing where we traverse level-by-level.
+// pathContext provides the breadcrumb of previously selected categories (e.g., "Ajoneuvot > Autot")
+// for context in deeper levels.
+func (g *GeminiAnalyzer) SelectCategoryHierarchical(ctx context.Context, title, description string, categories []tori.CategoryPrediction, pathContext string) (int, error) {
+	if len(categories) == 0 {
+		return 0, fmt.Errorf("no categories provided")
+	}
+
+	var catLines []string
+	for _, p := range categories {
+		catLines = append(catLines, fmt.Sprintf("- ID: %d, Label: %s", p.ID, p.Label))
+	}
+
+	// Add path context if navigating deeper levels
+	pathContextSection := ""
+	if pathContext != "" {
+		pathContextSection = fmt.Sprintf("Current path: %s\n", pathContext)
+	}
+
+	prompt := fmt.Sprintf(hierarchicalCategoryPrompt, title, description, pathContextSection, strings.Join(catLines, "\n"))
+
+	result, err := g.client.Models.GenerateContent(ctx, geminiLiteModel, []*genai.Content{
+		genai.NewContentFromParts([]*genai.Part{genai.NewPartFromText(prompt)}, genai.RoleUser),
+	}, nil)
+	if err != nil {
+		return 0, fmt.Errorf("gemini lite call failed: %w", err)
+	}
+
+	if len(result.Candidates) == 0 || len(result.Candidates[0].Content.Parts) == 0 {
+		return 0, fmt.Errorf("empty response from gemini lite")
+	}
+
+	text := result.Text()
+
+	// Extract JSON object from response
+	text = strings.TrimSpace(text)
+	start := strings.Index(text, "{")
+	end := strings.LastIndex(text, "}")
+	if start == -1 || end == -1 || end <= start {
+		return 0, fmt.Errorf("no JSON object found in response: %s", text)
+	}
+	text = text[start : end+1]
+
+	var resp struct {
+		CategoryID int `json:"category_id"`
+	}
+	if err := json.Unmarshal([]byte(text), &resp); err != nil {
+		return 0, fmt.Errorf("failed to parse category json: %w (response: %s)", err, text)
+	}
+
+	// Log usage and cost
+	if result.UsageMetadata != nil {
+		cost := calculateGeminiCost(
+			int64(result.UsageMetadata.PromptTokenCount),
+			int64(result.UsageMetadata.CandidatesTokenCount),
+			geminiLiteInputPricePerMillion,
+			geminiLiteOutputPricePerMillion,
+		)
+		log.Info().
+			Str("model", geminiLiteModel).
+			Int("inputTokens", int(result.UsageMetadata.PromptTokenCount)).
+			Int("outputTokens", int(result.UsageMetadata.CandidatesTokenCount)).
+			Float64("costUSD", cost).
+			Int("selectedCategoryID", resp.CategoryID).
+			Str("pathContext", pathContext).
+			Msg("hierarchical category selection llm call")
 	}
 
 	return resp.CategoryID, nil

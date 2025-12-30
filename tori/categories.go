@@ -40,14 +40,24 @@ type CategoryParent struct {
 // CategoryService handles category loading and searching
 type CategoryService struct {
 	categories []Category
+	Tree       *CategoryTree
 	mu         sync.RWMutex
 }
 
 // NewCategoryService creates a new service with embedded category data
 func NewCategoryService() *CategoryService {
-	return &CategoryService{
+	s := &CategoryService{
 		categories: embeddedCategories,
 	}
+	s.Tree = BuildCategoryTree(s.categories)
+	return s
+}
+
+// GetCategories returns all categories in the service
+func (s *CategoryService) GetCategories() []Category {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.categories
 }
 
 // SearchCategories searches for categories matching any of the keywords.
