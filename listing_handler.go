@@ -137,7 +137,6 @@ func (h *ListingHandler) bufferAlbumPhoto(ctx context.Context, session *UserSess
 	}
 
 	// Initialize or update album buffer
-	isNewAlbum := false
 	if session.albumBuffer == nil || session.albumBuffer.MediaGroupID != mediaGroupID {
 		// If there's an existing buffer with photos from a different album, flush it first
 		if session.albumBuffer != nil && len(session.albumBuffer.Photos) > 0 {
@@ -153,7 +152,6 @@ func (h *ListingHandler) bufferAlbumPhoto(ctx context.Context, session *UserSess
 			Photos:        []AlbumPhoto{},
 			FirstReceived: time.Now(),
 		}
-		isNewAlbum = true
 	}
 
 	// Add photo to buffer (respect max limit)
@@ -163,10 +161,6 @@ func (h *ListingHandler) bufferAlbumPhoto(ctx context.Context, session *UserSess
 			Width:  photo.Width,
 			Height: photo.Height,
 		})
-	}
-
-	if isNewAlbum {
-		session.reply("Vastaanotetaan kuvia...")
 	}
 
 	// Reset or start timer - dispatch through worker channel when done
