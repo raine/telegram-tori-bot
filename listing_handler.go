@@ -31,6 +31,7 @@ type ListingHandler struct {
 	editIntentParser llm.EditIntentParser
 	sessionStore     storage.SessionStore
 	searchClient     *tori.SearchClient
+	categoryService  *tori.CategoryService
 }
 
 // NewListingHandler creates a new listing handler.
@@ -41,6 +42,7 @@ func NewListingHandler(tg BotAPI, visionAnalyzer llm.Analyzer, editIntentParser 
 		editIntentParser: editIntentParser,
 		sessionStore:     sessionStore,
 		searchClient:     tori.NewSearchClient(),
+		categoryService:  tori.NewCategoryService(),
 	}
 }
 
@@ -449,17 +451,24 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 
 	// Auto-select category using LLM if possible
 	if len(categories) > 0 {
-		// Try LLM-based category selection
-		autoSelectedID := h.tryAutoSelectCategory(ctx, result.Item.Title, result.Item.Description, categories)
-		if autoSelectedID > 0 {
-			h.ProcessCategorySelection(ctx, session, autoSelectedID)
+		// Try LLM-based category selection (includes two-stage fallback)
+		selectionResult := h.tryAutoSelectCategory(ctx, result.Item.Title, result.Item.Description, categories)
+
+		// Update session's category predictions if fallback found new categories
+		if selectionResult.UsedFallback && len(selectionResult.UpdatedPredictions) > 0 {
+			session.currentDraft.CategoryPredictions = selectionResult.UpdatedPredictions
+		}
+
+		if selectionResult.SelectedID > 0 {
+			h.ProcessCategorySelection(ctx, session, selectionResult.SelectedID)
 			return
 		}
 
-		// Fall back to manual selection
+		// Fall back to manual selection (use updated predictions if available)
+		categoriesToShow := selectionResult.UpdatedPredictions
 		msg := tgbotapi.NewMessage(session.userId, "Valitse osasto")
 		msg.ParseMode = tgbotapi.ModeMarkdown
-		msg.ReplyMarkup = makeCategoryPredictionKeyboard(categories)
+		msg.ReplyMarkup = makeCategoryPredictionKeyboard(categoriesToShow)
 		session.replyWithMessage(msg)
 	} else {
 		// No categories predicted, use default
@@ -1001,22 +1010,109 @@ func (h *ListingHandler) HandleTitleDescriptionReply(session *UserSession, messa
 
 // --- Helper methods ---
 
+// CategorySelectionResult contains the result of category auto-selection.
+type CategorySelectionResult struct {
+	SelectedID         int                       // Selected category ID, 0 if none selected
+	UpdatedPredictions []tori.CategoryPrediction // Updated predictions (from fallback search)
+	UsedFallback       bool                      // True if fallback search was used
+}
+
 // tryAutoSelectCategory attempts to auto-select category using LLM.
-// Returns the selected category ID or 0 if auto-selection failed.
-func (h *ListingHandler) tryAutoSelectCategory(ctx context.Context, title, description string, predictions []tori.CategoryPrediction) int {
+//
+// # Why fallback exists
+//
+// Tori's category prediction API (based on uploaded images) can return completely
+// wrong categories. For example, a "Salli Twin satulatuoli" (saddle chair) was
+// predicted as "Musical instruments" instead of office furniture. When predictions
+// are this wrong, users get a poor experience choosing from irrelevant options.
+//
+// # Two-stage fallback
+//
+// When the LLM rejects all Tori predictions (returns category_id 0), we trigger
+// a keyword-based fallback:
+//  1. Extract 1-3 Finnish category keywords from title/description (e.g., "satulatuoli", "työtuoli")
+//  2. Search our embedded category list for matches
+//  3. Try LLM selection on the new candidates
+//
+// This typically finds the correct category even when Tori's vision API fails.
+func (h *ListingHandler) tryAutoSelectCategory(ctx context.Context, title, description string, predictions []tori.CategoryPrediction) CategorySelectionResult {
+	result := CategorySelectionResult{
+		UpdatedPredictions: predictions,
+	}
+
 	// Check if the analyzer supports category selection
 	gemini := llm.GetGeminiAnalyzer(h.visionAnalyzer)
 	if gemini == nil {
-		return 0
+		return result
 	}
 
+	// First attempt: select from Tori's predictions
 	categoryID, err := gemini.SelectCategory(ctx, title, description, predictions)
 	if err != nil {
 		log.Warn().Err(err).Msg("LLM category selection failed, falling back to manual")
-		return 0
+		return result
 	}
 
-	return categoryID
+	// If LLM selected a valid category, return it
+	if categoryID > 0 {
+		result.SelectedID = categoryID
+		return result
+	}
+
+	// LLM rejected all predictions (returned 0) - trigger fallback
+	log.Info().
+		Str("title", title).
+		Int("predictionCount", len(predictions)).
+		Msg("LLM rejected all category predictions, attempting keyword fallback")
+
+	// Stage 1: Extract category keywords
+	keywords, err := gemini.ExtractCategoryKeywords(ctx, title, description)
+	if err != nil {
+		log.Warn().Err(err).Msg("keyword extraction failed, falling back to manual")
+		return result
+	}
+
+	if len(keywords) == 0 {
+		log.Info().Msg("no keywords extracted, falling back to manual")
+		return result
+	}
+
+	log.Info().Strs("keywords", keywords).Msg("extracted category keywords for fallback")
+
+	// Stage 2: Search embedded categories
+	fallbackCategories := h.categoryService.SearchCategories(keywords, 10)
+	if len(fallbackCategories) == 0 {
+		log.Info().Strs("keywords", keywords).Msg("no categories found for keywords")
+		return result
+	}
+
+	log.Info().
+		Strs("keywords", keywords).
+		Int("matchCount", len(fallbackCategories)).
+		Msg("found fallback categories")
+
+	// Stage 3: Try LLM selection on fallback candidates
+	fallbackID, err := gemini.SelectCategory(ctx, title, description, fallbackCategories)
+	if err != nil {
+		log.Warn().Err(err).Msg("fallback category selection failed")
+		// Still return the fallback categories for manual selection
+		result.UpdatedPredictions = fallbackCategories
+		result.UsedFallback = true
+		return result
+	}
+
+	result.SelectedID = fallbackID
+	result.UpdatedPredictions = fallbackCategories
+	result.UsedFallback = true
+
+	if fallbackID > 0 {
+		log.Info().
+			Int("categoryId", fallbackID).
+			Strs("keywords", keywords).
+			Msg("fallback category selection succeeded")
+	}
+
+	return result
 }
 
 // Attributes that should never be auto-selected (require user input)

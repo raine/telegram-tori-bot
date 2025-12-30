@@ -109,6 +109,24 @@ Do NOT include:
 
 Respond with ONLY the search query (1-5 words), no quotes or explanation.`
 
+const categoryKeywordExtractionPrompt = `Analysoi tämä tuote ja tunnista mikä esine se on. Anna 1-3 suomenkielistä hakusanaa, jotka kuvaavat tuotteen tyyppiä tai kategoriaa.
+
+Otsikko: %s
+Kuvaus: %s
+
+TÄRKEÄÄ: Anna sekä spesifi termi ETTÄ yleisempi yläkategoria. Esimerkiksi:
+- "Salli Twin satulatuoli" -> ["satulatuoli", "työtuoli", "tuolit"]
+- "iPhone 13 Pro" -> ["älypuhelin", "puhelin"]
+- "IKEA Kallax hylly" -> ["hylly", "kaapit ja hyllyt", "huonekalu"]
+- "Sony WH-1000XM5" -> ["kuulokkeet", "äänentoistolaitteet"]
+
+Älä käytä tuotemerkkejä (Apple, IKEA, Salli jne.) hakusanoina.
+
+Vastaa JSON-objektilla, jossa on "keywords" lista.
+Esimerkki: {"keywords": ["satulatuoli", "työtuoli", "tuolit"]}
+
+Vastaa VAIN JSON-objektilla, ei muuta tekstiä.`
+
 const editIntentPrompt = `Olet avustaja, joka auttaa muokkaamaan myynti-ilmoituksen tietoja. Käyttäjä haluaa muokata ilmoitustaan luonnollisella kielellä.
 
 Nykyinen ilmoitus:
@@ -557,6 +575,60 @@ func (g *GeminiAnalyzer) ParseEditIntent(ctx context.Context, message string, dr
 	}
 
 	return &intent, nil
+}
+
+// ExtractCategoryKeywords extracts Finnish category keywords from title and description.
+// Used for fallback category search when Tori's predictions are wrong.
+func (g *GeminiAnalyzer) ExtractCategoryKeywords(ctx context.Context, title, description string) ([]string, error) {
+	prompt := fmt.Sprintf(categoryKeywordExtractionPrompt, title, description)
+
+	result, err := g.client.Models.GenerateContent(ctx, geminiLiteModel, []*genai.Content{
+		genai.NewContentFromParts([]*genai.Part{genai.NewPartFromText(prompt)}, genai.RoleUser),
+	}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("keyword extraction failed: %w", err)
+	}
+
+	if len(result.Candidates) == 0 || len(result.Candidates[0].Content.Parts) == 0 {
+		return nil, fmt.Errorf("empty response from gemini")
+	}
+
+	text := result.Text()
+
+	// Extract JSON object from response
+	text = strings.TrimSpace(text)
+	start := strings.Index(text, "{")
+	end := strings.LastIndex(text, "}")
+	if start == -1 || end == -1 || end <= start {
+		return nil, fmt.Errorf("no JSON object found in response: %s", text)
+	}
+	text = text[start : end+1]
+
+	var resp struct {
+		Keywords []string `json:"keywords"`
+	}
+	if err := json.Unmarshal([]byte(text), &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse keywords json: %w (response: %s)", err, text)
+	}
+
+	// Log usage and cost
+	if result.UsageMetadata != nil {
+		cost := calculateGeminiCost(
+			int64(result.UsageMetadata.PromptTokenCount),
+			int64(result.UsageMetadata.CandidatesTokenCount),
+			geminiLiteInputPricePerMillion,
+			geminiLiteOutputPricePerMillion,
+		)
+		log.Info().
+			Str("model", geminiLiteModel).
+			Int("inputTokens", int(result.UsageMetadata.PromptTokenCount)).
+			Int("outputTokens", int(result.UsageMetadata.CandidatesTokenCount)).
+			Float64("costUSD", cost).
+			Strs("keywords", resp.Keywords).
+			Msg("category keyword extraction llm call")
+	}
+
+	return resp.Keywords, nil
 }
 
 // GeneratePriceSearchQuery generates an optimized search query for finding similar items.
