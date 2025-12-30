@@ -77,8 +77,8 @@ If the correct option cannot be confidently determined from the text, return nul
 Attributes:
 %s
 
-Respond ONLY with a JSON object mapping attribute names to option IDs.
-Example: {"condition": 123, "color": 456, "size": null}`
+Respond ONLY with a JSON object using the attribute "name" (shown in parentheses) as keys, mapping to option IDs.
+Example: {"condition": 123, "computer_components_type": 456, "size": null}`
 
 const giveawayDescriptionRewritePrompt = `Transform this marketplace listing description from a selling context to a giveaway context.
 
