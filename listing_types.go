@@ -89,6 +89,14 @@ type AdInputDraft struct {
 	PreservedValues *PreservedValues
 }
 
+// GetFullDescription returns the description combined with template content if present.
+func (d *AdInputDraft) GetFullDescription() string {
+	if d.TemplateContent == "" {
+		return d.Description
+	}
+	return d.Description + "\n\n" + d.TemplateContent
+}
+
 // PreservedValues holds values to preserve when changing category
 type PreservedValues struct {
 	Price            int
@@ -202,16 +210,10 @@ func buildFinalPayload(
 		}
 	}
 
-	// Combine description with template for final payload
-	fullDescription := draft.Description
-	if draft.TemplateContent != "" {
-		fullDescription += "\n\n" + draft.TemplateContent
-	}
-
 	payload := tori.AdUpdatePayload{
 		Category:    strconv.Itoa(draft.CategoryID),
 		Title:       draft.Title,
-		Description: fullDescription,
+		Description: draft.GetFullDescription(),
 		TradeType:   draft.TradeType,
 		Location: []map[string]string{
 			{"country": "FI", "postal-code": postalCode},
