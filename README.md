@@ -48,8 +48,14 @@ listings. Supports conditional text for shipping:
 
 ## Quick start
 
-1. **Download** the latest release for your platform from
-   [Releases](https://github.com/raine/telegram-tori-bot/releases)
+1. **Download** the latest release for your platform:
+
+   | Platform              | Download                                                                                                                                       |
+   | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+   | Linux (x64)           | [telegram-tori-bot-linux-amd64](https://github.com/raine/telegram-tori-bot/releases/latest/download/telegram-tori-bot-linux-amd64)             |
+   | Linux (ARM64)         | [telegram-tori-bot-linux-arm64](https://github.com/raine/telegram-tori-bot/releases/latest/download/telegram-tori-bot-linux-arm64)             |
+   | macOS (Apple Silicon) | [telegram-tori-bot-darwin-arm64](https://github.com/raine/telegram-tori-bot/releases/latest/download/telegram-tori-bot-darwin-arm64)           |
+   | Windows (x64)         | [telegram-tori-bot-windows-amd64.exe](https://github.com/raine/telegram-tori-bot/releases/latest/download/telegram-tori-bot-windows-amd64.exe) |
 
 2. **Run** the downloaded file (double-click or run from terminal)
 
