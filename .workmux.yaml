@@ -6,3 +6,4 @@ files:
     - .env
     - CLAUDE.md
     - tori/testdata
+    - sessions.db
