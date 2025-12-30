@@ -1202,20 +1202,33 @@ func (h *ListingHandler) promptForAttribute(session *UserSession, attr tori.Attr
 func (h *ListingHandler) promptForPrice(ctx context.Context, session *UserSession) {
 	session.currentDraft.State = AdFlowStateAwaitingPrice
 	title := session.currentDraft.Title
+	description := session.currentDraft.Description
+
+	// Generate optimized search query using LLM
+	searchQuery := title // fallback to title
+	if gemini := llm.GetGeminiAnalyzer(h.visionAnalyzer); gemini != nil {
+		generatedQuery, err := gemini.GeneratePriceSearchQuery(ctx, title, description)
+		if err != nil {
+			log.Warn().Err(err).Str("title", title).Msg("failed to generate price search query, using title")
+		} else if generatedQuery != "" {
+			searchQuery = generatedQuery
+		}
+	}
 
 	log.Debug().
-		Str("query", title).
+		Str("query", searchQuery).
+		Str("originalTitle", title).
 		Int64("userId", session.userId).
 		Msg("searching for similar prices")
 
 	// Search for similar items (network I/O)
 	results, err := h.searchClient.Search(ctx, tori.SearchKeyBapCommon, tori.SearchParams{
-		Query: title,
+		Query: searchQuery,
 		Rows:  20,
 	})
 
 	if err != nil {
-		log.Warn().Err(err).Str("query", title).Msg("price search failed")
+		log.Warn().Err(err).Str("query", searchQuery).Msg("price search failed")
 	}
 
 	resultCount := 0

@@ -90,6 +90,25 @@ Rules:
 - Keep the same language (Finnish)
 - Return ONLY the transformed description text, no JSON or other formatting`
 
+const priceSearchQueryPrompt = `Generate an optimized search query to find similar items for price comparison on a marketplace.
+
+Title: %s
+Description: %s
+
+Extract the core product identifier that would match similar items:
+- For electronics: model number/name (e.g., "RTX 3070 Ti", "iPhone 13 Pro", "PlayStation 5")
+- For furniture: type and key characteristics (e.g., "nahkasohva", "työtuoli")
+- For clothing: brand and type (e.g., "Nike Air Max", "Fjällräven takki")
+- For games/media: title and platform if relevant (e.g., "Zelda Switch", "Harry Potter kirja")
+
+Do NOT include:
+- Brand-specific variant names (e.g., "Zotac Trinity", "ASUS ROG Strix")
+- Generic category words in Finnish (e.g., "näytönohjain", "puhelin", "tuoli")
+- Condition descriptors (e.g., "uusi", "käytetty", "hyvä kunto")
+- Marketing terms (e.g., "Gaming", "Pro", "Ultimate")
+
+Respond with ONLY the search query (1-5 words), no quotes or explanation.`
+
 const editIntentPrompt = `Olet avustaja, joka auttaa muokkaamaan myynti-ilmoituksen tietoja. Käyttäjä haluaa muokata ilmoitustaan luonnollisella kielellä.
 
 Nykyinen ilmoitus:
@@ -538,4 +557,62 @@ func (g *GeminiAnalyzer) ParseEditIntent(ctx context.Context, message string, dr
 	}
 
 	return &intent, nil
+}
+
+// GeneratePriceSearchQuery generates an optimized search query for finding similar items.
+// It extracts the core product identifier from the title and description.
+func (g *GeminiAnalyzer) GeneratePriceSearchQuery(ctx context.Context, title, description string) (string, error) {
+	// Truncate description to save tokens - core identifier is unlikely at the end
+	if len(description) > 500 {
+		description = description[:500]
+	}
+
+	prompt := fmt.Sprintf(priceSearchQueryPrompt, title, description)
+
+	result, err := g.client.Models.GenerateContent(ctx, geminiLiteModel, []*genai.Content{
+		genai.NewContentFromParts([]*genai.Part{genai.NewPartFromText(prompt)}, genai.RoleUser),
+	}, nil)
+	if err != nil {
+		return "", fmt.Errorf("gemini price search query failed: %w", err)
+	}
+
+	if len(result.Candidates) == 0 || len(result.Candidates[0].Content.Parts) == 0 {
+		return "", fmt.Errorf("empty response from gemini")
+	}
+
+	query := strings.TrimSpace(result.Text())
+
+	// Strip markdown code blocks if present
+	query = strings.TrimPrefix(query, "```text")
+	query = strings.TrimPrefix(query, "```")
+	query = strings.TrimSuffix(query, "```")
+	query = strings.TrimSpace(query)
+
+	// Strip surrounding quotes
+	query = strings.Trim(query, `"'`)
+
+	// If output is suspiciously long (likely a refusal/explanation), return empty to trigger fallback
+	if len(query) > 50 {
+		return "", nil
+	}
+
+	// Log usage and cost
+	if result.UsageMetadata != nil {
+		cost := calculateGeminiCost(
+			int64(result.UsageMetadata.PromptTokenCount),
+			int64(result.UsageMetadata.CandidatesTokenCount),
+			geminiLiteInputPricePerMillion,
+			geminiLiteOutputPricePerMillion,
+		)
+		log.Info().
+			Str("model", geminiLiteModel).
+			Int("inputTokens", int(result.UsageMetadata.PromptTokenCount)).
+			Int("outputTokens", int(result.UsageMetadata.CandidatesTokenCount)).
+			Float64("costUSD", cost).
+			Str("title", title).
+			Str("query", query).
+			Msg("price search query llm call")
+	}
+
+	return query, nil
 }
