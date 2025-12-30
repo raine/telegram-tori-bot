@@ -850,14 +850,16 @@ func (h *ListingHandler) HandleShippingSelection(ctx context.Context, session *U
 		if err == nil && tmpl != nil {
 			expanded := expandTemplate(tmpl.Content, isYes)
 			if strings.TrimSpace(expanded) != "" {
-				session.currentDraft.Description += "\n\n" + expanded
+				// Store template separately so LLM edits don't lose it
+				session.currentDraft.TemplateContent = expanded
 
-				// Update the description message in chat
+				// Update the description message in chat with combined content
 				if session.currentDraft.DescriptionMessageID != 0 {
+					fullDescription := session.currentDraft.Description + "\n\n" + expanded
 					editMsg := tgbotapi.NewEditMessageText(
 						session.userId,
 						session.currentDraft.DescriptionMessageID,
-						fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(session.currentDraft.Description)),
+						fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(fullDescription)),
 					)
 					editMsg.ParseMode = tgbotapi.ModeMarkdown
 					h.tg.Request(editMsg)
@@ -989,8 +991,12 @@ func (h *ListingHandler) HandleTitleDescriptionReply(session *UserSession, messa
 		// Touch draft activity on description edit
 		h.touchDraftActivity(session)
 		draft.Description = message.Text
-		// Edit the original message to show updated description
-		editMsg := tgbotapi.NewEditMessageText(session.userId, replyToID, fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(draft.Description)))
+		// Edit the original message to show updated description (include template if present)
+		fullDescription := draft.Description
+		if draft.TemplateContent != "" {
+			fullDescription += "\n\n" + draft.TemplateContent
+		}
+		editMsg := tgbotapi.NewEditMessageText(session.userId, replyToID, fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(fullDescription)))
 		editMsg.ParseMode = tgbotapi.ModeMarkdown
 		h.tg.Request(editMsg)
 		session.reply("✅ Kuvaus päivitetty")
@@ -1345,6 +1351,12 @@ func (h *ListingHandler) showAdSummary(session *UserSession) {
 		priceText = fmt.Sprintf("%d€", session.currentDraft.Price)
 	}
 
+	// Combine description with template for display
+	fullDescription := session.currentDraft.Description
+	if session.currentDraft.TemplateContent != "" {
+		fullDescription += "\n\n" + session.currentDraft.TemplateContent
+	}
+
 	msg := fmt.Sprintf(`*Ilmoitus valmis:*
 📦 *Otsikko:* %s
 📝 *Kuvaus:* %s
@@ -1354,7 +1366,7 @@ func (h *ListingHandler) showAdSummary(session *UserSession) {
 
 Lähetä /laheta julkaistaksesi tai /peru peruuttaaksesi.`,
 		escapeMarkdown(session.currentDraft.Title),
-		escapeMarkdown(session.currentDraft.Description),
+		escapeMarkdown(fullDescription),
 		priceText,
 		shippingText,
 		len(session.photos),
@@ -1591,12 +1603,16 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 		session.currentDraft.Description = *intent.NewDescription
 		changes = append(changes, "Kuvaus päivitetty")
 
-		// Update description message in chat
+		// Update description message in chat (include template if present)
 		if session.currentDraft.DescriptionMessageID != 0 {
+			fullDescription := *intent.NewDescription
+			if session.currentDraft.TemplateContent != "" {
+				fullDescription += "\n\n" + session.currentDraft.TemplateContent
+			}
 			editMsg := tgbotapi.NewEditMessageText(
 				session.userId,
 				session.currentDraft.DescriptionMessageID,
-				fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(*intent.NewDescription)),
+				fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(fullDescription)),
 			)
 			editMsg.ParseMode = tgbotapi.ModeMarkdown
 			h.tg.Request(editMsg)

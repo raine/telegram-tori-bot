@@ -59,6 +59,7 @@ type AdInputDraft struct {
 	CategoryID       int
 	Title            string
 	Description      string
+	TemplateContent  string // Template content stored separately to preserve during LLM edits
 	TradeType        string // "1" = sell, "2" = give away
 	Price            int
 	ShippingPossible bool
@@ -201,10 +202,16 @@ func buildFinalPayload(
 		}
 	}
 
+	// Combine description with template for final payload
+	fullDescription := draft.Description
+	if draft.TemplateContent != "" {
+		fullDescription += "\n\n" + draft.TemplateContent
+	}
+
 	payload := tori.AdUpdatePayload{
 		Category:    strconv.Itoa(draft.CategoryID),
 		Title:       draft.Title,
-		Description: draft.Description,
+		Description: fullDescription,
 		TradeType:   draft.TradeType,
 		Location: []map[string]string{
 			{"country": "FI", "postal-code": postalCode},
