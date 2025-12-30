@@ -1339,6 +1339,11 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 	if len(changes) > 0 {
 		confirmMsg := "✓ Muutokset tehty:\n- " + strings.Join(changes, "\n- ")
 		session.reply(confirmMsg)
+
+		// Show updated summary if listing is ready to publish
+		if session.currentDraft.State == AdFlowStateReadyToPublish {
+			h.showAdSummary(session)
+		}
 	}
 
 	return true
