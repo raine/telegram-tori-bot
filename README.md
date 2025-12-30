@@ -5,8 +5,6 @@ streamlined as possible. Putting stuff for sale with this thing is actually a
 joy. Takes advantage of Telegram's photo sending and bot features like Custom
 Reply Keyboards and Inline Keyboards.
 
-<video src="https://user-images.githubusercontent.com/11027/161634069-6462e726-bfe6-4340-8bec-1ae41a21ae6c.mp4"></video>
-
 ## Features
 
 ### Vision-based listing creation
