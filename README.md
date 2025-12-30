@@ -25,13 +25,7 @@ together for better context.
 ### Natural language editing
 
 Edit your listing draft by typing in Finnish, e.g., "vaihda hinnaksi 40e" or
-"lisää että koiran taloudesta". The bot understands and applies the changes.
-
-### Bulk listing mode
-
-Create multiple listings at once using `/era`. Send photos (single photos create
-separate drafts, albums create one draft per album), then use `/valmis` to
-review and edit all drafts before publishing.
+"lisää että koirataloudesta". The bot understands and applies the changes.
 
 ### Giveaway mode
 
@@ -50,13 +44,7 @@ listings. Supports conditional text for shipping:
 ### Other features
 
 - **Built-in login flow**: Login directly through the bot with `/login` (email
-  - verification code)
-- **Postal code management**: Set your postal code once with `/postinumero` and
-  it's remembered for all listings
-- **Category re-selection**: Use `/osasto` to change the category if
-  auto-selection was wrong
-- **Vision analysis caching**: Photo analysis results are cached in SQLite to
-  avoid re-analyzing the same photos
+  verification code)
 
 ## Quick Start
 
