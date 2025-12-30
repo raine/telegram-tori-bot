@@ -95,8 +95,9 @@ go install github.com/raine/telegram-tori-bot@latest
 
 ## LLM costs
 
-The bot uses Google's Gemini API for vision and text processing. Costs are
-minimal - a typical listing creation costs well under $0.01 USD:
+The bot uses Google's Gemini API for vision and text processing. The free tier
+should work fine. Costs on paid tier are minimal - a typical listing creation
+costs well under $0.01 USD:
 
 ```
 INF image(s) analyzed cost=0.0008925 imageCount=1 title="LUMI Recovery Pod kylmäallas"
