@@ -22,20 +22,26 @@ const logFileName = "telegram-tori-bot.log"
 func main() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 
-	// Open log file with truncation (overwrites on each startup)
-	logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	if err != nil {
-		log.Fatal().Err(err).Msg("failed to open log file")
+	// JOURNAL_STREAM is set by systemd when running as a service.
+	// Skip file logging under systemd (journald handles it, and ProtectSystem=strict
+	// makes the working directory read-only).
+	if _, underSystemd := os.LookupEnv("JOURNAL_STREAM"); underSystemd {
+		log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+	} else {
+		// Local development: log to both stderr and file
+		logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+		if err != nil {
+			log.Fatal().Err(err).Msg("failed to open log file")
+		}
+		defer logFile.Close()
+
+		consoleWriter := zerolog.ConsoleWriter{Out: os.Stderr}
+		fileWriter := zerolog.ConsoleWriter{Out: logFile, NoColor: true}
+		multiWriter := io.MultiWriter(consoleWriter, fileWriter)
+		log.Logger = log.Output(multiWriter)
+
+		log.Info().Str("logFile", logFileName).Msg("logging to file")
 	}
-	defer logFile.Close()
-
-	// Write to both stderr and file (both with console formatting)
-	consoleWriter := zerolog.ConsoleWriter{Out: os.Stderr}
-	fileWriter := zerolog.ConsoleWriter{Out: logFile, NoColor: true}
-	multiWriter := io.MultiWriter(consoleWriter, fileWriter)
-	log.Logger = log.Output(multiWriter)
-
-	log.Info().Str("logFile", logFileName).Msg("logging to file")
 
 	botToken, ok := os.LookupEnv("BOT_TOKEN")
 	if !ok {

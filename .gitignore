@@ -6,3 +6,4 @@ auth_tokens.json
 /create-listing
 /login-test
 /test-session
+/deploy/telegram-tori-bot
