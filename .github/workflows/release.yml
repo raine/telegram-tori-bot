@@ -33,6 +33,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Build binary
+        id: go_build
         env:
           CGO_ENABLED: 0
           GOOS: ${{ matrix.goos }}
@@ -43,30 +44,36 @@ jobs:
             BINARY_NAME="${BINARY_NAME}.exe"
           fi
           go build -tags timetzdata -ldflags "-s -w -X main.version=${{ github.sha }}" -o "${BINARY_NAME}" .
+          echo "artifact_path=${BINARY_NAME}" >> $GITHUB_OUTPUT
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: telegram-tori-bot-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: telegram-tori-bot-*
+          path: ${{ steps.go_build.outputs.artifact_path }}
+          if-no-files-found: error
 
   release:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: telegram-tori-bot-*
           path: binaries
           merge-multiple: true
+
+      - name: List binaries
+        run: ls -la binaries/
 
       - name: Delete existing latest release
         run: gh release delete latest --yes --cleanup-tag || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout for release
-        uses: actions/checkout@v4
 
       - name: Create Release
         run: |
