@@ -93,6 +93,12 @@ go install github.com/raine/telegram-tori-bot@latest
    - Send `/start`, then `/login` to connect your Tori account
    - Send a photo of something you want to sell
 
+## LLM Costs
+
+The bot uses Google's Gemini API for vision and text processing. Costs are
+minimal - a typical listing creation costs well under $0.01 USD (image analysis
+~$0.001, category selection ~$0.00002).
+
 ## Environment Variables
 
 | Variable            | Required | Description                                       |
