@@ -1223,19 +1223,25 @@ func (h *ListingHandler) promptForPrice(ctx context.Context, session *UserSessio
 		}
 	}
 
-	categoryID := session.currentDraft.CategoryID
+	// Build category taxonomy for filtering
+	var categoryTaxonomy tori.CategoryTaxonomy
+	if cat := tori.FindCategoryByID(session.currentDraft.CategoryPredictions, session.currentDraft.CategoryID); cat != nil {
+		categoryTaxonomy = tori.GetCategoryTaxonomy(*cat)
+	}
+
 	log.Debug().
 		Str("query", searchQuery).
 		Str("originalTitle", title).
-		Int("categoryID", categoryID).
+		Str("categoryParam", categoryTaxonomy.ParamName).
+		Str("categoryValue", categoryTaxonomy.Value).
 		Int64("userId", session.userId).
 		Msg("searching for similar prices")
 
 	// Search for similar items (network I/O)
 	results, err := h.searchClient.Search(ctx, tori.SearchKeyBapCommon, tori.SearchParams{
-		Query:    searchQuery,
-		Category: categoryID,
-		Rows:     20,
+		Query:            searchQuery,
+		CategoryTaxonomy: categoryTaxonomy,
+		Rows:             20,
 	})
 
 	if err != nil {

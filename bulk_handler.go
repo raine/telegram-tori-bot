@@ -411,16 +411,23 @@ func (h *BulkHandler) estimatePriceForDraft(ctx context.Context, draft *BulkDraf
 		return
 	}
 
+	// Build category taxonomy for filtering
+	var categoryTaxonomy tori.CategoryTaxonomy
+	if cat := tori.FindCategoryByID(draft.CategoryPredictions, draft.CategoryID); cat != nil {
+		categoryTaxonomy = tori.GetCategoryTaxonomy(*cat)
+	}
+
 	log.Debug().
 		Str("query", draft.Title).
-		Int("categoryID", draft.CategoryID).
+		Str("categoryParam", categoryTaxonomy.ParamName).
+		Str("categoryValue", categoryTaxonomy.Value).
 		Str("draftID", draft.ID).
 		Msg("searching for similar prices")
 
 	results, err := h.searchClient.Search(ctx, tori.SearchKeyBapCommon, tori.SearchParams{
-		Query:    draft.Title,
-		Category: draft.CategoryID,
-		Rows:     20,
+		Query:            draft.Title,
+		CategoryTaxonomy: categoryTaxonomy,
+		Rows:             20,
 	})
 
 	if err != nil {
@@ -879,17 +886,24 @@ func (h *BulkHandler) handleEditCallback(ctx context.Context, session *UserSessi
 func (h *BulkHandler) promptForBulkPrice(ctx context.Context, session *UserSession, draft *BulkDraft, draftID string) {
 	title := draft.Title
 
+	// Build category taxonomy for filtering
+	var categoryTaxonomy tori.CategoryTaxonomy
+	if cat := tori.FindCategoryByID(draft.CategoryPredictions, draft.CategoryID); cat != nil {
+		categoryTaxonomy = tori.GetCategoryTaxonomy(*cat)
+	}
+
 	log.Debug().
 		Str("query", title).
-		Int("categoryID", draft.CategoryID).
+		Str("categoryParam", categoryTaxonomy.ParamName).
+		Str("categoryValue", categoryTaxonomy.Value).
 		Str("draftID", draftID).
 		Msg("searching for price recommendation")
 
 	// Search for similar items
 	results, err := h.searchClient.Search(ctx, tori.SearchKeyBapCommon, tori.SearchParams{
-		Query:    title,
-		Category: draft.CategoryID,
-		Rows:     20,
+		Query:            title,
+		CategoryTaxonomy: categoryTaxonomy,
+		Rows:             20,
 	})
 
 	if err != nil {
