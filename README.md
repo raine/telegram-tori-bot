@@ -58,47 +58,62 @@ listings. Supports conditional text for shipping:
 - **Vision analysis caching**: Photo analysis results are cached in SQLite to
   avoid re-analyzing the same photos
 
-## Install
+## Quick Start
 
-The Go Toolchain is required.
+### Prerequisites
+
+- **Go 1.25+**: [Install Go](https://go.dev/doc/install)
+
+### Installation
 
 ```sh
 go install github.com/raine/telegram-tori-bot@latest
 ```
 
-## Usage
+### Setup
 
-1. Create a bot on Telegram by talking to [@botfather](https://t.me/botfather)
-   and save the bot token it gives you.
-   - https://core.telegram.org/bots#creating-a-new-bot
-2. Get a Gemini API key from
-   [Google AI Studio](https://aistudio.google.com/apikey)
-3. Run `telegram-tori-bot` with the required environment variables:
+1. **Create a Telegram bot**
+   - Message [@BotFather](https://t.me/botfather) on Telegram
+   - Send `/newbot` and follow the prompts
+   - Save the bot token you receive
+
+2. **Get a Gemini API key**
+   - Visit [Google AI Studio](https://aistudio.google.com/apikey)
+   - Create a new API key
+
+3. **Find your Telegram user ID**
+   - Message [@userinfobot](https://t.me/userinfobot) on Telegram
+   - It will reply with your user ID
+
+4. **Configure environment variables**
 
    ```sh
-   BOT_TOKEN=<bot_token_from_step_1> \
-   GEMINI_API_KEY=<your_gemini_api_key> \
-   TORI_TOKEN_KEY=<any_secret_passphrase> \
-   ADMIN_TELEGRAM_ID=<your_telegram_user_id> \
-      telegram-tori-bot
+   export BOT_TOKEN="your_bot_token"
+   export GEMINI_API_KEY="your_gemini_key"
+   export TORI_TOKEN_KEY="any_secret_passphrase"
+   export ADMIN_TELEGRAM_ID="123456789"
    ```
 
-4. Search for your bot in Telegram with the username you gave to it.
-5. `/start` a conversation with the bot, then use `/login` to authenticate with
-   your Tori account.
-6. Send a photo of the item you want to sell.
+5. **Run the bot**
 
-## Environment variables
+   ```sh
+   telegram-tori-bot
+   ```
 
-- `BOT_TOKEN`: Telegram bot's token. You get this from @botfather. **required**
-- `GEMINI_API_KEY`: Google Gemini API key for vision analysis and LLM features.
-  **required**
-- `TORI_TOKEN_KEY`: Secret passphrase used to encrypt stored Tori authentication
-  tokens. Can be any string. **required**
-- `ADMIN_TELEGRAM_ID`: Your Telegram user ID. The admin can add/remove users
-  allowed to use the bot. **required**
-- `TORI_DB_PATH`: Path to SQLite database file. Defaults to `sessions.db`.
-  optional
+6. **Start using the bot**
+   - Find your bot on Telegram by its username
+   - Send `/start`, then `/login` to connect your Tori account
+   - Send a photo of something you want to sell
+
+## Environment Variables
+
+| Variable            | Required | Description                                       |
+| ------------------- | -------- | ------------------------------------------------- |
+| `BOT_TOKEN`         | Yes      | Telegram bot token from @BotFather                |
+| `GEMINI_API_KEY`    | Yes      | Google Gemini API key for vision/LLM features     |
+| `TORI_TOKEN_KEY`    | Yes      | Secret passphrase for encrypting Tori auth tokens |
+| `ADMIN_TELEGRAM_ID` | Yes      | Your Telegram user ID (becomes admin)             |
+| `TORI_DB_PATH`      | No       | SQLite database path (default: `sessions.db`)     |
 
 ## Deployment
 
@@ -157,7 +172,18 @@ messages.
 
 ## Development
 
-The project uses [`just`](https://github.com/casey/just) as a command runner (or
-make alternative).
+The project uses [`just`](https://github.com/casey/just) as a command runner.
 
-See `just -l` for recipes.
+**Install just:** `brew install just` (Mac) | `scoop install just` (Windows) |
+[other options](https://github.com/casey/just#installation)
+
+```sh
+git clone https://github.com/raine/telegram-tori-bot.git
+cd telegram-tori-bot
+just build    # Build the project
+just check    # Run format, vet, build, and tests
+just test     # Run tests only
+just run      # Run the bot
+```
+
+Run `just -l` to see all available commands.
