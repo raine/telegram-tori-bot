@@ -20,6 +20,8 @@ const (
 	albumBufferTimeout = 1500 * time.Millisecond
 	// maxAlbumPhotos is the maximum number of photos to process in an album
 	maxAlbumPhotos = 10
+	// draftExpirationTimeout is how long a draft can be inactive before it expires
+	draftExpirationTimeout = 10 * time.Minute
 )
 
 // ListingHandler handles ad creation flow for the bot.
@@ -55,6 +57,11 @@ func (h *ListingHandler) HandleInput(ctx context.Context, session *UserSession, 
 
 	// Check current state to handle attribute/price input
 	state := session.GetDraftState()
+
+	// Touch draft activity for any input during listing flow
+	if state != AdFlowStateNone {
+		h.touchDraftActivity(session)
+	}
 
 	// Handle /peru during input states
 	if message.Text == "/peru" && (state == AdFlowStateAwaitingAttribute || state == AdFlowStateAwaitingPrice || state == AdFlowStateAwaitingPostalCode) {
@@ -210,6 +217,78 @@ func (h *ListingHandler) ProcessAlbumTimeout(ctx context.Context, session *UserS
 	h.processPhotoBatch(ctx, session, photoSizes)
 }
 
+// HandleDraftExpired handles the draft expiration timeout message.
+// It deletes the draft from Tori API, resets session state, and notifies the user.
+// The timer parameter is used to validate that this expiration message corresponds
+// to the current timer (not a stale message from a previous timer that was reset).
+// Called from session worker - no locking needed.
+func (h *ListingHandler) HandleDraftExpired(ctx context.Context, session *UserSession, timer *time.Timer) {
+	// Verify there's still an active draft (user may have cancelled or published)
+	if session.draftID == "" || session.currentDraft == nil {
+		return
+	}
+
+	// Ignore stale timer events - if the timer was reset (user activity),
+	// the ExpirationTimer will point to a different timer instance
+	if session.currentDraft.ExpirationTimer != timer {
+		log.Debug().
+			Int64("userId", session.userId).
+			Msg("ignoring stale draft expiration message")
+		return
+	}
+
+	log.Info().
+		Int64("userId", session.userId).
+		Str("draftID", session.draftID).
+		Msg("draft expired due to inactivity")
+
+	// Delete draft from Tori API
+	session.deleteCurrentDraft(ctx)
+
+	// Reset session state
+	session.reset()
+
+	// Notify user
+	session.replyAndRemoveCustomKeyboard(draftExpiredText)
+}
+
+// startDraftExpirationTimer starts or resets the draft expiration timer.
+// When the timer fires, it dispatches a draft_expired message through the session worker.
+// Called from session worker - no locking needed.
+func (h *ListingHandler) startDraftExpirationTimer(session *UserSession) {
+	if session.currentDraft == nil {
+		return
+	}
+
+	// Stop existing timer if any
+	if session.currentDraft.ExpirationTimer != nil {
+		session.currentDraft.ExpirationTimer.Stop()
+	}
+
+	// Start new timer - capture the timer instance to pass in the message
+	// This allows HandleDraftExpired to validate the timer is still current
+	var timer *time.Timer
+	timer = time.AfterFunc(draftExpirationTimeout, func() {
+		// Dispatch expiration through the worker channel
+		// Use context.Background() since the original request context may be cancelled by now
+		session.Send(SessionMessage{
+			Type:         "draft_expired",
+			Ctx:          context.Background(),
+			ExpiredTimer: timer,
+		})
+	})
+	session.currentDraft.ExpirationTimer = timer
+}
+
+// touchDraftActivity resets the draft expiration timer due to user activity.
+// Called from session worker - no locking needed.
+func (h *ListingHandler) touchDraftActivity(session *UserSession) {
+	if session.currentDraft == nil || session.draftID == "" {
+		return
+	}
+	h.startDraftExpirationTimer(session)
+}
+
 // processSinglePhoto processes a single photo (non-album).
 // Called from session worker - no locking needed.
 func (h *ListingHandler) processSinglePhoto(ctx context.Context, session *UserSession, photo tgbotapi.PhotoSize) {
@@ -359,6 +438,9 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 		CategoryPredictions: categories,
 	}
 
+	// Start draft expiration timer
+	h.startDraftExpirationTimer(session)
+
 	// Send title message (user can reply to edit)
 	titleMsg := tgbotapi.NewMessage(session.userId, fmt.Sprintf("📦 *Otsikko:* %s", escapeMarkdown(result.Item.Title)))
 	titleMsg.ParseMode = tgbotapi.ModeMarkdown
@@ -396,6 +478,9 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 // addPhotoToExistingDraft adds a photo to an existing draft.
 // Called from session worker - no locking needed.
 func (h *ListingHandler) addPhotoToExistingDraft(ctx context.Context, session *UserSession, photo tgbotapi.PhotoSize) {
+	// Touch draft activity on photo addition
+	h.touchDraftActivity(session)
+
 	session.reply("Lisätään kuva...")
 	// Send typing indicator after the reply (replies clear typing status)
 	session.sendTypingAction()
@@ -463,6 +548,9 @@ func (h *ListingHandler) HandleCategorySelection(ctx context.Context, session *U
 		session.reply("Ei aktiivista ilmoitusta")
 		return
 	}
+
+	// Touch draft activity on category selection
+	h.touchDraftActivity(session)
 
 	// Edit the original message to remove keyboard
 	if query.Message != nil {
@@ -725,6 +813,9 @@ func (h *ListingHandler) HandleShippingSelection(ctx context.Context, session *U
 		return
 	}
 
+	// Touch draft activity on shipping selection
+	h.touchDraftActivity(session)
+
 	session.currentDraft.ShippingPossible = isYes
 
 	// Remove the inline keyboard
@@ -868,6 +959,8 @@ func (h *ListingHandler) HandleTitleDescriptionReply(session *UserSession, messa
 
 	replyToID := message.ReplyToMessage.MessageID
 	if draft.TitleMessageID == replyToID {
+		// Touch draft activity on title edit
+		h.touchDraftActivity(session)
 		draft.Title = message.Text
 		// Edit the original message to show updated title
 		editMsg := tgbotapi.NewEditMessageText(session.userId, replyToID, fmt.Sprintf("📦 *Otsikko:* %s", escapeMarkdown(draft.Title)))
@@ -877,6 +970,8 @@ func (h *ListingHandler) HandleTitleDescriptionReply(session *UserSession, messa
 		return true
 	}
 	if draft.DescriptionMessageID == replyToID {
+		// Touch draft activity on description edit
+		h.touchDraftActivity(session)
 		draft.Description = message.Text
 		// Edit the original message to show updated description
 		editMsg := tgbotapi.NewEditMessageText(session.userId, replyToID, fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(draft.Description)))

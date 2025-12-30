@@ -26,6 +26,9 @@ type SessionMessage struct {
 	Text          string       // For auth flow messages
 	AlbumBuffer   *AlbumBuffer // For album_timeout messages
 
+	// Draft expiration data
+	ExpiredTimer *time.Timer // For draft_expired messages - used to validate the timer is still current
+
 	// Bulk mode message data
 	BulkAnalysisResult *BulkAnalysisResult // For bulk_analysis_complete messages
 	BulkDraftError     *BulkDraftError     // For bulk_draft_error messages
@@ -236,6 +239,8 @@ func (s *UserSession) reset() {
 	if s.authFlow != nil {
 		s.authFlow.Reset()
 	}
+	// Stop draft expiration timer if running
+	s.stopDraftExpirationTimer()
 	// Reset adinput API state
 	s.adInputClient = nil
 	s.draftID = ""
@@ -245,6 +250,15 @@ func (s *UserSession) reset() {
 	s.isCreatingDraft = false
 	s.awaitingPostalCodeInput = false
 	// Note: bulk session is NOT reset here - use EndBulkSession() explicitly
+}
+
+// stopDraftExpirationTimer stops the draft expiration timer if running.
+// Called from session worker - no locking needed.
+func (s *UserSession) stopDraftExpirationTimer() {
+	if s.currentDraft != nil && s.currentDraft.ExpirationTimer != nil {
+		s.currentDraft.ExpirationTimer.Stop()
+		s.currentDraft.ExpirationTimer = nil
+	}
 }
 
 // deleteCurrentDraft deletes the current draft ad from Tori API.

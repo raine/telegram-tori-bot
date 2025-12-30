@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strconv"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/raine/telegram-tori-bot/tori"
@@ -76,6 +77,9 @@ type AdInputDraft struct {
 	// Attribute collection state
 	RequiredAttrs    []tori.Attribute // Attributes that need user input
 	CurrentAttrIndex int              // Which attribute we're currently asking about
+
+	// Expiration timer for automatic draft cleanup
+	ExpirationTimer *time.Timer
 }
 
 // UploadedImage holds info about an uploaded image

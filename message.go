@@ -45,6 +45,9 @@ const (
 	adminUserAddedText       = "✅ Käyttäjä `%d` lisätty."
 	adminUserRemovedText     = "🗑 Käyttäjä `%d` poistettu."
 	adminNoUsersText         = "Ei sallittuja käyttäjiä."
+
+	// Draft expiration messages
+	draftExpiredText = "Ilmoitusluonnos vanheni käyttämättömyyden vuoksi ja poistettiin."
 )
 
 func formatReplyText(text string, a ...any) string {

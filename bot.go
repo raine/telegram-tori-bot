@@ -153,6 +153,8 @@ func (b *Bot) HandleSessionMessage(ctx context.Context, session *UserSession, ms
 		b.handleTextMessage(ctx, session, msg.Message)
 	case "album_timeout":
 		b.listingHandler.ProcessAlbumTimeout(msg.Ctx, session, msg.AlbumBuffer)
+	case "draft_expired":
+		b.listingHandler.HandleDraftExpired(msg.Ctx, session, msg.ExpiredTimer)
 	// Bulk mode message types
 	case "bulk_album_timeout":
 		b.bulkHandler.ProcessBulkAlbumTimeout(msg.Ctx, session, msg.AlbumBuffer)
