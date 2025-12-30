@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/rs/zerolog/log"
+	"golang.org/x/term"
 )
 
 const envFileName = ".env"
@@ -39,6 +42,12 @@ func checkRequiredConfig() []string {
 // Errors are ignored since the file may not exist.
 func loadEnvFile() {
 	_ = godotenv.Load()
+}
+
+// isInteractiveTerminal returns true if both stdin and stdout are TTYs.
+// This is used to determine if we can run the interactive setup wizard.
+func isInteractiveTerminal() bool {
+	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
 }
 
 // runSetupWizard runs an interactive wizard to collect required configuration.
@@ -71,11 +80,8 @@ func runSetupWizard() bool {
 		return false
 	}
 
-	// Step 4: Security Passphrase
-	tokenKey := promptTokenKey(reader)
-	if tokenKey == "" {
-		return false
-	}
+	// Generate security key automatically
+	tokenKey := generateTokenKey()
 
 	// Write configuration to .env file
 	config := map[string]string{
@@ -219,33 +225,13 @@ func promptAdminID(reader *bufio.Reader) string {
 	}
 }
 
-func promptTokenKey(reader *bufio.Reader) string {
-	fmt.Println("Step 4: Security Passphrase")
-	fmt.Println("---------------------------")
-	fmt.Println("Enter any passphrase (used to encrypt your Tori login):")
-	fmt.Println()
-
-	for {
-		fmt.Print("Enter passphrase: ")
-		passphrase, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				fmt.Println("\nSetup cancelled.")
-				return ""
-			}
-			fmt.Printf("Error reading input: %v\n", err)
-			continue
-		}
-		passphrase = strings.TrimSpace(passphrase)
-
-		if passphrase == "" {
-			fmt.Println("Passphrase cannot be empty. Please try again.")
-			continue
-		}
-
-		fmt.Println()
-		return passphrase
+func generateTokenKey() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		// Fallback to timestamp-based if crypto/rand fails (unlikely)
+		return fmt.Sprintf("tori-%d", time.Now().UnixNano())
 	}
+	return base64.URLEncoding.EncodeToString(b)
 }
 
 // validateTelegramToken validates a Telegram bot token by calling the getMe API.
@@ -261,7 +247,10 @@ func validateTelegramToken(token string) error {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("connection failed: %w", err)
+		if ctx.Err() == context.DeadlineExceeded {
+			return fmt.Errorf("connection timed out - check your internet connection")
+		}
+		return fmt.Errorf("connection failed - check your internet connection: %w", err)
 	}
 	defer resp.Body.Close()
 

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -29,10 +30,15 @@ func main() {
 
 	// Check if required config is missing
 	if missing := checkRequiredConfig(); len(missing) > 0 {
-		// Run interactive setup wizard
-		if !runSetupWizard() {
-			waitOnWindows()
-			os.Exit(1)
+		if isInteractiveTerminal() {
+			// Interactive terminal - run setup wizard
+			if !runSetupWizard() {
+				waitOnWindows()
+				os.Exit(1)
+			}
+		} else {
+			// Non-interactive (systemd, k8s, etc.) - fail with clear error
+			fatalWithWait("missing required config: %s", strings.Join(missing, ", "))
 		}
 	}
 
