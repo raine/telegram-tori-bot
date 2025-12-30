@@ -197,7 +197,14 @@ func (b *Bot) handleTextMessage(ctx context.Context, session *UserSession, messa
 	// Try to handle as natural language edit command if there's an active draft
 	// and the message looks like an edit command (not a regular command)
 	if message.Text != "" && !strings.HasPrefix(message.Text, "/") {
-		if session.HasActiveDraft() {
+		hasActiveDraft := session.HasActiveDraft()
+		draftState := session.GetDraftState()
+		log.Debug().
+			Bool("hasActiveDraft", hasActiveDraft).
+			Str("draftState", draftState.String()).
+			Str("text", message.Text).
+			Msg("checking for natural language edit")
+		if hasActiveDraft {
 			if b.listingHandler.HandleEditCommand(ctx, session, message.Text) {
 				return
 			}

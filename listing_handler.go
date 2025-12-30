@@ -1250,6 +1250,7 @@ func (h *ListingHandler) updateAndPublishAd(
 // Returns true if the message was processed as an edit command.
 func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSession, message string) bool {
 	if h.editIntentParser == nil {
+		log.Debug().Msg("edit intent parser not configured")
 		return false
 	}
 
@@ -1257,6 +1258,7 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 	session.mu.Lock()
 	if session.currentDraft == nil {
 		session.mu.Unlock()
+		log.Debug().Msg("no current draft for edit command")
 		return false
 	}
 
@@ -1267,6 +1269,12 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 	}
 	session.mu.Unlock()
 
+	log.Debug().
+		Str("message", message).
+		Str("title", draftInfo.Title).
+		Int("price", draftInfo.Price).
+		Msg("parsing edit intent")
+
 	// Parse edit intent (NO LOCK - network I/O)
 	intent, err := h.editIntentParser.ParseEditIntent(ctx, message, draftInfo)
 	if err != nil {
@@ -1276,6 +1284,7 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 
 	// Check if any changes were requested
 	if intent.NewPrice == nil && intent.NewTitle == nil && intent.NewDescription == nil {
+		log.Debug().Str("message", message).Msg("no edit intent detected in message")
 		return false
 	}
 

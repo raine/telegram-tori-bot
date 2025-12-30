@@ -21,6 +21,28 @@ const (
 	AdFlowStateReadyToPublish
 )
 
+// String returns a human-readable name for the AdFlowState.
+func (s AdFlowState) String() string {
+	switch s {
+	case AdFlowStateNone:
+		return "None"
+	case AdFlowStateAwaitingCategory:
+		return "AwaitingCategory"
+	case AdFlowStateAwaitingAttribute:
+		return "AwaitingAttribute"
+	case AdFlowStateAwaitingPrice:
+		return "AwaitingPrice"
+	case AdFlowStateAwaitingShipping:
+		return "AwaitingShipping"
+	case AdFlowStateAwaitingPostalCode:
+		return "AwaitingPostalCode"
+	case AdFlowStateReadyToPublish:
+		return "ReadyToPublish"
+	default:
+		return fmt.Sprintf("Unknown(%d)", s)
+	}
+}
+
 // TradeType constants for listing type
 const (
 	TradeTypeSell = "1" // Selling an item
