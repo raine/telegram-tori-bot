@@ -14,7 +14,10 @@ COPY ./tori ./tori
 COPY ./llm ./llm
 COPY ./storage ./storage
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-w -s" .
+ARG VERSION=dev
+ARG BUILD_TIME=unknown
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-w -s -X main.Version=${VERSION} -X 'main.BuildTime=${BUILD_TIME}'" .
 
 FROM scratch
 

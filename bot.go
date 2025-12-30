@@ -287,6 +287,8 @@ func (b *Bot) handleCommand(ctx context.Context, session *UserSession, message *
 		b.handlePostalCodeCommand(session)
 	case "/admin":
 		b.handleAdminCommand(session, argsStr)
+	case "/versio":
+		session.reply("Versio: %s\nRakennettu: %s", Version, BuildTime)
 	default:
 		if !session.isLoggedIn() {
 			session.reply(loginRequiredText)

@@ -24,6 +24,7 @@ var botCommands = []Command{
 	{Name: "poistamalli", Description: "Poista kuvauspohja"},
 	{Name: "postinumero", Description: "Näytä/vaihda postinumero"},
 	{Name: "login", Description: "Kirjaudu Toriin"},
+	{Name: "versio", Description: "Näytä version tiedot"},
 }
 
 // registerCommands sets the bot's command menu in Telegram.
