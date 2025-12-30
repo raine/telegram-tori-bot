@@ -550,6 +550,59 @@ func TestHandlePriceInput_Giveaway(t *testing.T) {
 	}
 }
 
+func TestParsePriceMessage(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    int
+		wantErr bool
+	}{
+		// Valid formats
+		{name: "plain number", input: "50", want: 50, wantErr: false},
+		{name: "plain number with spaces", input: "  50  ", want: 50, wantErr: false},
+		{name: "number with euro suffix", input: "50€", want: 50, wantErr: false},
+		{name: "number with euro suffix space", input: "50 €", want: 50, wantErr: false},
+		{name: "euro prefix", input: "€50", want: 50, wantErr: false},
+		{name: "euro prefix space", input: "€ 50", want: 50, wantErr: false},
+		{name: "number with e suffix", input: "50e", want: 50, wantErr: false},
+		{name: "number with eur suffix", input: "50 eur", want: 50, wantErr: false},
+		{name: "number with EUR suffix", input: "50 EUR", want: 50, wantErr: false},
+		{name: "decimal with dot", input: "50.50", want: 51, wantErr: false},
+		{name: "decimal with comma", input: "99,99€", want: 100, wantErr: false},
+		{name: "large number", input: "1000", want: 1000, wantErr: false},
+		{name: "decimal rounds down", input: "50.49", want: 50, wantErr: false},
+		{name: "thousands separator", input: "1 000", want: 1000, wantErr: false},
+		{name: "thousands separator with euro", input: "1 200 €", want: 1200, wantErr: false},
+		{name: "large with thousands separator", input: "10 000", want: 10000, wantErr: false},
+
+		// Invalid formats - these should be rejected
+		{name: "product model number", input: "Beyerdynamic DT 770", want: 0, wantErr: true},
+		{name: "model with numbers", input: "DT 770", want: 0, wantErr: true},
+		{name: "text with number", input: "Model 123", want: 0, wantErr: true},
+		{name: "number in middle of text", input: "test 50 test", want: 0, wantErr: true},
+		{name: "no number at all", input: "ilmainen", want: 0, wantErr: true},
+		{name: "empty string", input: "", want: 0, wantErr: true},
+		{name: "only spaces", input: "   ", want: 0, wantErr: true},
+		{name: "number with extra text after", input: "50 euros please", want: 0, wantErr: true},
+		{name: "number with text before", input: "price 50", want: 0, wantErr: true},
+		{name: "alphanumeric", input: "50abc", want: 0, wantErr: true},
+		{name: "phone number format", input: "123-456", want: 0, wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parsePriceMessage(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("parsePriceMessage(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("parsePriceMessage(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestHandleUpdate_ReplyToTitleEdits(t *testing.T) {
 	ts := makeAdInputTestServer(t)
 	defer ts.Close()

@@ -500,14 +500,29 @@ func expandTemplate(content string, shipping bool) string {
 
 // --- Price parsing ---
 
-var priceRegex = regexp.MustCompile(`(\d+)`)
+// priceRegex matches valid price formats:
+// - Plain numbers: "50", "100", "1000"
+// - With thousands separator (space): "1 000", "10 000"
+// - With euro symbol: "50€", "100 €", "€50", "€ 100"
+// - With "e" or "eur" suffix: "50e", "100 eur", "50 EUR"
+// - Optionally with decimals: "50.50", "99,99€"
+// The entire input (after trimming) must match the pattern.
+var priceRegex = regexp.MustCompile(`(?i)^€?\s*(\d+(?:\s\d+)*(?:[.,]\d+)?)\s*(?:€|e|eur)?$`)
 
 func parsePriceMessage(text string) (int, error) {
+	text = strings.TrimSpace(text)
 	m := priceRegex.FindStringSubmatch(text)
 	if m == nil {
 		return 0, fmt.Errorf("no price found")
 	}
-	var price int
-	_, err := fmt.Sscanf(m[1], "%d", &price)
-	return price, err
+	// Remove thousands separators (spaces) and replace comma with dot
+	priceStr := strings.ReplaceAll(m[1], " ", "")
+	priceStr = strings.Replace(priceStr, ",", ".", 1)
+	var price float64
+	_, err := fmt.Sscanf(priceStr, "%f", &price)
+	if err != nil {
+		return 0, err
+	}
+	// Round to nearest integer
+	return int(price + 0.5), nil
 }
