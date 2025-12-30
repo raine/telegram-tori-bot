@@ -11,6 +11,8 @@ RUN go mod download
 
 COPY *.go ./
 COPY ./tori ./tori
+COPY ./llm ./llm
+COPY ./storage ./storage
 
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-w -s" .
 

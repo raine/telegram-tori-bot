@@ -1,8 +1,0 @@
-[[users]]
-telegramUserId = 123
-token = 'abc'
-toriAccountId = '123123'
-
-[[users]]
-telegramUserId = 124
-# etc...
