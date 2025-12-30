@@ -62,6 +62,7 @@ type AdInputDraft struct {
 	// Message IDs for editing via reply
 	TitleMessageID       int
 	DescriptionMessageID int
+	SummaryMessageID     int
 
 	// Image data
 	Images []UploadedImage

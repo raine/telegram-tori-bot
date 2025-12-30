@@ -1094,6 +1094,7 @@ func (h *ListingHandler) promptForPrice(ctx context.Context, session *UserSessio
 }
 
 // showAdSummary displays the final ad summary before publishing.
+// If a summary message already exists, it edits that message instead of sending a new one.
 func (h *ListingHandler) showAdSummary(session *UserSession) {
 	session.currentDraft.State = AdFlowStateReadyToPublish
 
@@ -1125,7 +1126,32 @@ Lähetä /laheta julkaistaksesi tai /peru peruuttaaksesi.`,
 		len(session.photos),
 	)
 
-	session.reply(msg)
+	// If a summary message already exists, edit it instead of sending a new one
+	if session.currentDraft.SummaryMessageID != 0 {
+		editMsg := tgbotapi.NewEditMessageText(
+			session.userId,
+			session.currentDraft.SummaryMessageID,
+			msg,
+		)
+		editMsg.ParseMode = tgbotapi.ModeMarkdown
+
+		_, err := h.tg.Request(editMsg)
+		if err != nil {
+			// If "message is not modified", it's safe to ignore (content hasn't changed)
+			if strings.Contains(err.Error(), "message is not modified") {
+				return
+			}
+
+			// For other errors (e.g., "message to edit not found"), fall back to sending a new message
+			log.Warn().Err(err).Int("msgID", session.currentDraft.SummaryMessageID).Msg("failed to edit summary, sending new one")
+
+			sentMsg := session.reply(msg)
+			session.currentDraft.SummaryMessageID = sentMsg.MessageID
+		}
+	} else {
+		sentMsg := session.reply(msg)
+		session.currentDraft.SummaryMessageID = sentMsg.MessageID
+	}
 }
 
 // startNewAdFlow creates a draft and returns the ID and ETag.
