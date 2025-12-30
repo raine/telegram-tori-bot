@@ -667,7 +667,7 @@ func (h *ListingHandler) HandleAttributeInput(ctx context.Context, session *User
 	currentAttr := attrs[idx]
 
 	// Handle skip button - don't add anything to CollectedAttrs for this attribute
-	if text == "Ohita" {
+	if text == SkipButtonLabel {
 		log.Info().Str("attr", currentAttr.Name).Msg("attribute skipped")
 
 		// Move to next attribute or price input
@@ -685,7 +685,7 @@ func (h *ListingHandler) HandleAttributeInput(ctx context.Context, session *User
 	opt := tori.FindOptionByLabel(&currentAttr, text)
 	if opt == nil {
 		// Invalid selection, prompt again
-		session.reply(fmt.Sprintf("Valitse jokin vaihtoehdoista: %s", strings.ToLower(currentAttr.Label)))
+		session.reply(fmt.Sprintf("Valitse jokin vaihtoehdoista tai paina '%s': %s", SkipButtonLabel, strings.ToLower(currentAttr.Label)))
 		h.promptForAttribute(session, currentAttr)
 		return
 	}

@@ -48,6 +48,9 @@ func (s AdFlowState) String() string {
 const (
 	TradeTypeSell = "1" // Selling an item
 	TradeTypeGive = "2" // Giving away for free
+
+	// SkipButtonLabel is the label for the skip button in attribute selection
+	SkipButtonLabel = "Ohita"
 )
 
 // AdInputDraft tracks the state of a new-API ad creation
@@ -165,7 +168,7 @@ func makeAttributeKeyboard(attr tori.Attribute) tgbotapi.ReplyKeyboardMarkup {
 
 	// Add skip button to allow skipping optional attributes
 	rows = append(rows, tgbotapi.NewKeyboardButtonRow(
-		tgbotapi.NewKeyboardButton("Ohita"),
+		tgbotapi.NewKeyboardButton(SkipButtonLabel),
 	))
 
 	return tgbotapi.NewOneTimeReplyKeyboard(rows...)
