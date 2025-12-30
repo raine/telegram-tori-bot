@@ -911,3 +911,263 @@ func TestHandleUpdate_OsastoDuringPriceInput(t *testing.T) {
 		t.Errorf("expected state to remain AwaitingPrice, got %v", session.currentDraft.State)
 	}
 }
+
+func TestHandleReselectCallback_PreservesValues(t *testing.T) {
+	_, _, tg, bot, session := setupAdInputSession(t, makeAdInputTestServer(t))
+
+	// Set up session with draft that has price, shipping, and condition set
+	session.currentDraft = &AdInputDraft{
+		State:            AdFlowStateReadyToPublish,
+		CategoryID:       5012,
+		Price:            100,
+		TradeType:        TradeTypeSell,
+		ShippingPossible: true,
+		CollectedAttrs:   map[string]string{"condition": "2"},
+		CategoryPredictions: []tori.CategoryPrediction{
+			{ID: 5012, Label: "Tietokoneen oheislaitteet"},
+			{ID: 5013, Label: "Näytöt"},
+		},
+	}
+
+	query := &tgbotapi.CallbackQuery{
+		ID:   "callback-1",
+		Data: "reselect:category",
+		Message: &tgbotapi.Message{
+			MessageID: 100,
+			Chat:      &tgbotapi.Chat{ID: session.userId},
+		},
+	}
+
+	// Expect: edit keyboard to remove it, send category selection message
+	tg.On("Request", mock.AnythingOfType("tgbotapi.EditMessageReplyMarkupConfig")).
+		Return(&tgbotapi.APIResponse{Ok: true}, nil).Once()
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		return msg.Text == "Valitse osasto" && msg.ReplyMarkup != nil
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	bot.handleReselectCallback(context.Background(), session, query)
+	tg.AssertExpectations(t)
+
+	// Verify state was reset
+	if session.currentDraft.State != AdFlowStateAwaitingCategory {
+		t.Errorf("expected state AwaitingCategory, got %v", session.currentDraft.State)
+	}
+	if session.currentDraft.CategoryID != 0 {
+		t.Errorf("expected CategoryID to be 0, got %d", session.currentDraft.CategoryID)
+	}
+
+	// Verify preserved values were saved
+	if session.currentDraft.PreservedValues == nil {
+		t.Fatal("expected PreservedValues to be set")
+	}
+	if session.currentDraft.PreservedValues.Price != 100 {
+		t.Errorf("expected preserved Price 100, got %d", session.currentDraft.PreservedValues.Price)
+	}
+	if session.currentDraft.PreservedValues.TradeType != TradeTypeSell {
+		t.Errorf("expected preserved TradeType %s, got %s", TradeTypeSell, session.currentDraft.PreservedValues.TradeType)
+	}
+	if !session.currentDraft.PreservedValues.ShippingSet {
+		t.Error("expected ShippingSet to be true")
+	}
+	if !session.currentDraft.PreservedValues.ShippingPossible {
+		t.Error("expected ShippingPossible to be true")
+	}
+	if session.currentDraft.PreservedValues.CollectedAttrs["condition"] != "2" {
+		t.Errorf("expected preserved condition '2', got %s", session.currentDraft.PreservedValues.CollectedAttrs["condition"])
+	}
+}
+
+func TestTryRestorePreservedAttributes_RestoresCompatibleCondition(t *testing.T) {
+	_, _, tg, bot, session := setupAdInputSession(t, makeAdInputTestServer(t))
+	bot.listingHandler = NewListingHandler(tg, nil, nil, nil)
+
+	session.currentDraft = &AdInputDraft{
+		State:          AdFlowStateAwaitingAttribute,
+		CollectedAttrs: make(map[string]string),
+		PreservedValues: &PreservedValues{
+			CollectedAttrs: map[string]string{"condition": "2"}, // "Erinomainen" has ID 2
+		},
+	}
+
+	// Test attributes where condition has option ID 2
+	attrs := []tori.Attribute{
+		{
+			Name:  "condition",
+			Label: "Kunto",
+			Options: []tori.AttributeOption{
+				{ID: 1, Label: "Uusi"},
+				{ID: 2, Label: "Erinomainen"},
+				{ID: 3, Label: "Hyvä"},
+			},
+		},
+	}
+
+	remaining := bot.listingHandler.tryRestorePreservedAttributes(session, attrs, session.currentDraft.PreservedValues)
+
+	// Condition should be restored, no remaining attributes
+	if len(remaining) != 0 {
+		t.Errorf("expected 0 remaining attributes, got %d", len(remaining))
+	}
+	if session.currentDraft.CollectedAttrs["condition"] != "2" {
+		t.Errorf("expected condition '2' to be restored, got %s", session.currentDraft.CollectedAttrs["condition"])
+	}
+}
+
+func TestTryRestorePreservedAttributes_SkipsIncompatibleCondition(t *testing.T) {
+	_, _, tg, bot, session := setupAdInputSession(t, makeAdInputTestServer(t))
+	bot.listingHandler = NewListingHandler(tg, nil, nil, nil)
+
+	session.currentDraft = &AdInputDraft{
+		State:          AdFlowStateAwaitingAttribute,
+		CollectedAttrs: make(map[string]string),
+		PreservedValues: &PreservedValues{
+			CollectedAttrs: map[string]string{"condition": "99"}, // ID 99 doesn't exist in new category
+		},
+	}
+
+	// Test attributes where condition does NOT have option ID 99
+	attrs := []tori.Attribute{
+		{
+			Name:  "condition",
+			Label: "Kunto",
+			Options: []tori.AttributeOption{
+				{ID: 1, Label: "Uusi"},
+				{ID: 2, Label: "Erinomainen"},
+			},
+		},
+	}
+
+	// No message expected since nothing was restored
+	remaining := bot.listingHandler.tryRestorePreservedAttributes(session, attrs, session.currentDraft.PreservedValues)
+	tg.AssertExpectations(t)
+
+	// Condition should NOT be restored, attribute remains
+	if len(remaining) != 1 {
+		t.Errorf("expected 1 remaining attribute, got %d", len(remaining))
+	}
+	if _, ok := session.currentDraft.CollectedAttrs["condition"]; ok {
+		t.Error("expected condition to NOT be restored")
+	}
+}
+
+func TestProceedAfterAttributes_SkipsPriceAndShipping(t *testing.T) {
+	ts := makeAdInputTestServer(t)
+	defer ts.Close()
+	_, _, tg, bot, session := setupAdInputSession(t, ts)
+
+	// Create a mock session store that returns a postal code
+	mockStore := newMockSessionStore()
+	mockStore.sessions[session.userId] = &storage.StoredSession{TelegramID: session.userId}
+	// Override GetPostalCode to return a valid postal code
+	bot.listingHandler = &ListingHandler{
+		tg:           tg,
+		sessionStore: &mockSessionStoreWithPostalCode{mockSessionStore: mockStore, postalCode: "00100"},
+	}
+
+	session.currentDraft = &AdInputDraft{
+		State:          AdFlowStateAwaitingAttribute,
+		Title:          "Test Item",
+		Description:    "Test description",
+		CollectedAttrs: map[string]string{"condition": "2"},
+		PreservedValues: &PreservedValues{
+			Price:            50,
+			TradeType:        TradeTypeSell,
+			ShippingPossible: true,
+			ShippingSet:      true,
+		},
+	}
+
+	// Expect: summary shown directly (no price/shipping messages)
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		return strings.Contains(msg.Text, "Test Item")
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	bot.listingHandler.proceedAfterAttributes(context.Background(), session)
+	tg.AssertExpectations(t)
+
+	// Should be at ready to publish state
+	if session.currentDraft.State != AdFlowStateReadyToPublish {
+		t.Errorf("expected state ReadyToPublish, got %v", session.currentDraft.State)
+	}
+	// PreservedValues should be cleared
+	if session.currentDraft.PreservedValues != nil {
+		t.Error("expected PreservedValues to be nil after restoration")
+	}
+}
+
+func TestProceedAfterAttributes_PromptsForPriceWhenNotSet(t *testing.T) {
+	ts := makeAdInputTestServer(t)
+	defer ts.Close()
+	_, _, tg, bot, session := setupAdInputSession(t, ts)
+	bot.listingHandler = NewListingHandler(tg, nil, nil, nil)
+
+	session.currentDraft = &AdInputDraft{
+		State:          AdFlowStateAwaitingAttribute,
+		Title:          "Test Item",
+		CollectedAttrs: map[string]string{},
+		PreservedValues: &PreservedValues{
+			Price:     0,             // Price not set
+			TradeType: TradeTypeSell, // Default trade type
+		},
+	}
+
+	// Expect price prompt (contains "Syötä hinta")
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		return strings.Contains(msg.Text, "Syötä hinta")
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	bot.listingHandler.proceedAfterAttributes(context.Background(), session)
+	tg.AssertExpectations(t)
+
+	// Should be at awaiting price state
+	if session.currentDraft.State != AdFlowStateAwaitingPrice {
+		t.Errorf("expected state AwaitingPrice, got %v", session.currentDraft.State)
+	}
+}
+
+func TestProceedAfterAttributes_RestoresGiveaway(t *testing.T) {
+	ts := makeAdInputTestServer(t)
+	defer ts.Close()
+	_, _, tg, bot, session := setupAdInputSession(t, ts)
+
+	mockStore := newMockSessionStore()
+	bot.listingHandler = &ListingHandler{
+		tg:           tg,
+		sessionStore: &mockSessionStoreWithPostalCode{mockSessionStore: mockStore, postalCode: "00100"},
+	}
+
+	session.currentDraft = &AdInputDraft{
+		State:          AdFlowStateAwaitingAttribute,
+		Title:          "Free Item",
+		Description:    "Giving away",
+		CollectedAttrs: map[string]string{},
+		PreservedValues: &PreservedValues{
+			Price:            0,
+			TradeType:        TradeTypeGive, // Giveaway
+			ShippingPossible: false,
+			ShippingSet:      true,
+		},
+	}
+
+	// Expect: summary shown directly (no giveaway/shipping messages)
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		return strings.Contains(msg.Text, "Free Item")
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	bot.listingHandler.proceedAfterAttributes(context.Background(), session)
+	tg.AssertExpectations(t)
+
+	if session.currentDraft.TradeType != TradeTypeGive {
+		t.Errorf("expected TradeType %s, got %s", TradeTypeGive, session.currentDraft.TradeType)
+	}
+}
+
+// mockSessionStoreWithPostalCode wraps mockSessionStore to return a specific postal code
+type mockSessionStoreWithPostalCode struct {
+	*mockSessionStore
+	postalCode string
+}
+
+func (m *mockSessionStoreWithPostalCode) GetPostalCode(telegramID int64) (string, error) {
+	return m.postalCode, nil
+}

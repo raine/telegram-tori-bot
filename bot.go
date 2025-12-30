@@ -560,12 +560,27 @@ func (b *Bot) handleReselectCallback(ctx context.Context, session *UserSession, 
 	}
 
 	if query.Data == "reselect:category" {
+		// Preserve values before resetting for category change
+		preserved := &PreservedValues{
+			Price:            session.currentDraft.Price,
+			TradeType:        session.currentDraft.TradeType,
+			ShippingPossible: session.currentDraft.ShippingPossible,
+			ShippingSet:      session.currentDraft.State >= AdFlowStateReadyToPublish || session.currentDraft.State == AdFlowStateAwaitingPostalCode,
+			CollectedAttrs:   make(map[string]string),
+		}
+
+		// Copy collected attributes (including condition)
+		for k, v := range session.currentDraft.CollectedAttrs {
+			preserved.CollectedAttrs[k] = v
+		}
+
 		// Reset to category selection state and clear collected attributes
 		session.currentDraft.State = AdFlowStateAwaitingCategory
 		session.currentDraft.CategoryID = 0
 		session.currentDraft.CollectedAttrs = make(map[string]string)
 		session.currentDraft.RequiredAttrs = nil
 		session.currentDraft.CurrentAttrIndex = 0
+		session.currentDraft.PreservedValues = preserved
 
 		// Show category selection keyboard
 		msg := tgbotapi.NewMessage(session.userId, "Valitse osasto")

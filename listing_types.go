@@ -80,6 +80,18 @@ type AdInputDraft struct {
 
 	// Expiration timer for automatic draft cleanup
 	ExpirationTimer *time.Timer
+
+	// Preserved values when changing category - used to skip prompts for already-set values
+	PreservedValues *PreservedValues
+}
+
+// PreservedValues holds values to preserve when changing category
+type PreservedValues struct {
+	Price            int
+	TradeType        string
+	ShippingPossible bool
+	ShippingSet      bool              // Tracks if shipping was explicitly set (to distinguish false from unset)
+	CollectedAttrs   map[string]string // Collected attributes to preserve (e.g., condition)
 }
 
 // UploadedImage holds info about an uploaded image

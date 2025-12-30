@@ -633,13 +633,18 @@ func (h *ListingHandler) ProcessCategorySelection(ctx context.Context, session *
 		requiredAttrs = h.tryAutoSelectAttributes(ctx, session, requiredAttrs)
 	}
 
+	// Try to restore preserved attribute values (e.g., condition) if compatible
+	if preserved := session.currentDraft.PreservedValues; preserved != nil && len(requiredAttrs) > 0 {
+		requiredAttrs = h.tryRestorePreservedAttributes(session, requiredAttrs, preserved)
+	}
+
 	if len(requiredAttrs) > 0 {
 		session.currentDraft.RequiredAttrs = requiredAttrs
 		session.currentDraft.CurrentAttrIndex = 0
 		session.currentDraft.State = AdFlowStateAwaitingAttribute
 		h.promptForAttribute(session, requiredAttrs[0])
 	} else {
-		h.promptForPrice(ctx, session)
+		h.proceedAfterAttributes(ctx, session)
 	}
 }
 
@@ -655,7 +660,7 @@ func (h *ListingHandler) HandleAttributeInput(ctx context.Context, session *User
 
 	if idx >= len(attrs) {
 		// Shouldn't happen, but handle gracefully
-		h.promptForPrice(ctx, session)
+		h.proceedAfterAttributes(ctx, session)
 		return
 	}
 
@@ -680,7 +685,7 @@ func (h *ListingHandler) HandleAttributeInput(ctx context.Context, session *User
 		nextAttr := attrs[session.currentDraft.CurrentAttrIndex]
 		h.promptForAttribute(session, nextAttr)
 	} else {
-		h.promptForPrice(ctx, session)
+		h.proceedAfterAttributes(ctx, session)
 	}
 }
 
@@ -1087,6 +1092,101 @@ func (h *ListingHandler) tryAutoSelectAttributes(ctx context.Context, session *U
 	}
 
 	return remainingAttrs
+}
+
+// tryRestorePreservedAttributes attempts to restore preserved attribute values (like condition)
+// if the new category has compatible options. Returns the list of attributes that still need manual selection.
+func (h *ListingHandler) tryRestorePreservedAttributes(session *UserSession, attrs []tori.Attribute, preserved *PreservedValues) []tori.Attribute {
+	var remainingAttrs []tori.Attribute
+
+	for _, attr := range attrs {
+		preservedValue, hasPreserved := preserved.CollectedAttrs[attr.Name]
+		if !hasPreserved {
+			remainingAttrs = append(remainingAttrs, attr)
+			continue
+		}
+
+		// Check if the preserved value ID exists in the new category's options
+		preservedID, err := strconv.Atoi(preservedValue)
+		if err != nil {
+			remainingAttrs = append(remainingAttrs, attr)
+			continue
+		}
+
+		var foundOption *tori.AttributeOption
+		for _, opt := range attr.Options {
+			if opt.ID == preservedID {
+				foundOption = &opt
+				break
+			}
+		}
+
+		if foundOption != nil {
+			// Restore the preserved value
+			session.currentDraft.CollectedAttrs[attr.Name] = preservedValue
+			log.Info().Str("attr", attr.Name).Str("label", foundOption.Label).Int("optionId", preservedID).Msg("attribute restored from previous selection")
+		} else {
+			// Value not compatible, need manual selection
+			remainingAttrs = append(remainingAttrs, attr)
+		}
+	}
+
+	return remainingAttrs
+}
+
+// proceedAfterAttributes handles the flow after all attributes are collected.
+// If preserved values exist for price/shipping, it skips those prompts.
+func (h *ListingHandler) proceedAfterAttributes(ctx context.Context, session *UserSession) {
+	preserved := session.currentDraft.PreservedValues
+
+	// Only restore if we have a set price (>0) or it is a giveaway.
+	// Default state (Price=0, TradeType="1") should trigger a prompt.
+	shouldRestore := preserved != nil && (preserved.Price > 0 || preserved.TradeType == TradeTypeGive)
+
+	if !shouldRestore {
+		h.promptForPrice(ctx, session)
+		return
+	}
+
+	// Restore price and trade type
+	session.currentDraft.Price = preserved.Price
+	session.currentDraft.TradeType = preserved.TradeType
+
+	// If shipping was also set, restore it and go to summary
+	if preserved.ShippingSet {
+		session.currentDraft.ShippingPossible = preserved.ShippingPossible
+
+		// Clear preserved values as we're done with them
+		session.currentDraft.PreservedValues = nil
+
+		// Check postal code before showing summary (matching HandleShippingSelection logic)
+		if h.sessionStore != nil {
+			postalCode, _ := h.sessionStore.GetPostalCode(session.userId)
+			if postalCode == "" {
+				session.currentDraft.State = AdFlowStateAwaitingPostalCode
+				session.reply(postalCodePromptText)
+				return
+			}
+		}
+
+		// Go directly to summary
+		h.showAdSummary(session)
+		return
+	}
+
+	// Clear preserved values as price is restored, but shipping still needs to be set
+	session.currentDraft.PreservedValues = nil
+
+	// Need to ask for shipping
+	session.currentDraft.State = AdFlowStateAwaitingShipping
+	msg := tgbotapi.NewMessage(session.userId, "Onko postitus mahdollinen?")
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("Kyllä", "shipping:yes"),
+			tgbotapi.NewInlineKeyboardButtonData("Ei", "shipping:no"),
+		),
+	)
+	session.replyWithMessage(msg)
 }
 
 // promptForAttribute shows a keyboard to select an attribute value.
