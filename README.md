@@ -46,7 +46,7 @@ listings. Supports conditional text for shipping:
 - **Built-in login flow**: Login directly through the bot with `/login` (email
   verification code)
 
-## Quick Start
+## Quick start
 
 ### Prerequisites
 
@@ -93,13 +93,17 @@ go install github.com/raine/telegram-tori-bot@latest
    - Send `/start`, then `/login` to connect your Tori account
    - Send a photo of something you want to sell
 
-## LLM Costs
+## LLM costs
 
 The bot uses Google's Gemini API for vision and text processing. Costs are
-minimal - a typical listing creation costs well under $0.01 USD (image analysis
-~$0.001, category selection ~$0.00002).
+minimal - a typical listing creation costs well under $0.01 USD:
 
-## Environment Variables
+```
+INF image(s) analyzed cost=0.0008925 imageCount=1 title="LUMI Recovery Pod kylmäallas"
+INF category selection llm call costUSD=0.000019725 inputTokens=223 model=gemini-2.5-flash-lite outputTokens=10
+```
+
+## Environment variables
 
 | Variable            | Required | Description                                       |
 | ------------------- | -------- | ------------------------------------------------- |
