@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"os"
 	"os/signal"
 	"sync"
@@ -15,10 +16,26 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const logFileName = "telegram-tori-bot.log"
+
 func main() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+	// Open log file with truncation (overwrites on each startup)
+	logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		log.Fatal().Err(err).Msg("failed to open log file")
+	}
+	defer logFile.Close()
+
+	// Write to both stderr and file (both with console formatting)
+	consoleWriter := zerolog.ConsoleWriter{Out: os.Stderr}
+	fileWriter := zerolog.ConsoleWriter{Out: logFile, NoColor: true}
+	multiWriter := io.MultiWriter(consoleWriter, fileWriter)
+	log.Logger = log.Output(multiWriter)
+
+	log.Info().Str("logFile", logFileName).Msg("logging to file")
+
 	botToken, ok := os.LookupEnv("BOT_TOKEN")
 	if !ok {
 		log.Fatal().Msg("BOT_TOKEN is not set")
