@@ -48,50 +48,33 @@ listings. Supports conditional text for shipping:
 
 ## Quick start
 
-### Prerequisites
+1. **Download** the latest release for your platform from
+   [Releases](https://github.com/raine/telegram-tori-bot/releases)
 
-- **Go 1.25+**: [Install Go](https://go.dev/doc/install)
+2. **Run** the downloaded file (double-click or run from terminal)
 
-### Installation
+3. **Follow the setup wizard** - it will guide you through:
+   - Creating a Telegram bot via @BotFather
+   - Getting a Gemini API key
+   - Finding your Telegram user ID
+
+4. **Start using the bot**
+   - Find your bot on Telegram by its username
+   - Send `/start`, then `/login` to connect your Tori account
+   - Send a photo of something you want to sell
+
+### Windows users
+
+Windows may show a "Windows protected your PC" warning for unsigned executables.
+Click "More info" then "Run anyway" to proceed.
+
+### Alternative: Install with Go
+
+If you have Go installed, you can also install via:
 
 ```sh
 go install github.com/raine/telegram-tori-bot@latest
 ```
-
-### Setup
-
-1. **Create a Telegram bot**
-   - Message [@BotFather](https://t.me/botfather) on Telegram
-   - Send `/newbot` and follow the prompts
-   - Save the bot token you receive
-
-2. **Get a Gemini API key**
-   - Visit [Google AI Studio](https://aistudio.google.com/apikey)
-   - Create a new API key
-
-3. **Find your Telegram user ID**
-   - Message [@userinfobot](https://t.me/userinfobot) on Telegram
-   - It will reply with your user ID (you'll use this as `ADMIN_TELEGRAM_ID` below)
-
-4. **Configure environment variables**
-
-   ```sh
-   export BOT_TOKEN="your_bot_token"
-   export GEMINI_API_KEY="your_gemini_key"
-   export TORI_TOKEN_KEY="any_secret_passphrase"
-   export ADMIN_TELEGRAM_ID="your_user_id"
-   ```
-
-5. **Run the bot**
-
-   ```sh
-   telegram-tori-bot
-   ```
-
-6. **Start using the bot**
-   - Find your bot on Telegram by its username
-   - Send `/start`, then `/login` to connect your Tori account
-   - Send a photo of something you want to sell
 
 ## LLM costs
 
@@ -104,7 +87,10 @@ INF image(s) analyzed cost=0.0008925 imageCount=1 title="LUMI Recovery Pod kylm√
 INF category selection llm call costUSD=0.000019725 inputTokens=223 model=gemini-2.5-flash-lite outputTokens=10
 ```
 
-## Environment variables
+## Configuration
+
+The setup wizard automatically creates a `.env` file with your configuration.
+You can also set these as environment variables:
 
 | Variable            | Required | Description                                       |
 | ------------------- | -------- | ------------------------------------------------- |
