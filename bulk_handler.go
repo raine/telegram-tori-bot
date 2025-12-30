@@ -557,8 +557,8 @@ func (h *BulkHandler) formatStatusMessage(bulk *BulkSession) string {
 				sb.WriteString(fmt.Sprintf("%s %s Analysoidaan... (📷 %d)\n", indexEmoji, emoji, len(draft.Photos)))
 			case BulkAnalysisDone:
 				title := draft.Title
-				if len(title) > 30 {
-					title = title[:27] + "..."
+				if len(title) > 50 {
+					title = title[:47] + "..."
 				}
 				sb.WriteString(fmt.Sprintf("%s %s %s\n", indexEmoji, emoji, escapeMarkdown(title)))
 			case BulkAnalysisError:
