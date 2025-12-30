@@ -991,29 +991,55 @@ func (h *ListingHandler) promptForPrice(ctx context.Context, session *UserSessio
 	session.currentDraft.State = AdFlowStateAwaitingPrice
 	title := session.currentDraft.Title
 
+	log.Debug().
+		Str("query", title).
+		Int64("userId", session.userId).
+		Msg("searching for similar prices")
+
 	// Search for similar items (network I/O)
 	results, err := h.searchClient.Search(ctx, tori.SearchKeyBapCommon, tori.SearchParams{
 		Query: title,
 		Rows:  20,
 	})
 
+	if err != nil {
+		log.Warn().Err(err).Str("query", title).Msg("price search failed")
+	}
+
+	resultCount := 0
+	if results != nil {
+		resultCount = len(results.Docs)
+	}
+	log.Debug().
+		Int("count", resultCount).
+		Int64("userId", session.userId).
+		Msg("price search returned results")
+
 	// Collect prices from results
 	var prices []int
-	if err == nil && results != nil {
+	if results != nil {
 		for _, doc := range results.Docs {
 			if doc.Price != nil && doc.Price.Amount > 0 {
 				prices = append(prices, doc.Price.Amount)
 			}
 		}
-	} else if err != nil {
-		log.Warn().Err(err).Msg("price search failed")
 	}
+
+	log.Debug().
+		Ints("prices", prices).
+		Int64("userId", session.userId).
+		Msg("found prices from search")
 
 	// Calculate recommendation
 	var recommendationMsg string
 	var recommendedPrice int
 
-	if len(prices) >= 3 {
+	if len(prices) < 3 {
+		log.Debug().
+			Int("priceCount", len(prices)).
+			Int64("userId", session.userId).
+			Msg("insufficient prices for estimation (need at least 3)")
+	} else {
 		sort.Ints(prices)
 		minPrice := prices[0]
 		maxPrice := prices[len(prices)-1]
