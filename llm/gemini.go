@@ -72,13 +72,10 @@ Item Title: %s
 Item Description: %s
 
 For each attribute below, select the best matching option ID.
-If the correct option cannot be confidently determined from the text, return null for that attribute. Do not guess.
+If the correct option cannot be confidently determined from the text, use -1 for that attribute. Do not guess.
 
 Attributes:
-%s
-
-Respond ONLY with a JSON object using the attribute "name" (shown in parentheses) as keys, mapping to option IDs.
-Example: {"condition": 123, "computer_components_type": 456, "size": null}`
+%s`
 
 const giveawayDescriptionRewritePrompt = `Transform this marketplace listing description from a selling context to a giveaway context.
 
@@ -309,9 +306,34 @@ func (g *GeminiAnalyzer) SelectCategory(ctx context.Context, title, description 
 	return resp.CategoryID, nil
 }
 
+// buildAttributeSelectionSchema creates a dynamic JSON schema for attribute selection.
+// The schema ensures the LLM returns an object with attribute names as keys and integer option IDs as values.
+func buildAttributeSelectionSchema(attrs []tori.Attribute) *genai.Schema {
+	properties := make(map[string]*genai.Schema)
+	required := make([]string, 0, len(attrs))
+	propertyOrdering := make([]string, 0, len(attrs))
+
+	for _, attr := range attrs {
+		properties[attr.Name] = &genai.Schema{
+			Type:        genai.TypeInteger,
+			Description: fmt.Sprintf("Option ID for %s. Use -1 if uncertain.", attr.Label),
+		}
+		required = append(required, attr.Name)
+		propertyOrdering = append(propertyOrdering, attr.Name)
+	}
+
+	return &genai.Schema{
+		Type:             genai.TypeObject,
+		Properties:       properties,
+		Required:         required,
+		PropertyOrdering: propertyOrdering,
+	}
+}
+
 // SelectAttributes selects the best options for the given attributes using Gemini Lite.
 // Returns a map of attribute name -> selected option ID.
-// Attributes where the LLM returns null are omitted from the result.
+// Attributes where the LLM returns -1 (uncertain) are omitted from the result.
+// Uses Gemini's structured output (ResponseSchema) to ensure valid JSON with correct keys.
 func (g *GeminiAnalyzer) SelectAttributes(ctx context.Context, title, description string, attrs []tori.Attribute) (map[string]int, error) {
 	if len(attrs) == 0 {
 		return nil, nil
@@ -331,9 +353,18 @@ func (g *GeminiAnalyzer) SelectAttributes(ctx context.Context, title, descriptio
 	prompt := fmt.Sprintf(attributeSelectionPrompt, title, description, attrBuilder.String())
 	log.Debug().Str("prompt", prompt).Msg("attribute selection llm input")
 
+	// Build dynamic schema based on the attributes
+	schema := buildAttributeSelectionSchema(attrs)
+
+	// Configure generation with structured output
+	config := &genai.GenerateContentConfig{
+		ResponseMIMEType: "application/json",
+		ResponseSchema:   schema,
+	}
+
 	result, err := g.client.Models.GenerateContent(ctx, geminiLiteModel, []*genai.Content{
 		genai.NewContentFromParts([]*genai.Part{genai.NewPartFromText(prompt)}, genai.RoleUser),
-	}, nil)
+	}, config)
 	if err != nil {
 		return nil, fmt.Errorf("gemini attribute selection failed: %w", err)
 	}
@@ -345,29 +376,35 @@ func (g *GeminiAnalyzer) SelectAttributes(ctx context.Context, title, descriptio
 	text := result.Text()
 	log.Debug().Str("response", text).Msg("attribute selection llm output")
 
-	// Extract JSON object from response
-	text = strings.TrimSpace(text)
-	start := strings.Index(text, "{")
-	end := strings.LastIndex(text, "}")
-	if start == -1 || end == -1 || end <= start {
-		return nil, fmt.Errorf("no JSON object found in response: %s", text)
-	}
-	text = text[start : end+1]
-
-	// Parse as map with nullable ints
-	var selections map[string]*int
+	// Parse the JSON response (schema ensures it's valid JSON with correct structure)
+	var selections map[string]int
 	if err := json.Unmarshal([]byte(text), &selections); err != nil {
 		return nil, fmt.Errorf("failed to parse attribute json: %w (response: %s)", err, text)
 	}
 
-	// Filter out nulls and convert to map[string]int
+	// Build a lookup map for valid option IDs per attribute
+	validOptions := make(map[string]map[int]bool)
+	for _, attr := range attrs {
+		validOptions[attr.Name] = make(map[int]bool)
+		for _, opt := range attr.Options {
+			validOptions[attr.Name][opt.ID] = true
+		}
+	}
+
+	// Filter out -1 values (uncertain) and validate option IDs
 	finalMap := make(map[string]int)
 	for k, v := range selections {
-		if v != nil {
-			finalMap[k] = *v
-			log.Debug().Str("attribute", k).Int("selectedOptionId", *v).Msg("attribute auto-selected by llm")
+		if v == -1 {
+			log.Debug().Str("attribute", k).Msg("attribute returned -1 by llm, will prompt user")
+			continue
+		}
+
+		// Validate the ID actually exists for this attribute
+		if opts, ok := validOptions[k]; ok && opts[v] {
+			finalMap[k] = v
+			log.Debug().Str("attribute", k).Int("selectedOptionId", v).Msg("attribute auto-selected by llm")
 		} else {
-			log.Debug().Str("attribute", k).Msg("attribute returned null by llm, will prompt user")
+			log.Warn().Str("attribute", k).Int("invalidId", v).Msg("llm returned invalid option ID, ignoring")
 		}
 	}
 
