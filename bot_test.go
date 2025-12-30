@@ -327,12 +327,12 @@ func TestHandleCategorySelection_FetchesAttributes(t *testing.T) {
 	// Create listing handler for the bot
 	bot.listingHandler = NewListingHandler(tg, nil, nil, nil)
 
-	// Set up session with draft awaiting category
+	// Set up session with draft awaiting category (with parent to test full path)
 	session.currentDraft = &AdInputDraft{
 		State:          AdFlowStateAwaitingCategory,
 		CollectedAttrs: make(map[string]string),
 		CategoryPredictions: []tori.CategoryPrediction{
-			{ID: 5012, Label: "Tietokoneen oheislaitteet"},
+			{ID: 5012, Label: "Tietokoneen oheislaitteet", Parent: &tori.CategoryPrediction{ID: 5000, Label: "Tietokoneet"}},
 		},
 	}
 
@@ -347,10 +347,10 @@ func TestHandleCategorySelection_FetchesAttributes(t *testing.T) {
 		},
 	}
 
-	// Expect: edit keyboard, send category confirmation, send attribute prompt
+	// Expect: edit keyboard, send category confirmation (with full path), send attribute prompt
 	tg.On("Request", mock.AnythingOfType("tgbotapi.EditMessageReplyMarkupConfig")).
 		Return(&tgbotapi.APIResponse{Ok: true}, nil).Once()
-	tg.On("Send", makeMessage(userId, "Osasto: *Tietokoneen oheislaitteet*")).
+	tg.On("Send", makeMessage(userId, "Osasto: *Tietokoneet > Tietokoneen oheislaitteet*")).
 		Return(tgbotapi.Message{}, nil).Once()
 	// Attribute prompt with reply keyboard
 	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {

@@ -486,6 +486,17 @@ func (h *BulkHandler) estimatePriceForDraft(ctx context.Context, draft *BulkDraf
 		Msg("auto-estimated price for bulk draft")
 }
 
+// getCategoryPathByID finds a category by ID and returns its full path.
+// Falls back to the stored label if the category is not found in predictions.
+func getCategoryPathByID(predictions []tori.CategoryPrediction, categoryID int, fallbackLabel string) string {
+	for _, cat := range predictions {
+		if cat.ID == categoryID {
+			return tori.GetCategoryPath(cat)
+		}
+	}
+	return fallbackLabel
+}
+
 // setDraftError marks a draft as having an error.
 func (h *BulkHandler) setDraftError(session *UserSession, draftID string, errorMsg string) {
 	session.Send(SessionMessage{
@@ -683,7 +694,8 @@ func (h *BulkHandler) formatDraftMessage(draft *BulkDraft) string {
 
 	// Category
 	if draft.CategoryLabel != "" {
-		sb.WriteString(fmt.Sprintf("🏷️ Osasto: %s\n", draft.CategoryLabel))
+		categoryPath := getCategoryPathByID(draft.CategoryPredictions, draft.CategoryID, draft.CategoryLabel)
+		sb.WriteString(fmt.Sprintf("🏷️ Osasto: %s\n", categoryPath))
 	} else {
 		sb.WriteString("🏷️ Osasto: _ei valittu_\n")
 	}
@@ -1007,12 +1019,17 @@ func (h *BulkHandler) handleCategorySelection(ctx context.Context, session *User
 	}
 
 	draft.CategoryID = categoryID
-	// Find label
+	// Find label and path in single pass
+	var categoryPath string
 	for _, cat := range draft.CategoryPredictions {
 		if cat.ID == categoryID {
 			draft.CategoryLabel = cat.Label
+			categoryPath = tori.GetCategoryPath(cat)
 			break
 		}
+	}
+	if categoryPath == "" {
+		categoryPath = draft.CategoryLabel
 	}
 
 	// Set category on Tori draft
@@ -1031,7 +1048,7 @@ func (h *BulkHandler) handleCategorySelection(ctx context.Context, session *User
 	bulk.EditingDraftID = ""
 	bulk.EditingField = ""
 
-	session.reply(fmt.Sprintf("Osasto asetettu: *%s*", draft.CategoryLabel))
+	session.reply(fmt.Sprintf("Osasto asetettu: *%s*", categoryPath))
 	h.sendDraftMessage(session, draft)
 }
 

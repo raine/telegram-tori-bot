@@ -573,11 +573,13 @@ func (h *ListingHandler) ProcessCategorySelection(ctx context.Context, session *
 		return
 	}
 
-	// Find category label for logging
+	// Find category for logging and display
 	var categoryLabel string
+	var categoryPath string
 	for _, cat := range session.currentDraft.CategoryPredictions {
 		if cat.ID == categoryID {
 			categoryLabel = cat.Label
+			categoryPath = tori.GetCategoryPath(cat)
 			break
 		}
 	}
@@ -585,7 +587,7 @@ func (h *ListingHandler) ProcessCategorySelection(ctx context.Context, session *
 	session.currentDraft.CategoryID = categoryID
 	log.Info().Int("categoryId", categoryID).Str("label", categoryLabel).Msg("category selected")
 
-	session.reply(fmt.Sprintf("Osasto: *%s*", categoryLabel))
+	session.reply(fmt.Sprintf("Osasto: *%s*", categoryPath))
 
 	// Get client and draft info for network calls
 	client := session.adInputClient
