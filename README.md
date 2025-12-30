@@ -48,7 +48,7 @@ listings. Supports conditional text for shipping:
 
 ## Quick start
 
-1. **Download** the latest release for your platform:
+1. **Download** the [latest release](https://github.com/raine/telegram-tori-bot/releases/latest) for your platform:
 
    | Platform              | Download                                                                                                                                       |
    | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
