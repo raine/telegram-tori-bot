@@ -1384,7 +1384,7 @@ func (h *BulkHandler) doPublishDraft(ctx context.Context, session *UserSession, 
 }
 
 // HandlePeruCommand cancels bulk session.
-func (h *BulkHandler) HandlePeruCommand(session *UserSession) {
+func (h *BulkHandler) HandlePeruCommand(ctx context.Context, session *UserSession) {
 	bulk := session.bulkSession
 	if bulk == nil || !bulk.Active {
 		return
@@ -1394,6 +1394,20 @@ func (h *BulkHandler) HandlePeruCommand(session *UserSession) {
 	for _, draft := range bulk.Drafts {
 		if draft.CancelAnalysis != nil {
 			draft.CancelAnalysis()
+		}
+	}
+
+	// Delete all Tori drafts that were created
+	client := session.adInputClient
+	if client != nil {
+		for _, draft := range bulk.Drafts {
+			if draft.DraftID != "" {
+				if err := client.DeleteAd(ctx, draft.DraftID); err != nil {
+					log.Warn().Err(err).Str("draftID", draft.DraftID).Msg("failed to delete bulk draft on cancel")
+				} else {
+					log.Info().Str("draftID", draft.DraftID).Msg("deleted bulk draft on cancel")
+				}
+			}
 		}
 	}
 

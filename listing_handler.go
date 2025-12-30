@@ -58,6 +58,7 @@ func (h *ListingHandler) HandleInput(ctx context.Context, session *UserSession, 
 
 	// Handle /peru during input states
 	if message.Text == "/peru" && (state == AdFlowStateAwaitingAttribute || state == AdFlowStateAwaitingPrice || state == AdFlowStateAwaitingPostalCode) {
+		session.deleteCurrentDraft(ctx)
 		session.reset()
 		session.replyAndRemoveCustomKeyboard(okText)
 		return true

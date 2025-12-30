@@ -28,6 +28,9 @@ type AdService interface {
 
 	// PublishAd publishes the ad with the free package.
 	PublishAd(ctx context.Context, adID string) (*OrderResponse, error)
+
+	// DeleteAd deletes a draft ad.
+	DeleteAd(ctx context.Context, adID string) error
 }
 
 // Ensure AdinputClient implements AdService

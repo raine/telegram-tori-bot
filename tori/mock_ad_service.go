@@ -18,6 +18,7 @@ type MockAdService struct {
 	UpdateAdFunc               func(ctx context.Context, adID, etag string, payload AdUpdatePayload) (*UpdateAdResponse, error)
 	SetDeliveryOptionsFunc     func(ctx context.Context, adID string, opts DeliveryOptions) error
 	PublishAdFunc              func(ctx context.Context, adID string) (*OrderResponse, error)
+	DeleteAdFunc               func(ctx context.Context, adID string) error
 
 	mu sync.Mutex
 
@@ -154,6 +155,18 @@ func (m *MockAdService) PublishAd(ctx context.Context, adID string) (*OrderRespo
 		OrderID:     12345,
 		IsCompleted: true,
 	}, nil
+}
+
+func (m *MockAdService) DeleteAd(ctx context.Context, adID string) error {
+	m.mu.Lock()
+	m.Calls = append(m.Calls, MockCall{Method: "DeleteAd", Args: []any{adID}})
+	fn := m.DeleteAdFunc
+	m.mu.Unlock()
+
+	if fn != nil {
+		return fn(ctx, adID)
+	}
+	return nil
 }
 
 // Reset clears all recorded calls.

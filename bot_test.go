@@ -219,6 +219,10 @@ func makeAdInputTestServer(t *testing.T) *httptest.Server {
 		w.Header().Set("Content-Type", "application/json")
 
 		switch {
+		case strings.HasPrefix(r.URL.Path, "/ads/") && r.Method == "DELETE":
+			// Mock DELETE /ads/{adId} - delete draft
+			w.WriteHeader(http.StatusNoContent)
+
 		case strings.HasPrefix(r.URL.Path, "/item/") && r.Method == "PATCH":
 			// Mock PATCH /item/{draftId} - set category, etc.
 			w.Header().Set("ETag", "new-etag-123")

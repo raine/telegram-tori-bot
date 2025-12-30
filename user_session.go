@@ -247,6 +247,18 @@ func (s *UserSession) reset() {
 	// Note: bulk session is NOT reset here - use EndBulkSession() explicitly
 }
 
+// deleteCurrentDraft deletes the current draft ad from Tori API.
+// Called from session worker - no locking needed.
+func (s *UserSession) deleteCurrentDraft(ctx context.Context) {
+	if s.draftID != "" && s.adInputClient != nil {
+		if err := s.adInputClient.DeleteAd(ctx, s.draftID); err != nil {
+			log.Warn().Err(err).Str("draftID", s.draftID).Msg("failed to delete draft ad on cancel")
+		} else {
+			log.Info().Str("draftID", s.draftID).Msg("deleted draft ad on cancel")
+		}
+	}
+}
+
 // --- Bulk session methods ---
 
 // IsInBulkMode returns true if the session is in bulk listing mode.

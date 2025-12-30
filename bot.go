@@ -225,9 +225,10 @@ func (b *Bot) handleCommand(ctx context.Context, session *UserSession, message *
 	case "/peru":
 		// Handle bulk mode cancellation
 		if session.IsInBulkMode() {
-			b.bulkHandler.HandlePeruCommand(session)
+			b.bulkHandler.HandlePeruCommand(ctx, session)
 			return
 		}
+		session.deleteCurrentDraft(ctx)
 		session.reset()
 		session.replyAndRemoveCustomKeyboard(okText)
 	case "/laheta":

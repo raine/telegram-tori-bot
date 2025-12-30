@@ -20,6 +20,7 @@ const (
 	ServiceAdinput      = "APPS-ADINPUT"
 	ServiceItemCreation = "RC-ITEM-CREATION-FLOW-API"
 	ServiceTjtAPI       = "TJT-API"
+	ServiceAdAction     = "AD-ACTION"
 
 	// Android app version strings - update these when the API requires newer versions
 	// Format: ToriApp_And/{version} (Linux; U; Android {os}; {locale}; {device} Build/{build}) ToriNativeApp(UA spoofed for tracking) ToriApp_And
@@ -430,4 +431,30 @@ func (c *AdinputClient) PublishAd(ctx context.Context, adID string) (*OrderRespo
 	}
 
 	return &result, nil
+}
+
+// DeleteAd deletes a draft ad
+func (c *AdinputClient) DeleteAd(ctx context.Context, adID string) error {
+	path := "/ads/" + adID
+	fullURL := c.baseURL + path
+
+	req, err := http.NewRequestWithContext(ctx, "DELETE", fullURL, nil)
+	if err != nil {
+		return err
+	}
+
+	c.setCommonHeaders(req, ServiceAdAction, nil)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to delete ad: %d - %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
 }
