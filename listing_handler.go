@@ -666,6 +666,21 @@ func (h *ListingHandler) HandleAttributeInput(ctx context.Context, session *User
 
 	currentAttr := attrs[idx]
 
+	// Handle skip button - don't add anything to CollectedAttrs for this attribute
+	if text == "Ohita" {
+		log.Info().Str("attr", currentAttr.Name).Msg("attribute skipped")
+
+		// Move to next attribute or price input
+		session.currentDraft.CurrentAttrIndex++
+		if session.currentDraft.CurrentAttrIndex < len(attrs) {
+			nextAttr := attrs[session.currentDraft.CurrentAttrIndex]
+			h.promptForAttribute(session, nextAttr)
+		} else {
+			h.proceedAfterAttributes(ctx, session)
+		}
+		return
+	}
+
 	// Find the selected option by label
 	opt := tori.FindOptionByLabel(&currentAttr, text)
 	if opt == nil {

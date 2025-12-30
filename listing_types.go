@@ -144,7 +144,8 @@ func makeCategoryPredictionKeyboard(categories []tori.CategoryPrediction) tgbota
 	return tgbotapi.NewInlineKeyboardMarkup(rows...)
 }
 
-// makeAttributeKeyboard creates a reply keyboard for attribute selection
+// makeAttributeKeyboard creates a reply keyboard for attribute selection.
+// Adds an "Ohita" (Skip) button to allow users to skip optional attributes.
 func makeAttributeKeyboard(attr tori.Attribute) tgbotapi.ReplyKeyboardMarkup {
 	buttonsPerRow := 3
 	var rows [][]tgbotapi.KeyboardButton
@@ -161,6 +162,11 @@ func makeAttributeKeyboard(attr tori.Attribute) tgbotapi.ReplyKeyboardMarkup {
 		}
 		rows = append(rows, row)
 	}
+
+	// Add skip button to allow skipping optional attributes
+	rows = append(rows, tgbotapi.NewKeyboardButtonRow(
+		tgbotapi.NewKeyboardButton("Ohita"),
+	))
 
 	return tgbotapi.NewOneTimeReplyKeyboard(rows...)
 }
