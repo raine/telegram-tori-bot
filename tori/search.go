@@ -43,6 +43,7 @@ func NewSearchClientWithBaseURL(baseURL string) *SearchClient {
 type SearchParams struct {
 	Query    string // Free text search query
 	Location string // Location filter (e.g., "Helsinki")
+	Category int    // Category ID filter (0 means no filter)
 	Page     int    // Page number (starts at 0)
 	Rows     int    // Results per page
 }
@@ -121,6 +122,9 @@ func (c *SearchClient) Search(ctx context.Context, searchKey string, params Sear
 	}
 	if params.Page > 0 {
 		queryParams.Set("page", fmt.Sprintf("%d", params.Page))
+	}
+	if params.Category > 0 {
+		queryParams.Set("category", fmt.Sprintf("%d", params.Category))
 	}
 
 	// Build URL

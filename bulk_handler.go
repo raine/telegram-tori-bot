@@ -413,12 +413,14 @@ func (h *BulkHandler) estimatePriceForDraft(ctx context.Context, draft *BulkDraf
 
 	log.Debug().
 		Str("query", draft.Title).
+		Int("categoryID", draft.CategoryID).
 		Str("draftID", draft.ID).
 		Msg("searching for similar prices")
 
 	results, err := h.searchClient.Search(ctx, tori.SearchKeyBapCommon, tori.SearchParams{
-		Query: draft.Title,
-		Rows:  20,
+		Query:    draft.Title,
+		Category: draft.CategoryID,
+		Rows:     20,
 	})
 
 	if err != nil {
@@ -879,13 +881,15 @@ func (h *BulkHandler) promptForBulkPrice(ctx context.Context, session *UserSessi
 
 	log.Debug().
 		Str("query", title).
+		Int("categoryID", draft.CategoryID).
 		Str("draftID", draftID).
 		Msg("searching for price recommendation")
 
 	// Search for similar items
 	results, err := h.searchClient.Search(ctx, tori.SearchKeyBapCommon, tori.SearchParams{
-		Query: title,
-		Rows:  20,
+		Query:    title,
+		Category: draft.CategoryID,
+		Rows:     20,
 	})
 
 	if err != nil {

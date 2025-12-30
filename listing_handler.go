@@ -1223,16 +1223,19 @@ func (h *ListingHandler) promptForPrice(ctx context.Context, session *UserSessio
 		}
 	}
 
+	categoryID := session.currentDraft.CategoryID
 	log.Debug().
 		Str("query", searchQuery).
 		Str("originalTitle", title).
+		Int("categoryID", categoryID).
 		Int64("userId", session.userId).
 		Msg("searching for similar prices")
 
 	// Search for similar items (network I/O)
 	results, err := h.searchClient.Search(ctx, tori.SearchKeyBapCommon, tori.SearchParams{
-		Query: searchQuery,
-		Rows:  20,
+		Query:    searchQuery,
+		Category: categoryID,
+		Rows:     20,
 	})
 
 	if err != nil {
