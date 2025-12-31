@@ -116,6 +116,11 @@ official app. Untrusted IPs will fail with "reCaptcha was invalid" errors during
 login. A Raspberry Pi on your home network is an easy option since you likely
 already use Tori from that IP.
 
+### Raspberry Pi deployment
+
+The [`deployment/`](deployment/) directory contains an example setup for
+deploying to a Raspberry Pi as a systemd service.
+
 ## User access control
 
 The bot uses a whitelist system. Only the admin (specified by
