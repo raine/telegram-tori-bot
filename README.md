@@ -48,7 +48,9 @@ listings. Supports conditional text for shipping:
 
 ## Quick start
 
-1. **Download** the [latest release](https://github.com/raine/telegram-tori-bot/releases/latest) for your platform:
+1. **Download** the
+   [latest release](https://github.com/raine/telegram-tori-bot/releases/latest)
+   for your platform:
 
    | Platform              | Download                                                                                                                                       |
    | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -164,9 +166,6 @@ messages.
 ## Development
 
 The project uses [`just`](https://github.com/casey/just) as a command runner.
-
-**Install just:** `brew install just` (Mac) | `scoop install just` (Windows) |
-[other options](https://github.com/casey/just#installation)
 
 ```sh
 git clone https://github.com/raine/telegram-tori-bot.git
