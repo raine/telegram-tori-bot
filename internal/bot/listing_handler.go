@@ -894,6 +894,45 @@ func (h *ListingHandler) HandleShippingSelection(ctx context.Context, session *U
 	h.showAdSummary(session)
 }
 
+// HandlePublishCallback handles the publish/cancel button callbacks from the ad summary.
+// Called from session worker - no locking needed.
+func (h *ListingHandler) HandlePublishCallback(ctx context.Context, session *UserSession, query *tgbotapi.CallbackQuery) {
+	action := strings.TrimPrefix(query.Data, "publish:")
+
+	// Guard against stale buttons from old drafts
+	if session.currentDraft == nil || query.Message == nil || query.Message.MessageID != session.currentDraft.SummaryMessageID {
+		// Remove stale buttons
+		if query.Message != nil {
+			edit := tgbotapi.NewEditMessageReplyMarkup(
+				query.Message.Chat.ID,
+				query.Message.MessageID,
+				tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}},
+			)
+			h.tg.Request(edit)
+		}
+		return
+	}
+
+	// Remove the inline keyboard from the summary message
+	if query.Message != nil {
+		edit := tgbotapi.NewEditMessageReplyMarkup(
+			query.Message.Chat.ID,
+			query.Message.MessageID,
+			tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}},
+		)
+		h.tg.Request(edit)
+	}
+
+	switch action {
+	case "confirm":
+		h.HandleSendListing(ctx, session)
+	case "cancel":
+		session.deleteCurrentDraft(ctx)
+		session.reset()
+		session.replyAndRemoveCustomKeyboard(okText)
+	}
+}
+
 // HandleSendListing sends the listing using the adinput API.
 // Called from session worker - no locking needed.
 func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSession) {
@@ -1501,14 +1540,12 @@ func (h *ListingHandler) showAdSummary(session *UserSession) {
 		priceText = fmt.Sprintf("%d€", session.currentDraft.Price)
 	}
 
-	msg := fmt.Sprintf(`*Ilmoitus valmis:*
+	summaryText := fmt.Sprintf(`*Ilmoitus valmis:*
 📦 *Otsikko:* %s
 📝 *Kuvaus:* %s
 💰 *Hinta:* %s
 🚚 *Postitus:* %s
-📷 *Kuvia:* %d
-
-Lähetä /laheta julkaistaksesi tai /peru peruuttaaksesi.`,
+📷 *Kuvia:* %d`,
 		escapeMarkdown(session.currentDraft.Title),
 		escapeMarkdown(session.currentDraft.GetFullDescription()),
 		priceText,
@@ -1516,12 +1553,20 @@ Lähetä /laheta julkaistaksesi tai /peru peruuttaaksesi.`,
 		len(session.photos),
 	)
 
+	keyboard := tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("✅ Julkaise", "publish:confirm"),
+			tgbotapi.NewInlineKeyboardButtonData("❌ Peru", "publish:cancel"),
+		),
+	)
+
 	// If a summary message already exists, edit it instead of sending a new one
 	if session.currentDraft.SummaryMessageID != 0 {
-		editMsg := tgbotapi.NewEditMessageText(
+		editMsg := tgbotapi.NewEditMessageTextAndMarkup(
 			session.userId,
 			session.currentDraft.SummaryMessageID,
-			msg,
+			summaryText,
+			keyboard,
 		)
 		editMsg.ParseMode = tgbotapi.ModeMarkdown
 
@@ -1535,11 +1580,17 @@ Lähetä /laheta julkaistaksesi tai /peru peruuttaaksesi.`,
 			// For other errors (e.g., "message to edit not found"), fall back to sending a new message
 			log.Warn().Err(err).Int("msgID", session.currentDraft.SummaryMessageID).Msg("failed to edit summary, sending new one")
 
-			sentMsg := session.reply(msg)
+			newMsg := tgbotapi.NewMessage(session.userId, summaryText)
+			newMsg.ParseMode = tgbotapi.ModeMarkdown
+			newMsg.ReplyMarkup = keyboard
+			sentMsg, _ := h.tg.Send(newMsg)
 			session.currentDraft.SummaryMessageID = sentMsg.MessageID
 		}
 	} else {
-		sentMsg := session.reply(msg)
+		newMsg := tgbotapi.NewMessage(session.userId, summaryText)
+		newMsg.ParseMode = tgbotapi.ModeMarkdown
+		newMsg.ReplyMarkup = keyboard
+		sentMsg, _ := h.tg.Send(newMsg)
 		session.currentDraft.SummaryMessageID = sentMsg.MessageID
 	}
 }

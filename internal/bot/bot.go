@@ -318,6 +318,8 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, session *UserSession, que
 		b.listingHandler.HandleShippingSelection(ctx, session, query)
 	} else if strings.HasPrefix(query.Data, "reselect:") {
 		b.handleReselectCallback(ctx, session, query)
+	} else if strings.HasPrefix(query.Data, "publish:") {
+		b.listingHandler.HandlePublishCallback(ctx, session, query)
 	}
 }
 
