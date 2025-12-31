@@ -229,10 +229,7 @@ func validateTelegramToken(token string) error {
 	}
 
 	if !result.OK {
-		if result.Description != "" {
-			return errors.New(result.Description)
-		}
-		return errors.New("token rejected by Telegram")
+		return errors.New("invalid token")
 	}
 
 	return nil
