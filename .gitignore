@@ -1,6 +1,8 @@
 stuff
 *.log
 sessions.db
+*.db-wal
+*.db-shm
 auth_cookies.json
 auth_tokens.json
 /create-listing
