@@ -17,14 +17,9 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/joho/godotenv"
+	"github.com/raine/telegram-tori-bot/config"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/term"
-)
-
-const (
-	appName     = "telegram-tori-bot"
-	envFileName = "config.env"
 )
 
 // getConfigDir returns the application's config directory path.
@@ -35,7 +30,7 @@ func getConfigDir() (string, error) {
 		return "", fmt.Errorf("failed to get user config directory: %w", err)
 	}
 
-	configDir := filepath.Join(configBase, appName)
+	configDir := filepath.Join(configBase, config.AppName)
 	if err := os.MkdirAll(configDir, 0700); err != nil {
 		return "", fmt.Errorf("failed to create config directory: %w", err)
 	}
@@ -49,7 +44,7 @@ func getConfigFilePath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(configDir, envFileName), nil
+	return filepath.Join(configDir, config.EnvFileName), nil
 }
 
 // requiredEnvVars lists all environment variables that must be set for the bot to run.
@@ -70,11 +65,7 @@ func CheckRequiredConfig() []string {
 // LoadEnvFile attempts to load environment variables from the config file.
 // Errors are ignored since the file may not exist.
 func LoadEnvFile() {
-	configPath, err := getConfigFilePath()
-	if err != nil {
-		return
-	}
-	_ = godotenv.Load(configPath)
+	config.LoadEnvFile()
 }
 
 // IsInteractiveTerminal returns true if both stdin and stdout are TTYs.
@@ -154,14 +145,14 @@ func RunSetupWizard() bool {
 	tokenKey := generateTokenKey()
 
 	// Write configuration to .env file
-	config := map[string]string{
+	configVars := map[string]string{
 		"BOT_TOKEN":         botToken,
 		"GEMINI_API_KEY":    geminiKey,
 		"ADMIN_TELEGRAM_ID": adminID,
 		"TORI_TOKEN_KEY":    tokenKey,
 	}
 
-	configPath, err := writeEnvFile(config)
+	configPath, err := writeEnvFile(configVars)
 	if err != nil {
 		fmt.Printf("\nError saving configuration: %v\n", err)
 		WaitOnWindows()
@@ -169,7 +160,7 @@ func RunSetupWizard() bool {
 	}
 
 	// Set values in current process
-	for k, v := range config {
+	for k, v := range configVars {
 		os.Setenv(k, v)
 	}
 

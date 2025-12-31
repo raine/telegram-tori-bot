@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/rs/zerolog/log"
@@ -23,6 +24,7 @@ const (
 	ServiceItemCreation = "RC-ITEM-CREATION-FLOW-API"
 	ServiceTjtAPI       = "TJT-API"
 	ServiceAdAction     = "AD-ACTION"
+	ServiceAdSummaries  = "AD-SUMMARIES"
 
 	// Android app version strings - update these when the API requires newer versions
 	// Format: ToriApp_And/{version} (Linux; U; Android {os}; {locale}; {device} Build/{build}) ToriNativeApp(UA spoofed for tracking) ToriApp_And
@@ -65,6 +67,9 @@ func NewAdinputClientWithBaseURL(bearerToken, baseURL string) *AdinputClient {
 // setCommonHeaders sets headers common to all requests
 func (c *AdinputClient) setCommonHeaders(req *http.Request, service string, body []byte) {
 	path := req.URL.Path
+	if req.URL.RawQuery != "" {
+		path = path + "?" + req.URL.RawQuery
+	}
 	method := req.Method
 
 	req.Header.Set("User-Agent", androidUserAgent)
@@ -443,6 +448,76 @@ func (c *AdinputClient) PublishAd(ctx context.Context, adID string) (*OrderRespo
 	var result OrderResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
+	}
+
+	return &result, nil
+}
+
+// AdState represents the state of an ad
+type AdState struct {
+	Label   string `json:"label"`
+	Type    string `json:"type"`
+	Display string `json:"display"`
+}
+
+// AdSummary represents a single ad in the response from the AD-SUMMARIES service
+type AdSummary struct {
+	ID               int64   `json:"id"`
+	Created          string  `json:"created"`
+	Updated          string  `json:"updated"`
+	Expires          string  `json:"expires"`
+	DaysUntilExpires int     `json:"daysUntilExpires"`
+	State            AdState `json:"state"`
+	Mode             string  `json:"mode"`
+	Review           string  `json:"review"`
+	Data             struct {
+		Title    string `json:"title"`
+		Subtitle string `json:"subtitle"`
+		Image    string `json:"image"`
+	} `json:"data"`
+	ExternalData struct {
+		Clicks    AdStat `json:"clicks"`
+		Favorites AdStat `json:"favorites"`
+	} `json:"externalData"`
+}
+
+// AdStat represents a statistic like clicks or favorites
+type AdStat struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+}
+
+// AdFacet represents a filter option in the response
+type AdFacet struct {
+	Label string `json:"label"`
+	Name  string `json:"name"`
+	Total int    `json:"total"`
+}
+
+// AdSummariesResult is the response from the /search endpoint with AD-SUMMARIES service
+type AdSummariesResult struct {
+	Summaries []AdSummary `json:"summaries"`
+	Total     int         `json:"total"`
+	Facets    []AdFacet   `json:"facets"`
+}
+
+// GetAdSummaries fetches the user's ads from the AD-SUMMARIES service.
+// Facet can be: ALL, ACTIVE, DRAFT, PENDING, EXPIRED, DISPOSED
+func (c *AdinputClient) GetAdSummaries(ctx context.Context, limit, offset int, facet string) (*AdSummariesResult, error) {
+	params := url.Values{}
+	params.Set("limit", strconv.Itoa(limit))
+	params.Set("offset", strconv.Itoa(offset))
+	if facet != "" {
+		params.Set("facet", facet)
+	}
+
+	path := "/search"
+	fullURL := c.baseURL + path + "?" + params.Encode()
+
+	var result AdSummariesResult
+	err := c.doJSON(ctx, "GET", fullURL, ServiceAdSummaries, nil, &result, nil)
+	if err != nil {
+		return nil, fmt.Errorf("fetch ad summaries: %w", err)
 	}
 
 	return &result, nil
