@@ -460,16 +460,26 @@ type AdState struct {
 	Display string `json:"display"`
 }
 
+// AdAction represents an available action for an ad
+type AdAction struct {
+	Label  string `json:"label"`  // e.g. "Merkitse myydyksi"
+	Method string `json:"method"` // "PUT", "DELETE", "GET"
+	Name   string `json:"name"`   // "DISPOSE", "DELETE", "EDIT", etc.
+	Path   string `json:"path"`   // e.g. "/items/123/dispose"
+	URL    string `json:"url"`    // e.g. "/ads/dispose/123"
+}
+
 // AdSummary represents a single ad in the response from the AD-SUMMARIES service
 type AdSummary struct {
-	ID               int64   `json:"id"`
-	Created          string  `json:"created"`
-	Updated          string  `json:"updated"`
-	Expires          string  `json:"expires"`
-	DaysUntilExpires int     `json:"daysUntilExpires"`
-	State            AdState `json:"state"`
-	Mode             string  `json:"mode"`
-	Review           string  `json:"review"`
+	ID               int64      `json:"id"`
+	Created          string     `json:"created"`
+	Updated          string     `json:"updated"`
+	Expires          string     `json:"expires"`
+	DaysUntilExpires int        `json:"daysUntilExpires"`
+	State            AdState    `json:"state"`
+	Mode             string     `json:"mode"`
+	Review           string     `json:"review"`
+	Actions          []AdAction `json:"actions"`
 	Data             struct {
 		Title    string `json:"title"`
 		Subtitle string `json:"subtitle"`
@@ -547,4 +557,24 @@ func (c *AdinputClient) DeleteAd(ctx context.Context, adID string) error {
 	}
 
 	return nil
+}
+
+// DisposeAd marks an ad as sold (PUT /ads/dispose/{id})
+func (c *AdinputClient) DisposeAd(ctx context.Context, adID string) error {
+	path := fmt.Sprintf("/ads/dispose/%s", adID)
+	fullURL := c.baseURL + path
+
+	return c.doJSON(ctx, "PUT", fullURL, ServiceAdAction, map[string]string{}, nil, &requestOptions{
+		expectedCodes: []int{http.StatusOK, http.StatusNoContent},
+	})
+}
+
+// UndisposeAd reactivates a sold ad (DELETE /ads/dispose/{id})
+func (c *AdinputClient) UndisposeAd(ctx context.Context, adID string) error {
+	path := fmt.Sprintf("/ads/dispose/%s", adID)
+	fullURL := c.baseURL + path
+
+	return c.doJSON(ctx, "DELETE", fullURL, ServiceAdAction, nil, nil, &requestOptions{
+		expectedCodes: []int{http.StatusOK, http.StatusNoContent},
+	})
 }

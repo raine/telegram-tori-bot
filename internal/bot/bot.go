@@ -32,6 +32,7 @@ type Bot struct {
 	authHandler    *AuthHandler
 	listingHandler *ListingHandler
 	bulkHandler    *BulkHandler
+	listingManager *ListingManager
 }
 
 // NewBot creates a new Bot instance.
@@ -44,6 +45,7 @@ func NewBot(tg BotAPI, sessionStore storage.SessionStore, adminID int64) *Bot {
 
 	bot.state = bot.NewBotState()
 	bot.authHandler = NewAuthHandler(sessionStore)
+	bot.listingManager = NewListingManager(tg)
 
 	return bot
 }
@@ -285,6 +287,12 @@ func (b *Bot) handleCommand(ctx context.Context, session *UserSession, message *
 		b.handleDeleteTemplate(session)
 	case "/postinumero":
 		b.handlePostalCodeCommand(session)
+	case "/ilmoitukset":
+		if !session.isLoggedIn() {
+			session.reply(loginRequiredText)
+			return
+		}
+		b.listingManager.HandleIlmoituksetCommand(ctx, session)
 	case "/admin":
 		b.handleAdminCommand(session, argsStr)
 	case "/versio":
@@ -310,7 +318,9 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, session *UserSession, que
 	b.tg.Request(callback)
 
 	// Route to appropriate handler
-	if strings.HasPrefix(query.Data, "bulk:") {
+	if strings.HasPrefix(query.Data, "listings:") || strings.HasPrefix(query.Data, "ad:") {
+		b.listingManager.HandleListingCallback(ctx, session, query)
+	} else if strings.HasPrefix(query.Data, "bulk:") {
 		b.bulkHandler.HandleBulkCallback(ctx, session, query)
 	} else if strings.HasPrefix(query.Data, "cat:") {
 		b.listingHandler.HandleCategorySelection(ctx, session, query)

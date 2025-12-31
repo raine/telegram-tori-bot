@@ -31,6 +31,15 @@ type AdService interface {
 
 	// DeleteAd deletes a draft ad.
 	DeleteAd(ctx context.Context, adID string) error
+
+	// GetAdSummaries fetches the user's ads.
+	GetAdSummaries(ctx context.Context, limit, offset int, facet string) (*AdSummariesResult, error)
+
+	// DisposeAd marks an ad as sold.
+	DisposeAd(ctx context.Context, adID string) error
+
+	// UndisposeAd reactivates a sold ad.
+	UndisposeAd(ctx context.Context, adID string) error
 }
 
 // Ensure AdinputClient implements AdService

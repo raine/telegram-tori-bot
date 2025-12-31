@@ -19,6 +19,9 @@ type MockAdService struct {
 	SetDeliveryOptionsFunc     func(ctx context.Context, adID string, opts DeliveryOptions) error
 	PublishAdFunc              func(ctx context.Context, adID string) (*OrderResponse, error)
 	DeleteAdFunc               func(ctx context.Context, adID string) error
+	GetAdSummariesFunc         func(ctx context.Context, limit, offset int, facet string) (*AdSummariesResult, error)
+	DisposeAdFunc              func(ctx context.Context, adID string) error
+	UndisposeAdFunc            func(ctx context.Context, adID string) error
 
 	mu sync.Mutex
 
@@ -161,6 +164,46 @@ func (m *MockAdService) DeleteAd(ctx context.Context, adID string) error {
 	m.mu.Lock()
 	m.Calls = append(m.Calls, MockCall{Method: "DeleteAd", Args: []any{adID}})
 	fn := m.DeleteAdFunc
+	m.mu.Unlock()
+
+	if fn != nil {
+		return fn(ctx, adID)
+	}
+	return nil
+}
+
+func (m *MockAdService) GetAdSummaries(ctx context.Context, limit, offset int, facet string) (*AdSummariesResult, error) {
+	m.mu.Lock()
+	m.Calls = append(m.Calls, MockCall{Method: "GetAdSummaries", Args: []any{limit, offset, facet}})
+	fn := m.GetAdSummariesFunc
+	m.mu.Unlock()
+
+	if fn != nil {
+		return fn(ctx, limit, offset, facet)
+	}
+	return &AdSummariesResult{
+		Summaries: []AdSummary{},
+		Total:     0,
+		Facets:    []AdFacet{},
+	}, nil
+}
+
+func (m *MockAdService) DisposeAd(ctx context.Context, adID string) error {
+	m.mu.Lock()
+	m.Calls = append(m.Calls, MockCall{Method: "DisposeAd", Args: []any{adID}})
+	fn := m.DisposeAdFunc
+	m.mu.Unlock()
+
+	if fn != nil {
+		return fn(ctx, adID)
+	}
+	return nil
+}
+
+func (m *MockAdService) UndisposeAd(ctx context.Context, adID string) error {
+	m.mu.Lock()
+	m.Calls = append(m.Calls, MockCall{Method: "UndisposeAd", Args: []any{adID}})
+	fn := m.UndisposeAdFunc
 	m.mu.Unlock()
 
 	if fn != nil {

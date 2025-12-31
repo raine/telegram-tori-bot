@@ -131,6 +131,12 @@ type UserSession struct {
 
 	// Bulk listing mode
 	bulkSession *BulkSession
+
+	// Listing Management State
+	listingMenuMsgID  int              // Message ID to edit for navigation
+	listingBrowsePage int              // Current pagination page (1-based)
+	cachedListings    []tori.AdSummary // Cache of the current page's listings
+	activeListingID   int64            // ID of listing being viewed (for detail view)
 }
 
 // --- Thread-safe accessors ---
@@ -251,6 +257,12 @@ func (s *UserSession) reset() {
 	s.isCreatingDraft = false
 	s.awaitingPostalCodeInput = false
 	// Note: bulk session is NOT reset here - use EndBulkSession() explicitly
+
+	// Reset listing management state
+	s.listingMenuMsgID = 0
+	s.listingBrowsePage = 0
+	s.cachedListings = nil
+	s.activeListingID = 0
 }
 
 // stopDraftExpirationTimer stops the draft expiration timer if running.
