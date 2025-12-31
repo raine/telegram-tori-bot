@@ -138,7 +138,7 @@ func runSetupWizard() bool {
 					return nil
 				}),
 		),
-	)
+	).WithTheme(huh.ThemeBase16())
 
 	err := form.Run()
 	if err != nil {
