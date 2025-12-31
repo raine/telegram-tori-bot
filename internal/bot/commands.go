@@ -1,4 +1,4 @@
-package main
+package bot
 
 import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -27,9 +27,9 @@ var botCommands = []Command{
 	{Name: "versio", Description: "Näytä version tiedot"},
 }
 
-// registerCommands sets the bot's command menu in Telegram.
+// RegisterCommands sets the bot's command menu in Telegram.
 // This should be called once at startup.
-func registerCommands(tg *tgbotapi.BotAPI) {
+func RegisterCommands(tg *tgbotapi.BotAPI) {
 	commands := make([]tgbotapi.BotCommand, len(botCommands))
 	for i, cmd := range botCommands {
 		commands[i] = tgbotapi.BotCommand{

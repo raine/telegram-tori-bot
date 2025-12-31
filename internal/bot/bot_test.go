@@ -1,4 +1,4 @@
-package main
+package bot
 
 import (
 	"bytes"
@@ -11,10 +11,10 @@ import (
 	"testing"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/raine/telegram-tori-bot/llm"
-	"github.com/raine/telegram-tori-bot/storage"
-	"github.com/raine/telegram-tori-bot/tori"
-	"github.com/raine/telegram-tori-bot/tori/auth"
+	"github.com/raine/telegram-tori-bot/internal/llm"
+	"github.com/raine/telegram-tori-bot/internal/storage"
+	"github.com/raine/telegram-tori-bot/internal/tori"
+	"github.com/raine/telegram-tori-bot/internal/tori/auth"
 	"github.com/stretchr/testify/mock"
 )
 

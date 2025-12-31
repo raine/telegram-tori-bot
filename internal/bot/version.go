@@ -1,4 +1,4 @@
-package main
+package bot
 
 var (
 	Version   = "dev"     // Git SHA, set via ldflags

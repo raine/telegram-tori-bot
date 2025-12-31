@@ -10,14 +10,12 @@ RUN apk add --update-cache git
 RUN go mod download
 
 COPY *.go ./
-COPY ./tori ./tori
-COPY ./llm ./llm
-COPY ./storage ./storage
+COPY ./internal ./internal
 
 ARG VERSION=dev
 ARG BUILD_TIME=unknown
 
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-w -s -X main.Version=${VERSION} -X 'main.BuildTime=${BUILD_TIME}'" .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-w -s -X github.com/raine/telegram-tori-bot/internal/bot.Version=${VERSION} -X 'github.com/raine/telegram-tori-bot/internal/bot.BuildTime=${BUILD_TIME}'" .
 
 FROM scratch
 

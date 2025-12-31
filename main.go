@@ -11,14 +11,13 @@ import (
 	"syscall"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/raine/telegram-tori-bot/llm"
-	"github.com/raine/telegram-tori-bot/storage"
+	"github.com/raine/telegram-tori-bot/internal/bot"
+	"github.com/raine/telegram-tori-bot/internal/llm"
+	"github.com/raine/telegram-tori-bot/internal/storage"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
 )
-
-var version = "dev"
 
 const logFileName = "telegram-tori-bot.log"
 
@@ -26,19 +25,19 @@ func main() {
 	zerolog.TimeFieldFormat = zerolog.TimeFormatUnix
 
 	// Try to load existing .env file
-	loadEnvFile()
+	bot.LoadEnvFile()
 
 	// Check if required config is missing
-	if missing := checkRequiredConfig(); len(missing) > 0 {
-		if isInteractiveTerminal() {
+	if missing := bot.CheckRequiredConfig(); len(missing) > 0 {
+		if bot.IsInteractiveTerminal() {
 			// Interactive terminal - run setup wizard
-			if !runSetupWizard() {
-				waitOnWindows()
+			if !bot.RunSetupWizard() {
+				bot.WaitOnWindows()
 				os.Exit(1)
 			}
 		} else {
 			// Non-interactive (systemd, k8s, etc.) - fail with clear error
-			fatalWithWait("missing required config: %s", strings.Join(missing, ", "))
+			bot.FatalWithWait("missing required config: %s", strings.Join(missing, ", "))
 		}
 	}
 
@@ -51,7 +50,7 @@ func main() {
 		// Local development: log to both stderr and file
 		logFile, err := os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
-			fatalWithWait("failed to open log file: %v", err)
+			bot.FatalWithWait("failed to open log file: %v", err)
 		}
 		defer logFile.Close()
 
@@ -65,23 +64,23 @@ func main() {
 
 	botToken := os.Getenv("BOT_TOKEN")
 	if botToken == "" {
-		fatalWithWait("BOT_TOKEN is not set")
+		bot.FatalWithWait("BOT_TOKEN is not set")
 	}
 
 	// Token encryption key (required)
 	tokenKey := os.Getenv("TORI_TOKEN_KEY")
 	if tokenKey == "" {
-		fatalWithWait("TORI_TOKEN_KEY is not set")
+		bot.FatalWithWait("TORI_TOKEN_KEY is not set")
 	}
 
 	// Admin Telegram ID (required)
 	adminIDStr := os.Getenv("ADMIN_TELEGRAM_ID")
 	if adminIDStr == "" {
-		fatalWithWait("ADMIN_TELEGRAM_ID is not set")
+		bot.FatalWithWait("ADMIN_TELEGRAM_ID is not set")
 	}
 	adminID, err := strconv.ParseInt(adminIDStr, 10, 64)
 	if err != nil {
-		fatalWithWait("ADMIN_TELEGRAM_ID must be a valid integer: %v", err)
+		bot.FatalWithWait("ADMIN_TELEGRAM_ID must be a valid integer: %v", err)
 	}
 
 	// Database path (optional, defaults to sessions.db)
@@ -92,24 +91,24 @@ func main() {
 
 	tg, err := tgbotapi.NewBotAPI(botToken)
 	if err != nil {
-		fatalWithWait("failed to initialize telegram bot: %v", err)
+		bot.FatalWithWait("failed to initialize telegram bot: %v", err)
 	}
 	tg.Debug = false
 	log.Info().Str("username", tg.Self.UserName).Msg("authorized on account")
 
 	// Register bot commands for Telegram's command menu
-	registerCommands(tg)
+	bot.RegisterCommands(tg)
 
 	// Derive encryption key from passphrase
 	encryptionKey, err := storage.DeriveKey(tokenKey)
 	if err != nil {
-		fatalWithWait("failed to derive encryption key: %v", err)
+		bot.FatalWithWait("failed to derive encryption key: %v", err)
 	}
 
 	// Initialize session store
 	sessionStore, err := storage.NewSQLiteStore(dbPath, encryptionKey)
 	if err != nil {
-		fatalWithWait("failed to initialize session store: %v", err)
+		bot.FatalWithWait("failed to initialize session store: %v", err)
 	}
 	defer sessionStore.Close()
 	log.Info().Str("dbPath", dbPath).Msg("session store initialized")
@@ -120,11 +119,11 @@ func main() {
 
 	// Initialize vision analyzer (GEMINI_API_KEY is required)
 	if os.Getenv("GEMINI_API_KEY") == "" {
-		fatalWithWait("GEMINI_API_KEY environment variable is required")
+		bot.FatalWithWait("GEMINI_API_KEY environment variable is required")
 	}
 	geminiAnalyzer, err := llm.NewGeminiAnalyzer(ctx)
 	if err != nil {
-		fatalWithWait("failed to initialize gemini vision analyzer: %v", err)
+		bot.FatalWithWait("failed to initialize gemini vision analyzer: %v", err)
 	}
 	log.Info().Msg("gemini vision analyzer initialized")
 
@@ -151,13 +150,13 @@ func runBot(ctx context.Context, tg *tgbotapi.BotAPI, sessionStore storage.Sessi
 	updateConfig.Timeout = 60
 	updates := tg.GetUpdatesChan(updateConfig)
 
-	bot := NewBot(tg, sessionStore, adminID)
+	b := bot.NewBot(tg, sessionStore, adminID)
 	if visionAnalyzer != nil {
 		var editParser llm.EditIntentParser
 		if gemini := llm.GetGeminiAnalyzer(visionAnalyzer); gemini != nil {
 			editParser = gemini
 		}
-		bot.SetLLMClients(visionAnalyzer, editParser)
+		b.SetLLMClients(visionAnalyzer, editParser)
 	}
 
 	var wg sync.WaitGroup
@@ -179,7 +178,7 @@ func runBot(ctx context.Context, tg *tgbotapi.BotAPI, sessionStore storage.Sessi
 			wg.Add(1)
 			go func(u tgbotapi.Update) {
 				defer wg.Done()
-				bot.handleUpdate(ctx, u)
+				b.HandleUpdate(ctx, u)
 			}(update)
 		}
 	}

@@ -6,8 +6,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/raine/telegram-tori-bot/llm"
-	"github.com/raine/telegram-tori-bot/tori"
+	"github.com/raine/telegram-tori-bot/internal/llm"
+	"github.com/raine/telegram-tori-bot/internal/tori"
 )
 
 // Rate limit delay between tests (Gemini free tier: 10 req/min)

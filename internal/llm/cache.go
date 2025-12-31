@@ -6,7 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 
-	"github.com/raine/telegram-tori-bot/storage"
+	"github.com/raine/telegram-tori-bot/internal/storage"
 	"github.com/rs/zerolog/log"
 )
 

@@ -1,10 +1,10 @@
-package main
+package bot
 
 import (
 	"context"
 
-	"github.com/raine/telegram-tori-bot/storage"
-	"github.com/raine/telegram-tori-bot/tori/auth"
+	"github.com/raine/telegram-tori-bot/internal/storage"
+	"github.com/raine/telegram-tori-bot/internal/tori/auth"
 	"github.com/rs/zerolog/log"
 )
 

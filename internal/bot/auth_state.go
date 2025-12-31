@@ -1,9 +1,9 @@
-package main
+package bot
 
 import (
 	"time"
 
-	"github.com/raine/telegram-tori-bot/tori/auth"
+	"github.com/raine/telegram-tori-bot/internal/tori/auth"
 )
 
 // AuthState represents the current state of the authentication flow.

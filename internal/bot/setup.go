@@ -1,4 +1,4 @@
-package main
+package bot
 
 import (
 	"context"
@@ -55,9 +55,9 @@ func getConfigFilePath() (string, error) {
 // requiredEnvVars lists all environment variables that must be set for the bot to run.
 var requiredEnvVars = []string{"BOT_TOKEN", "GEMINI_API_KEY", "TORI_TOKEN_KEY", "ADMIN_TELEGRAM_ID"}
 
-// checkRequiredConfig checks if all required environment variables are set.
+// CheckRequiredConfig checks if all required environment variables are set.
 // Returns the names of any missing variables.
-func checkRequiredConfig() []string {
+func CheckRequiredConfig() []string {
 	var missing []string
 	for _, v := range requiredEnvVars {
 		if os.Getenv(v) == "" {
@@ -67,9 +67,9 @@ func checkRequiredConfig() []string {
 	return missing
 }
 
-// loadEnvFile attempts to load environment variables from the config file.
+// LoadEnvFile attempts to load environment variables from the config file.
 // Errors are ignored since the file may not exist.
-func loadEnvFile() {
+func LoadEnvFile() {
 	configPath, err := getConfigFilePath()
 	if err != nil {
 		return
@@ -77,15 +77,15 @@ func loadEnvFile() {
 	_ = godotenv.Load(configPath)
 }
 
-// isInteractiveTerminal returns true if both stdin and stdout are TTYs.
+// IsInteractiveTerminal returns true if both stdin and stdout are TTYs.
 // This is used to determine if we can run the interactive setup wizard.
-func isInteractiveTerminal() bool {
+func IsInteractiveTerminal() bool {
 	return term.IsTerminal(int(os.Stdin.Fd())) && term.IsTerminal(int(os.Stdout.Fd()))
 }
 
-// runSetupWizard runs an interactive wizard to collect required configuration.
+// RunSetupWizard runs an interactive wizard to collect required configuration.
 // Returns true if setup was successful and the bot should continue starting.
-func runSetupWizard() bool {
+func RunSetupWizard() bool {
 	// Header style
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
@@ -164,7 +164,7 @@ func runSetupWizard() bool {
 	configPath, err := writeEnvFile(config)
 	if err != nil {
 		fmt.Printf("\nError saving configuration: %v\n", err)
-		waitOnWindows()
+		WaitOnWindows()
 		return false
 	}
 
@@ -303,9 +303,9 @@ func writeEnvFile(config map[string]string) (string, error) {
 	return configPath, nil
 }
 
-// waitOnWindows pauses execution on Windows so users can see error messages
+// WaitOnWindows pauses execution on Windows so users can see error messages
 // before the console window closes.
-func waitOnWindows() {
+func WaitOnWindows() {
 	if runtime.GOOS == "windows" {
 		fmt.Println()
 		fmt.Println("Press Enter to exit...")
@@ -313,12 +313,12 @@ func waitOnWindows() {
 	}
 }
 
-// fatalWithWait logs a fatal error and waits on Windows before exiting.
+// FatalWithWait logs a fatal error and waits on Windows before exiting.
 // Uses zerolog for structured logging if available, falls back to stderr otherwise.
-func fatalWithWait(format string, args ...interface{}) {
+func FatalWithWait(format string, args ...interface{}) {
 	msg := fmt.Sprintf(format, args...)
 	// Use zerolog for consistent logging (it's always initialized, even if default)
 	log.Error().Msg(msg)
-	waitOnWindows()
+	WaitOnWindows()
 	os.Exit(1)
 }

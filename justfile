@@ -20,7 +20,7 @@ vet:
 
 # Build the project
 build:
-    go build -ldflags "-X main.Version=$(git rev-parse --short HEAD) -X 'main.BuildTime=$(date -u '+%Y-%m-%d %H:%M:%S')'" .
+    go build -ldflags "-X github.com/raine/telegram-tori-bot/internal/bot.Version=$(git rev-parse --short HEAD) -X 'github.com/raine/telegram-tori-bot/internal/bot.BuildTime=$(date -u '+%Y-%m-%d %H:%M:%S')'" .
 
 # Run tests
 test +FLAGS='./...':

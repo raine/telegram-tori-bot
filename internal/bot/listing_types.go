@@ -1,4 +1,4 @@
-package main
+package bot
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/raine/telegram-tori-bot/tori"
+	"github.com/raine/telegram-tori-bot/internal/tori"
 )
 
 // AdFlowState tracks where we are in the ad creation flow

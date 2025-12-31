@@ -1,11 +1,11 @@
-package main
+package bot
 
 import (
 	"context"
 	"fmt"
 	"time"
 
-	"github.com/raine/telegram-tori-bot/tori"
+	"github.com/raine/telegram-tori-bot/internal/tori"
 )
 
 // BulkAnalysisStatus represents the analysis status of a bulk draft.

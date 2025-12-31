@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/raine/telegram-tori-bot/llm"
+	"github.com/raine/telegram-tori-bot/internal/llm"
 )
 
 func main() {

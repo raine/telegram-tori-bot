@@ -43,7 +43,7 @@ jobs:
           if [ "${{ matrix.goos }}" = "windows" ]; then
             BINARY_NAME="${BINARY_NAME}.exe"
           fi
-          go build -tags timetzdata -ldflags "-s -w -X main.version=${{ github.sha }}" -o "${BINARY_NAME}" .
+          go build -tags timetzdata -ldflags "-s -w -X github.com/raine/telegram-tori-bot/internal/bot.Version=${{ github.sha }}" -o "${BINARY_NAME}" .
           echo "artifact_path=${BINARY_NAME}" >> $GITHUB_OUTPUT
 
       - name: Upload artifact

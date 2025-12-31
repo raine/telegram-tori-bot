@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/raine/telegram-tori-bot/tori"
+	"github.com/raine/telegram-tori-bot/internal/tori"
 )
 
 func main() {

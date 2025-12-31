@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/raine/telegram-tori-bot/tori"
+	"github.com/raine/telegram-tori-bot/internal/tori"
 )
 
 const tokenFile = "auth_tokens.json"

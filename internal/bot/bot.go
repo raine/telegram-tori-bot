@@ -1,4 +1,4 @@
-package main
+package bot
 
 import (
 	"context"
@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/raine/telegram-tori-bot/llm"
-	"github.com/raine/telegram-tori-bot/storage"
+	"github.com/raine/telegram-tori-bot/internal/llm"
+	"github.com/raine/telegram-tori-bot/internal/storage"
 	"github.com/rs/zerolog/log"
 )
 
@@ -57,9 +57,9 @@ func (b *Bot) SetLLMClients(visionAnalyzer llm.Analyzer, editParser llm.EditInte
 	b.bulkHandler = NewBulkHandler(b.tg, visionAnalyzer, b.sessionStore)
 }
 
-// handleUpdate is the main message router.
+// HandleUpdate is the main message router.
 // It dispatches messages to the appropriate session worker for sequential processing.
-func (b *Bot) handleUpdate(ctx context.Context, update tgbotapi.Update) {
+func (b *Bot) HandleUpdate(ctx context.Context, update tgbotapi.Update) {
 	b.dispatchUpdate(ctx, update, false)
 }
 

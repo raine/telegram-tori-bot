@@ -1,4 +1,4 @@
-package main
+package bot
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/rs/zerolog/log"
 
-	"github.com/raine/telegram-tori-bot/tori"
+	"github.com/raine/telegram-tori-bot/internal/tori"
 )
 
 // SessionMessage represents a message to be processed by the session worker.

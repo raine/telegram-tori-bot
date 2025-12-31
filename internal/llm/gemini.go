@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/raine/telegram-tori-bot/tori"
+	"github.com/raine/telegram-tori-bot/internal/tori"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/genai"
 )
