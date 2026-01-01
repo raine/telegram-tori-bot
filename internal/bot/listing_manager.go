@@ -112,11 +112,12 @@ func (m *ListingManager) refreshListingView(ctx context.Context, session *UserSe
 			statusIcon = "⏰ "
 		}
 
-		// Truncate title if needed
+		// Truncate title if needed (use runes for proper UTF-8 handling)
 		title := ad.Data.Title
-		maxTitleLen := 25
-		if len(title) > maxTitleLen {
-			title = title[:maxTitleLen-3] + "..."
+		maxTitleLen := 50
+		titleRunes := []rune(title)
+		if len(titleRunes) > maxTitleLen {
+			title = string(titleRunes[:maxTitleLen-3]) + "..."
 		}
 
 		// Button label with status, title and price
