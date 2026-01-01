@@ -7,3 +7,4 @@ files:
     - CLAUDE.md
     - tori/testdata
     - sessions.db
+    - .claude/settings.local.json
