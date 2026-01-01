@@ -121,7 +121,8 @@ func (m *ListingManager) refreshListingView(ctx context.Context, session *UserSe
 		}
 
 		// Button label with status, title and price
-		label := fmt.Sprintf("%s%s | %s", statusIcon, title, ad.Data.Subtitle)
+		priceLabel := formatSubtitle(ad.Data.Subtitle)
+		label := fmt.Sprintf("%s%s | %s", statusIcon, title, priceLabel)
 
 		// Telegram limits callback data to 64 bytes
 		btnData := fmt.Sprintf("listings:view:%d", ad.ID)
@@ -381,4 +382,17 @@ func (m *ListingManager) deleteMenuMessage(session *UserSession) {
 	}
 	session.activeListingID = 0
 	session.cachedListings = nil
+}
+
+// formatSubtitle converts API subtitle to display format
+// "Tori myydään 200 €" -> "200 €"
+// "Tori annetaan" -> "Annetaan"
+func formatSubtitle(subtitle string) string {
+	if strings.HasPrefix(subtitle, "Tori myydään ") {
+		return strings.TrimPrefix(subtitle, "Tori myydään ")
+	}
+	if subtitle == "Tori annetaan" {
+		return "Annetaan"
+	}
+	return subtitle
 }
