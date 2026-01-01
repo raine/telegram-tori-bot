@@ -94,8 +94,7 @@ func (m *ListingManager) refreshListingView(ctx context.Context, session *UserSe
 
 	// Build message text
 	var sb strings.Builder
-	sb.WriteString("*Omat ilmoitukset*\n")
-	sb.WriteString(fmt.Sprintf("Sivu %d/%d (%d ilmoitusta)\n", session.listingBrowsePage, totalPages, result.Total))
+	sb.WriteString(fmt.Sprintf("*Omat ilmoitukset* — Sivu %d/%d (%d ilmoitusta)\n", session.listingBrowsePage, totalPages, result.Total))
 
 	// Build inline keyboard
 	var rows [][]tgbotapi.InlineKeyboardButton
