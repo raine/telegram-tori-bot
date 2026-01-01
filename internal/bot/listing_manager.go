@@ -29,6 +29,7 @@ func NewListingManager(tg BotAPI) *ListingManager {
 func (m *ListingManager) HandleIlmoituksetCommand(ctx context.Context, session *UserSession) {
 	session.listingBrowsePage = 1
 	session.activeListingID = 0
+	session.showOldListings = false
 	m.refreshListingView(ctx, session, true) // true = send new message
 }
 
@@ -48,6 +49,13 @@ func (m *ListingManager) HandleListingCallback(ctx context.Context, session *Use
 
 	if data == "listings:close" {
 		m.deleteMenuMessage(session)
+		return
+	}
+
+	if data == "listings:toggle_old" {
+		session.showOldListings = !session.showOldListings
+		session.listingBrowsePage = 1 // Reset to page 1 when toggling
+		m.refreshListingView(ctx, session, false)
 		return
 	}
 
@@ -74,32 +82,58 @@ func (m *ListingManager) refreshListingView(ctx context.Context, session *UserSe
 		return
 	}
 
-	limit := listingsPerPage
-	offset := (session.listingBrowsePage - 1) * limit
-
-	// Fetch ALL to get ACTIVE, PENDING, EXPIRED, DISPOSED
-	result, err := client.GetAdSummaries(ctx, limit, offset, "ALL")
+	// Always fetch ALL and filter client-side
+	// API facets are individual states: ALL, ACTIVE, DRAFT, PENDING, EXPIRED, DISPOSED
+	result, err := client.GetAdSummaries(ctx, 100, 0, "ALL") // Fetch all, paginate client-side
 	if err != nil {
 		session.replyWithError(err)
 		return
 	}
 
-	if result.Total == 0 {
+	// Filter based on showOldListings setting and deleted items
+	var filtered []tori.AdSummary
+	for _, ad := range result.Summaries {
+		// Skip recently deleted ad (API may return stale data)
+		if session.deletedListingID != "" && strconv.FormatInt(ad.ID, 10) == session.deletedListingID {
+			continue
+		}
+
+		if session.showOldListings {
+			// Show all
+			filtered = append(filtered, ad)
+		} else {
+			// Only show ACTIVE and PENDING
+			if ad.State.Type == "ACTIVE" || ad.State.Type == "PENDING" {
+				filtered = append(filtered, ad)
+			}
+		}
+	}
+
+	if len(filtered) == 0 {
 		session.reply("Sinulla ei ole ilmoituksia.")
 		return
 	}
 
-	session.cachedListings = result.Summaries
-	totalPages := (result.Total + limit - 1) / limit
+	// Paginate client-side
+	total := len(filtered)
+	limit := listingsPerPage
+	offset := (session.listingBrowsePage - 1) * limit
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+
+	session.cachedListings = filtered[offset:end]
+	totalPages := (total + limit - 1) / limit
 
 	// Build message text
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("*Omat ilmoitukset* — Sivu %d/%d (%d ilmoitusta)\n", session.listingBrowsePage, totalPages, result.Total))
+	sb.WriteString(fmt.Sprintf("*Omat ilmoitukset* — Sivu %d/%d (%d ilmoitusta)\n", session.listingBrowsePage, totalPages, total))
 
 	// Build inline keyboard
 	var rows [][]tgbotapi.InlineKeyboardButton
 
-	for _, ad := range result.Summaries {
+	for _, ad := range session.cachedListings {
 		// Status icon
 		statusIcon := ""
 		switch ad.State.Type {
@@ -131,13 +165,22 @@ func (m *ListingManager) refreshListingView(ctx context.Context, session *UserSe
 		})
 	}
 
+	// Toggle row
+	toggleLabel := "Näytä vanhat"
+	if session.showOldListings {
+		toggleLabel = "Piilota vanhat"
+	}
+	rows = append(rows, []tgbotapi.InlineKeyboardButton{
+		tgbotapi.NewInlineKeyboardButtonData(toggleLabel, "listings:toggle_old"),
+	})
+
 	// Navigation row
 	var navRow []tgbotapi.InlineKeyboardButton
 	if session.listingBrowsePage > 1 {
 		navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData("Edellinen", fmt.Sprintf("listings:page:%d", session.listingBrowsePage-1)))
 	}
 	navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData("Sulje", "listings:close"))
-	if offset+len(result.Summaries) < result.Total {
+	if end < total {
 		navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData("Seuraava", fmt.Sprintf("listings:page:%d", session.listingBrowsePage+1)))
 	}
 	rows = append(rows, navRow)
@@ -181,8 +224,10 @@ func (m *ListingManager) showAdDetail(ctx context.Context, session *UserSession,
 	}
 	sb.WriteString(fmt.Sprintf("👁 %s | ❤️ %s\n", clicks, favorites))
 
-	// Expiration or status
-	if ad.State.Type == "ACTIVE" || ad.State.Type == "PENDING" {
+	// Status
+	if ad.State.Type == "PENDING" {
+		sb.WriteString("⏳ Tarkistettavana\n")
+	} else if ad.State.Type == "ACTIVE" {
 		if ad.DaysUntilExpires > 0 {
 			sb.WriteString(fmt.Sprintf("⏰ Vanhenee %d päivässä\n", ad.DaysUntilExpires))
 		}
@@ -198,6 +243,10 @@ func (m *ListingManager) showAdDetail(ctx context.Context, session *UserSession,
 
 		switch action.Name {
 		case "DISPOSE":
+			// Can't mark as sold while in review
+			if ad.State.Type == "PENDING" {
+				continue
+			}
 			btnLabel = "✅ Merkitse myydyksi"
 			btnData = fmt.Sprintf("ad:action:DISPOSE:%d", ad.ID)
 		case "UNDISPOSE":
@@ -304,7 +353,9 @@ func (m *ListingManager) executeAction(ctx context.Context, session *UserSession
 	if actionName == "DELETE" {
 		// Go back to list after deletion
 		session.activeListingID = 0
+		session.deletedListingID = adIDStr // Track deleted ID to filter from stale API data
 		m.refreshListingView(ctx, session, false)
+		session.deletedListingID = "" // Clear after refresh
 	} else {
 		// Refresh list to get updated state, then show detail again
 		adID, _ := strconv.ParseInt(adIDStr, 10, 64)

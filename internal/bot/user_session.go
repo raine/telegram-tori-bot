@@ -137,6 +137,8 @@ type UserSession struct {
 	listingBrowsePage int              // Current pagination page (1-based)
 	cachedListings    []tori.AdSummary // Cache of the current page's listings
 	activeListingID   int64            // ID of listing being viewed (for detail view)
+	showOldListings   bool             // Show expired/sold listings
+	deletedListingID  string           // ID of listing just deleted (to filter from stale API)
 }
 
 // --- Thread-safe accessors ---
@@ -263,6 +265,8 @@ func (s *UserSession) reset() {
 	s.listingBrowsePage = 0
 	s.cachedListings = nil
 	s.activeListingID = 0
+	s.showOldListings = false
+	s.deletedListingID = ""
 }
 
 // stopDraftExpirationTimer stops the draft expiration timer if running.
