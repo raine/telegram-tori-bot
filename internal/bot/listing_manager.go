@@ -168,7 +168,7 @@ func (m *ListingManager) showAdDetail(ctx context.Context, session *UserSession,
 	// Build text
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("*%s*\n\n", escapeMarkdown(ad.Data.Title)))
-	sb.WriteString(fmt.Sprintf("💰 %s\n", escapeMarkdown(ad.Data.Subtitle)))
+	sb.WriteString(fmt.Sprintf("💰 %s\n", escapeMarkdown(formatSubtitle(ad.Data.Subtitle))))
 
 	// Stats (handle empty values)
 	clicks := ad.ExternalData.Clicks.Value
