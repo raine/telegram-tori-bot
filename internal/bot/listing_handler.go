@@ -1715,16 +1715,14 @@ func (h *ListingHandler) updateAndPublishAd(
 
 // HandleEditCommand handles natural language edit commands.
 // Returns true if the message was processed as an edit command.
+// Called from session worker - no locking needed.
 func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSession, message string) bool {
 	if h.editIntentParser == nil {
 		log.Debug().Msg("edit intent parser not configured")
 		return false
 	}
 
-	// Get current draft info (needs lock)
-	session.mu.Lock()
 	if session.currentDraft == nil {
-		session.mu.Unlock()
 		log.Debug().Msg("no current draft for edit command")
 		return false
 	}
@@ -1734,7 +1732,6 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 		Description: session.currentDraft.Description,
 		Price:       session.currentDraft.Price,
 	}
-	session.mu.Unlock()
 
 	log.Debug().
 		Str("message", message).
@@ -1742,7 +1739,7 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 		Int("price", draftInfo.Price).
 		Msg("parsing edit intent")
 
-	// Parse edit intent (NO LOCK - network I/O)
+	// Parse edit intent (network I/O)
 	intent, err := h.editIntentParser.ParseEditIntent(ctx, message, draftInfo)
 	if err != nil {
 		log.Warn().Err(err).Str("message", message).Msg("failed to parse edit intent")
@@ -1755,11 +1752,7 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 		return false
 	}
 
-	// Apply changes (needs lock)
-	session.mu.Lock()
-	defer session.mu.Unlock()
-
-	// Double-check draft still exists
+	// Check draft still exists after network I/O
 	if session.currentDraft == nil {
 		return false
 	}

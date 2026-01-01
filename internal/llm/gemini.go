@@ -265,17 +265,27 @@ func calculateGeminiCost(inputTokens, outputTokens int64, inputPrice, outputPric
 	return inputCost + outputCost
 }
 
+// extractJSONObject extracts a JSON object from text that may contain markdown
+// code blocks or other formatting. Returns the extracted JSON string or an error.
+func extractJSONObject(text string) (string, error) {
+	text = strings.TrimSpace(text)
+	start := strings.Index(text, "{")
+	end := strings.LastIndex(text, "}")
+	if start == -1 || end == -1 || end <= start {
+		return "", fmt.Errorf("no JSON object found in response: %s", text)
+	}
+	return text[start : end+1], nil
+}
+
 func parseItemDescription(text string) (*ItemDescription, error) {
-	// Clean up the response - remove markdown code blocks if present
-	text = strings.TrimSpace(text)
-	text = strings.TrimPrefix(text, "```json")
-	text = strings.TrimPrefix(text, "```")
-	text = strings.TrimSuffix(text, "```")
-	text = strings.TrimSpace(text)
+	jsonStr, err := extractJSONObject(text)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse response JSON: %w", err)
+	}
 
 	var desc ItemDescription
-	if err := json.Unmarshal([]byte(text), &desc); err != nil {
-		return nil, fmt.Errorf("failed to parse response JSON: %w (response: %s)", err, text)
+	if err := json.Unmarshal([]byte(jsonStr), &desc); err != nil {
+		return nil, fmt.Errorf("failed to parse response JSON: %w (response: %s)", err, jsonStr)
 	}
 
 	return &desc, nil
@@ -319,22 +329,16 @@ func (g *GeminiAnalyzer) SelectCategory(ctx context.Context, title, description 
 		return 0, fmt.Errorf("empty response from gemini lite")
 	}
 
-	text := result.Text()
-
-	// Extract JSON object from response (handles markdown blocks and chatty responses)
-	text = strings.TrimSpace(text)
-	start := strings.Index(text, "{")
-	end := strings.LastIndex(text, "}")
-	if start == -1 || end == -1 || end <= start {
-		return 0, fmt.Errorf("no JSON object found in response: %s", text)
+	jsonStr, err := extractJSONObject(result.Text())
+	if err != nil {
+		return 0, err
 	}
-	text = text[start : end+1]
 
 	var resp struct {
 		CategoryID int `json:"category_id"`
 	}
-	if err := json.Unmarshal([]byte(text), &resp); err != nil {
-		return 0, fmt.Errorf("failed to parse category json: %w (response: %s)", err, text)
+	if err := json.Unmarshal([]byte(jsonStr), &resp); err != nil {
+		return 0, fmt.Errorf("failed to parse category json: %w (response: %s)", err, jsonStr)
 	}
 
 	// Log usage and cost
@@ -390,22 +394,16 @@ func (g *GeminiAnalyzer) SelectCategoryHierarchical(ctx context.Context, title, 
 		return 0, fmt.Errorf("empty response from gemini lite")
 	}
 
-	text := result.Text()
-
-	// Extract JSON object from response
-	text = strings.TrimSpace(text)
-	start := strings.Index(text, "{")
-	end := strings.LastIndex(text, "}")
-	if start == -1 || end == -1 || end <= start {
-		return 0, fmt.Errorf("no JSON object found in response: %s", text)
+	jsonStr, err := extractJSONObject(result.Text())
+	if err != nil {
+		return 0, err
 	}
-	text = text[start : end+1]
 
 	var resp struct {
 		CategoryID int `json:"category_id"`
 	}
-	if err := json.Unmarshal([]byte(text), &resp); err != nil {
-		return 0, fmt.Errorf("failed to parse category json: %w (response: %s)", err, text)
+	if err := json.Unmarshal([]byte(jsonStr), &resp); err != nil {
+		return 0, fmt.Errorf("failed to parse category json: %w (response: %s)", err, jsonStr)
 	}
 
 	// Log usage and cost
@@ -627,20 +625,14 @@ func (g *GeminiAnalyzer) ParseEditIntent(ctx context.Context, message string, dr
 		return nil, fmt.Errorf("empty response from gemini")
 	}
 
-	text := result.Text()
-
-	// Extract JSON object from response
-	text = strings.TrimSpace(text)
-	start := strings.Index(text, "{")
-	end := strings.LastIndex(text, "}")
-	if start == -1 || end == -1 || end <= start {
-		return nil, fmt.Errorf("no JSON object found in response: %s", text)
+	jsonStr, err := extractJSONObject(result.Text())
+	if err != nil {
+		return nil, err
 	}
-	text = text[start : end+1]
 
 	var intent EditIntent
-	if err := json.Unmarshal([]byte(text), &intent); err != nil {
-		return nil, fmt.Errorf("failed to parse edit intent json: %w (response: %s)", err, text)
+	if err := json.Unmarshal([]byte(jsonStr), &intent); err != nil {
+		return nil, fmt.Errorf("failed to parse edit intent json: %w (response: %s)", err, jsonStr)
 	}
 
 	// Log usage and cost
@@ -679,22 +671,16 @@ func (g *GeminiAnalyzer) ExtractCategoryKeywords(ctx context.Context, title, des
 		return nil, fmt.Errorf("empty response from gemini")
 	}
 
-	text := result.Text()
-
-	// Extract JSON object from response
-	text = strings.TrimSpace(text)
-	start := strings.Index(text, "{")
-	end := strings.LastIndex(text, "}")
-	if start == -1 || end == -1 || end <= start {
-		return nil, fmt.Errorf("no JSON object found in response: %s", text)
+	jsonStr, err := extractJSONObject(result.Text())
+	if err != nil {
+		return nil, err
 	}
-	text = text[start : end+1]
 
 	var resp struct {
 		Keywords []string `json:"keywords"`
 	}
-	if err := json.Unmarshal([]byte(text), &resp); err != nil {
-		return nil, fmt.Errorf("failed to parse keywords json: %w (response: %s)", err, text)
+	if err := json.Unmarshal([]byte(jsonStr), &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse keywords json: %w (response: %s)", err, jsonStr)
 	}
 
 	// Log usage and cost
