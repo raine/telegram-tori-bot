@@ -135,11 +135,11 @@ func (m *ListingManager) refreshListingView(ctx context.Context, session *UserSe
 	// Navigation row
 	var navRow []tgbotapi.InlineKeyboardButton
 	if session.listingBrowsePage > 1 {
-		navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData("⬅️", fmt.Sprintf("listings:page:%d", session.listingBrowsePage-1)))
+		navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData("Edellinen", fmt.Sprintf("listings:page:%d", session.listingBrowsePage-1)))
 	}
-	navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData("❌ Sulje", "listings:close"))
+	navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData("Sulje", "listings:close"))
 	if offset+len(result.Summaries) < result.Total {
-		navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData("➡️", fmt.Sprintf("listings:page:%d", session.listingBrowsePage+1)))
+		navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData("Seuraava", fmt.Sprintf("listings:page:%d", session.listingBrowsePage+1)))
 	}
 	rows = append(rows, navRow)
 
