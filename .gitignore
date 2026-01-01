@@ -10,3 +10,4 @@ auth_tokens.json
 /test-session
 /test-category-fallback
 /deploy/telegram-tori-bot
+.claude/settings.local.json
