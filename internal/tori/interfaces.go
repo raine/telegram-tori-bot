@@ -40,6 +40,9 @@ type AdService interface {
 
 	// UndisposeAd reactivates a sold ad.
 	UndisposeAd(ctx context.Context, adID string) error
+
+	// GetAdWithModel fetches full ad data including values and etag.
+	GetAdWithModel(ctx context.Context, adID string) (*AdWithModel, error)
 }
 
 // Ensure AdinputClient implements AdService

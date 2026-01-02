@@ -22,6 +22,7 @@ type MockAdService struct {
 	GetAdSummariesFunc         func(ctx context.Context, limit, offset int, facet string) (*AdSummariesResult, error)
 	DisposeAdFunc              func(ctx context.Context, adID string) error
 	UndisposeAdFunc            func(ctx context.Context, adID string) error
+	GetAdWithModelFunc         func(ctx context.Context, adID string) (*AdWithModel, error)
 
 	mu sync.Mutex
 
@@ -210,6 +211,36 @@ func (m *MockAdService) UndisposeAd(ctx context.Context, adID string) error {
 		return fn(ctx, adID)
 	}
 	return nil
+}
+
+func (m *MockAdService) GetAdWithModel(ctx context.Context, adID string) (*AdWithModel, error) {
+	m.mu.Lock()
+	m.Calls = append(m.Calls, MockCall{Method: "GetAdWithModel", Args: []any{adID}})
+	fn := m.GetAdWithModelFunc
+	m.mu.Unlock()
+
+	if fn != nil {
+		return fn(ctx, adID)
+	}
+	return &AdWithModel{
+		Ad: struct {
+			ID          string         `json:"id"`
+			AdType      string         `json:"ad-type"`
+			ETag        string         `json:"etag"`
+			UpdateURL   string         `json:"update-url"`
+			UploadURL   string         `json:"upload-url"`
+			CheckoutURL string         `json:"checkout-url"`
+			Values      map[string]any `json:"values"`
+		}{
+			ID:     adID,
+			AdType: "SELL",
+			ETag:   "mock-etag",
+			Values: map[string]any{
+				"title":       "Mock Title",
+				"description": "Mock Description",
+			},
+		},
+	}, nil
 }
 
 // Reset clears all recorded calls.

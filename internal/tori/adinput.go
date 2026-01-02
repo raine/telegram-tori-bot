@@ -578,3 +578,32 @@ func (c *AdinputClient) UndisposeAd(ctx context.Context, adID string) error {
 		expectedCodes: []int{http.StatusOK, http.StatusNoContent},
 	})
 }
+
+// AdWithModel represents the full ad data returned by the /ad/withModel/{adId} endpoint.
+// This includes the ad state with etag and all field values needed for re-publishing.
+type AdWithModel struct {
+	Ad struct {
+		ID          string         `json:"id"`
+		AdType      string         `json:"ad-type"`
+		ETag        string         `json:"etag"`
+		UpdateURL   string         `json:"update-url"`
+		UploadURL   string         `json:"upload-url"`
+		CheckoutURL string         `json:"checkout-url"`
+		Values      map[string]any `json:"values"`
+	} `json:"ad"`
+	// Model contains the schema/form definition - omitted as it's large and not needed for re-publishing
+}
+
+// GetAdWithModel fetches the full ad data including values and etag.
+// This is used for re-publishing expired ads.
+func (c *AdinputClient) GetAdWithModel(ctx context.Context, adID string) (*AdWithModel, error) {
+	path := fmt.Sprintf("/adinput/ad/withModel/%s", adID)
+	fullURL := AdinputBaseURL + path
+
+	var result AdWithModel
+	err := c.doJSON(ctx, "GET", fullURL, ServiceAdinput, nil, &result, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get ad with model: %w", err)
+	}
+	return &result, nil
+}
