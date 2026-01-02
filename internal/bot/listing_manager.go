@@ -247,13 +247,13 @@ func (m *ListingManager) showAdDetail(ctx context.Context, session *UserSession,
 			if ad.State.Type == "PENDING" {
 				continue
 			}
-			btnLabel = "✅ Merkitse myydyksi"
+			btnLabel = "Merkitse myydyksi"
 			btnData = fmt.Sprintf("ad:action:DISPOSE:%d", ad.ID)
 		case "UNDISPOSE":
-			btnLabel = "🔄 Aktivoi uudelleen"
+			btnLabel = "Aktivoi uudelleen"
 			btnData = fmt.Sprintf("ad:action:UNDISPOSE:%d", ad.ID)
 		case "DELETE":
-			btnLabel = "🗑 Poista"
+			btnLabel = "Poista"
 			btnData = fmt.Sprintf("ad:confirm_delete:%d", ad.ID)
 			// Skip EDIT, STATISTICS, OBJECT_PAGE, PAUSE for v1
 		}
@@ -267,7 +267,7 @@ func (m *ListingManager) showAdDetail(ctx context.Context, session *UserSession,
 
 	// Back button
 	rows = append(rows, []tgbotapi.InlineKeyboardButton{
-		tgbotapi.NewInlineKeyboardButtonData("🔙 Takaisin listaan", fmt.Sprintf("listings:page:%d", session.listingBrowsePage)),
+		tgbotapi.NewInlineKeyboardButtonData("Takaisin", fmt.Sprintf("listings:page:%d", session.listingBrowsePage)),
 	})
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(rows...)
@@ -313,8 +313,8 @@ func (m *ListingManager) showDeleteConfirmation(ctx context.Context, session *Us
 	text := fmt.Sprintf("⚠️ *Haluatko varmasti poistaa ilmoituksen?*\n\n\"%s\"\n\nTätä ei voi perua.", escapeMarkdown(adTitle))
 
 	rows := [][]tgbotapi.InlineKeyboardButton{
-		{tgbotapi.NewInlineKeyboardButtonData("🗑 Poista pysyvästi", fmt.Sprintf("ad:action:DELETE:%s", adIDStr))},
-		{tgbotapi.NewInlineKeyboardButtonData("🔙 Peruuta", fmt.Sprintf("listings:view:%s", adIDStr))},
+		{tgbotapi.NewInlineKeyboardButtonData("Poista pysyvästi", fmt.Sprintf("ad:action:DELETE:%s", adIDStr))},
+		{tgbotapi.NewInlineKeyboardButtonData("Peruuta", fmt.Sprintf("listings:view:%s", adIDStr))},
 	}
 
 	m.editOrSend(session, text, tgbotapi.NewInlineKeyboardMarkup(rows...), false)
