@@ -3,8 +3,11 @@ package bot
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/raine/telegram-tori-bot/internal/tori"
@@ -269,6 +272,13 @@ func (m *ListingManager) showAdDetail(ctx context.Context, session *UserSession,
 		}
 	}
 
+	// Add republish button for expired listings
+	if ad.State.Type == "EXPIRED" {
+		rows = append(rows, []tgbotapi.InlineKeyboardButton{
+			tgbotapi.NewInlineKeyboardButtonData("Julkaise uudelleen", fmt.Sprintf("ad:republish:%d", ad.ID)),
+		})
+	}
+
 	// Back button
 	rows = append(rows, []tgbotapi.InlineKeyboardButton{
 		tgbotapi.NewInlineKeyboardButtonData("Takaisin", fmt.Sprintf("listings:page:%d", session.listingBrowsePage)),
@@ -299,6 +309,10 @@ func (m *ListingManager) handleAdAction(ctx context.Context, session *UserSessio
 		actionName := parts[2]
 		adIDStr := parts[3]
 		m.executeAction(ctx, session, actionName, adIDStr)
+
+	case "republish":
+		adIDStr := parts[2]
+		m.startRepublish(ctx, session, adIDStr)
 	}
 }
 
@@ -449,4 +463,252 @@ func formatSubtitle(subtitle string) string {
 		return "Annetaan"
 	}
 	return subtitle
+}
+
+// startRepublish creates a new ad with the same data as an expired ad
+func (m *ListingManager) startRepublish(ctx context.Context, session *UserSession, adIDStr string) {
+	client := session.GetAdInputClient()
+	if client == nil {
+		session.reply("Kirjaudu sisään ensin.")
+		return
+	}
+
+	// Show progress message
+	m.editOrSend(session, "⏳ Luodaan uusi ilmoitus samoilla tiedoilla...", tgbotapi.InlineKeyboardMarkup{}, false)
+
+	// Fetch full ad data
+	oldAd, err := client.GetAdWithModel(ctx, adIDStr)
+	if err != nil {
+		log.Error().Err(err).Str("adID", adIDStr).Msg("failed to fetch ad for republish")
+		session.reply("❌ Virhe haettaessa ilmoituksen tietoja: %s", err.Error())
+		return
+	}
+
+	values := oldAd.Ad.Values
+
+	// Create new draft
+	draft, err := client.CreateDraftAd(ctx)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to create draft for republish")
+		session.reply("❌ Virhe luotaessa ilmoitusta: %s", err.Error())
+		return
+	}
+
+	etag := draft.ETag
+
+	// Download and upload images from multi_image
+	var uploadedImages []republishImage
+	if multiImages, ok := values["multi_image"].([]any); ok {
+		for i, img := range multiImages {
+			imgMap, ok := img.(map[string]any)
+			if !ok {
+				continue
+			}
+			imgURL, _ := imgMap["url"].(string)
+			if imgURL == "" {
+				continue
+			}
+
+			// Download image
+			imageData, err := downloadImage(ctx, imgURL)
+			if err != nil {
+				log.Warn().Err(err).Str("url", imgURL).Int("index", i).Msg("failed to download image, skipping")
+				continue
+			}
+
+			// Upload to new draft
+			uploadResp, err := client.UploadImage(ctx, draft.ID, imageData)
+			if err != nil {
+				log.Warn().Err(err).Int("index", i).Msg("failed to upload image, skipping")
+				continue
+			}
+
+			// Preserve dimensions from original if available
+			width, _ := imgMap["width"].(float64)
+			height, _ := imgMap["height"].(float64)
+			imgType, _ := imgMap["type"].(string)
+			if imgType == "" {
+				imgType = "image/jpeg"
+			}
+
+			uploadedImages = append(uploadedImages, republishImage{
+				path:     uploadResp.ImagePath,
+				location: uploadResp.Location,
+				width:    int(width),
+				height:   int(height),
+				imgType:  imgType,
+			})
+		}
+	}
+
+	if len(uploadedImages) == 0 {
+		log.Warn().Str("adID", adIDStr).Msg("no images could be transferred for republish")
+	}
+
+	// Extract values from old ad
+	category, _ := values["category"].(string)
+	title, _ := values["title"].(string)
+	description, _ := values["description"].(string)
+	tradeType, _ := values["trade_type"].(string)
+	condition, _ := values["condition"].(string)
+
+	// Build location array
+	var locationArr []map[string]string
+	if locData, ok := values["location"].([]any); ok {
+		for _, loc := range locData {
+			if locMap, ok := loc.(map[string]any); ok {
+				entry := make(map[string]string)
+				if country, ok := locMap["country"].(string); ok {
+					entry["country"] = country
+				}
+				if postalCode, ok := locMap["postal-code"].(string); ok {
+					entry["postal-code"] = postalCode
+				}
+				if len(entry) > 0 {
+					locationArr = append(locationArr, entry)
+				}
+			}
+		}
+	}
+
+	// Build image arrays for update payload
+	var imageArr []map[string]string
+	var multiImageArr []map[string]any
+	for _, img := range uploadedImages {
+		imageArr = append(imageArr, map[string]string{
+			"uri":    img.path,
+			"width":  strconv.Itoa(img.width),
+			"height": strconv.Itoa(img.height),
+			"type":   img.imgType,
+		})
+		multiImageArr = append(multiImageArr, map[string]any{
+			"path":        img.path,
+			"url":         img.location,
+			"width":       img.width,
+			"height":      img.height,
+			"type":        img.imgType,
+			"description": "",
+		})
+	}
+
+	// Build update payload
+	payload := tori.AdUpdatePayload{
+		Category:    category,
+		Title:       title,
+		Description: description,
+		TradeType:   tradeType,
+		Condition:   condition,
+		Location:    locationArr,
+		Image:       imageArr,
+		MultiImage:  multiImageArr,
+		Extra:       make(map[string]any),
+	}
+
+	// Copy dynamic category-specific attributes from old ad
+	// These are excluded from Extra since they're handled separately
+	ignoredKeys := map[string]bool{
+		"category": true, "title": true, "description": true,
+		"trade_type": true, "condition": true, "location": true,
+		"multi_image": true, "image": true, "price": true,
+		// Internal/system fields
+		"id": true, "ad_id": true, "list_id": true, "status": true,
+		"phone": true, "account": true, "type": true, "images": true,
+	}
+	for k, v := range values {
+		if !ignoredKeys[k] {
+			payload.Extra[k] = v
+		}
+	}
+
+	// Copy price if present (overwrite any copied value with proper format)
+	if priceData, ok := values["price"].([]any); ok && len(priceData) > 0 {
+		var priceArr []map[string]any
+		for _, p := range priceData {
+			if priceMap, ok := p.(map[string]any); ok {
+				entry := make(map[string]any)
+				if amount, ok := priceMap["price_amount"].(string); ok {
+					entry["price_amount"] = amount
+				} else if amount, ok := priceMap["price_amount"].(float64); ok {
+					entry["price_amount"] = strconv.Itoa(int(amount))
+				}
+				if len(entry) > 0 {
+					priceArr = append(priceArr, entry)
+				}
+			}
+		}
+		if len(priceArr) > 0 {
+			payload.Extra["price"] = priceArr
+		}
+	}
+
+	// Update the draft
+	updateResp, err := client.UpdateAd(ctx, draft.ID, etag, payload)
+	if err != nil {
+		log.Error().Err(err).Str("draftID", draft.ID).Msg("failed to update draft for republish")
+		session.reply("❌ Virhe päivitettäessä ilmoitusta: %s", err.Error())
+		return
+	}
+	_ = updateResp // etag not needed after this
+
+	// Set delivery options (default to meetup only)
+	err = client.SetDeliveryOptions(ctx, draft.ID, tori.DeliveryOptions{
+		BuyNow:             false,
+		Client:             "ANDROID",
+		Meetup:             true,
+		SellerPaysShipping: false,
+		Shipping:           false,
+	})
+	if err != nil {
+		log.Error().Err(err).Str("draftID", draft.ID).Msg("failed to set delivery options for republish")
+		session.reply("❌ Virhe asetettaessa toimitustapoja: %s", err.Error())
+		return
+	}
+
+	// Publish the ad
+	_, err = client.PublishAd(ctx, draft.ID)
+	if err != nil {
+		log.Error().Err(err).Str("draftID", draft.ID).Msg("failed to publish republished ad")
+		session.reply("❌ Virhe julkaistaessa ilmoitusta: %s", err.Error())
+		return
+	}
+
+	log.Info().Str("oldAdID", adIDStr).Str("newAdID", draft.ID).Msg("ad republished successfully")
+
+	// Show success message and refresh the list
+	session.reply("✅ Ilmoitus julkaistu uudelleen!")
+	session.activeListingID = 0
+	m.refreshListingView(ctx, session, true)
+}
+
+// republishImage holds data for an uploaded image during republish
+type republishImage struct {
+	path     string
+	location string
+	width    int
+	height   int
+	imgType  string
+}
+
+// downloadImage fetches image data from a URL with a 30 second timeout
+func downloadImage(ctx context.Context, imageURL string) ([]byte, error) {
+	// Add timeout to prevent hanging on slow/unresponsive servers
+	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, "GET", imageURL, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to download image: status %d", resp.StatusCode)
+	}
+
+	return io.ReadAll(resp.Body)
 }
