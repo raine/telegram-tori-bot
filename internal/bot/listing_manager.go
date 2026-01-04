@@ -260,6 +260,12 @@ func (m *ListingManager) showAdDetail(ctx context.Context, session *UserSession,
 			btnLabel = "Aktivoi uudelleen"
 			btnData = fmt.Sprintf("ad:action:UNDISPOSE:%d", ad.ID)
 		case "DELETE":
+			// Add republish button for expired listings (before delete)
+			if ad.State.Type == "EXPIRED" {
+				rows = append(rows, []tgbotapi.InlineKeyboardButton{
+					tgbotapi.NewInlineKeyboardButtonData("Julkaise uudelleen", fmt.Sprintf("ad:republish:%d", ad.ID)),
+				})
+			}
 			btnLabel = "Poista"
 			btnData = fmt.Sprintf("ad:confirm_delete:%d", ad.ID)
 			// Skip EDIT, STATISTICS, OBJECT_PAGE, PAUSE for v1
@@ -270,13 +276,6 @@ func (m *ListingManager) showAdDetail(ctx context.Context, session *UserSession,
 				tgbotapi.NewInlineKeyboardButtonData(btnLabel, btnData),
 			})
 		}
-	}
-
-	// Add republish button for expired listings
-	if ad.State.Type == "EXPIRED" {
-		rows = append(rows, []tgbotapi.InlineKeyboardButton{
-			tgbotapi.NewInlineKeyboardButtonData("Julkaise uudelleen", fmt.Sprintf("ad:republish:%d", ad.ID)),
-		})
 	}
 
 	// Back button
