@@ -10,7 +10,7 @@ import (
 // If not overridden, methods return sensible defaults.
 // Thread-safe for use in concurrent tests.
 type MockAdService struct {
-	CreateDraftAdFunc          func(ctx context.Context) (*DraftAd, error)
+	CreateDraftAdFunc          func(ctx context.Context) (*DraftAd, *AdModel, error)
 	UploadImageFunc            func(ctx context.Context, adID string, imageData []byte) (*UploadImageResponse, error)
 	GetCategoryPredictionsFunc func(ctx context.Context, adID string) ([]CategoryPrediction, error)
 	PatchItemFunc              func(ctx context.Context, adID, etag string, data map[string]any) (*PatchItemResponse, error)
@@ -39,7 +39,7 @@ type MockCall struct {
 // Ensure MockAdService implements AdService
 var _ AdService = (*MockAdService)(nil)
 
-func (m *MockAdService) CreateDraftAd(ctx context.Context) (*DraftAd, error) {
+func (m *MockAdService) CreateDraftAd(ctx context.Context) (*DraftAd, *AdModel, error) {
 	m.mu.Lock()
 	m.Calls = append(m.Calls, MockCall{Method: "CreateDraftAd"})
 	fn := m.CreateDraftAdFunc
@@ -51,7 +51,7 @@ func (m *MockAdService) CreateDraftAd(ctx context.Context) (*DraftAd, error) {
 	return &DraftAd{
 		ID:   "mock-draft-id",
 		ETag: "mock-etag",
-	}, nil
+	}, nil, nil
 }
 
 func (m *MockAdService) UploadImage(ctx context.Context, adID string, imageData []byte) (*UploadImageResponse, error) {

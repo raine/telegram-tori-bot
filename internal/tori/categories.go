@@ -18,8 +18,11 @@ package tori
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/rs/zerolog/log"
 )
 
 // Category represents a Tori category with its full path
@@ -58,6 +61,97 @@ func (s *CategoryService) GetCategories() []Category {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.categories
+}
+
+// IsInitialized returns true if the category cache has been populated
+func (s *CategoryService) IsInitialized() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.categories) > 0
+}
+
+// UpdateFromModel parses the category tree from an AdModel response and updates the cache.
+// This extracts real category IDs from the Tori API response.
+func (s *CategoryService) UpdateFromModel(model *AdModel) {
+	if model == nil {
+		return
+	}
+
+	// Find the category widget in the model
+	var categoryNodes []ModelNode
+	found := false
+	for _, section := range model.Sections {
+		for _, widget := range section.Content.Widgets {
+			if widget.ID == "category" {
+				categoryNodes = widget.Nodes
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+
+	if !found || len(categoryNodes) == 0 {
+		log.Warn().Msg("no category widget found in model response")
+		return
+	}
+
+	// Flatten the tree into []Category (collecting all nodes, marking persistable ones)
+	var newCategories []Category
+
+	var traverse func(nodes []ModelNode, parent *CategoryParent, pathPrefix string)
+	traverse = func(nodes []ModelNode, parent *CategoryParent, pathPrefix string) {
+		for _, node := range nodes {
+			id, err := strconv.Atoi(node.ID)
+			if err != nil || id == 0 {
+				continue
+			}
+
+			fullPath := node.Label
+			if pathPrefix != "" {
+				fullPath = pathPrefix + " > " + node.Label
+			}
+
+			// Build parent structure for children to reference
+			currentParent := &CategoryParent{
+				ID:     id,
+				Label:  node.Label,
+				Parent: parent,
+			}
+
+			// Add all nodes to the category list (not just persistable ones)
+			// This allows hierarchical navigation through parent categories
+			newCategories = append(newCategories, Category{
+				ID:       id,
+				Label:    node.Label,
+				FullPath: fullPath,
+				Parent:   parent,
+			})
+
+			// Recurse into children
+			if len(node.Children) > 0 {
+				traverse(node.Children, currentParent, fullPath)
+			}
+		}
+	}
+
+	traverse(categoryNodes, nil, "")
+
+	if len(newCategories) == 0 {
+		log.Warn().Msg("no categories extracted from model")
+		return
+	}
+
+	// Update the service safely
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.categories = newCategories
+	s.Tree = BuildCategoryTree(s.categories)
+
+	log.Info().Int("count", len(newCategories)).Msg("category cache updated from API model")
 }
 
 // SearchCategories searches for categories matching any of the keywords.
@@ -159,132 +253,7 @@ func buildCategoryParentPrediction(p *CategoryParent) *CategoryPrediction {
 	}
 }
 
-// embeddedCategories contains Tori categories for fallback search.
-// This list covers common marketplace categories.
-// Category IDs are based on Tori's actual category system.
-var embeddedCategories = []Category{
-	// Koti ja sisustus (Home and Interior) - parent 5000
-	{ID: 5001, Label: "Sohvat ja nojatuolit", FullPath: "Koti ja sisustus > Huonekalut > Sohvat ja nojatuolit", Parent: &CategoryParent{ID: 5000, Label: "Huonekalut", Parent: &CategoryParent{ID: 78, Label: "Koti ja sisustus"}}},
-	{ID: 5002, Label: "Pöydät", FullPath: "Koti ja sisustus > Huonekalut > Pöydät", Parent: &CategoryParent{ID: 5000, Label: "Huonekalut", Parent: &CategoryParent{ID: 78, Label: "Koti ja sisustus"}}},
-	{ID: 5003, Label: "Tuolit", FullPath: "Koti ja sisustus > Huonekalut > Tuolit", Parent: &CategoryParent{ID: 5000, Label: "Huonekalut", Parent: &CategoryParent{ID: 78, Label: "Koti ja sisustus"}}},
-	{ID: 5004, Label: "Työtuolit", FullPath: "Koti ja sisustus > Huonekalut > Työtuolit", Parent: &CategoryParent{ID: 5000, Label: "Huonekalut", Parent: &CategoryParent{ID: 78, Label: "Koti ja sisustus"}}},
-	{ID: 5005, Label: "Toimistokalusteet", FullPath: "Koti ja sisustus > Huonekalut > Toimistokalusteet", Parent: &CategoryParent{ID: 5000, Label: "Huonekalut", Parent: &CategoryParent{ID: 78, Label: "Koti ja sisustus"}}},
-	{ID: 5006, Label: "Sängyt ja patjat", FullPath: "Koti ja sisustus > Huonekalut > Sängyt ja patjat", Parent: &CategoryParent{ID: 5000, Label: "Huonekalut", Parent: &CategoryParent{ID: 78, Label: "Koti ja sisustus"}}},
-	{ID: 5007, Label: "Kaapit ja hyllyt", FullPath: "Koti ja sisustus > Huonekalut > Kaapit ja hyllyt", Parent: &CategoryParent{ID: 5000, Label: "Huonekalut", Parent: &CategoryParent{ID: 78, Label: "Koti ja sisustus"}}},
-	{ID: 5008, Label: "TV-tasot ja mediakaapit", FullPath: "Koti ja sisustus > Huonekalut > TV-tasot ja mediakaapit", Parent: &CategoryParent{ID: 5000, Label: "Huonekalut", Parent: &CategoryParent{ID: 78, Label: "Koti ja sisustus"}}},
-	{ID: 5009, Label: "Muut huonekalut", FullPath: "Koti ja sisustus > Huonekalut > Muut huonekalut", Parent: &CategoryParent{ID: 5000, Label: "Huonekalut", Parent: &CategoryParent{ID: 78, Label: "Koti ja sisustus"}}},
-	{ID: 5010, Label: "Sisustustavarat", FullPath: "Koti ja sisustus > Sisustustavarat", Parent: &CategoryParent{ID: 78, Label: "Koti ja sisustus"}},
-	{ID: 5011, Label: "Valaisimet", FullPath: "Koti ja sisustus > Valaisimet", Parent: &CategoryParent{ID: 78, Label: "Koti ja sisustus"}},
-	{ID: 5012, Label: "Matot", FullPath: "Koti ja sisustus > Matot", Parent: &CategoryParent{ID: 78, Label: "Koti ja sisustus"}},
-	{ID: 5013, Label: "Keittiötarvikkeet", FullPath: "Koti ja sisustus > Keittiötarvikkeet", Parent: &CategoryParent{ID: 78, Label: "Koti ja sisustus"}},
-	{ID: 5014, Label: "Tekstiilit", FullPath: "Koti ja sisustus > Tekstiilit", Parent: &CategoryParent{ID: 78, Label: "Koti ja sisustus"}},
-	{ID: 5015, Label: "Kylpyhuone", FullPath: "Koti ja sisustus > Kylpyhuone", Parent: &CategoryParent{ID: 78, Label: "Koti ja sisustus"}},
-
-	// Elektroniikka (Electronics) - parent 93
-	{ID: 9301, Label: "Puhelimet", FullPath: "Elektroniikka > Puhelimet", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}},
-	{ID: 9302, Label: "Tabletit", FullPath: "Elektroniikka > Tabletit", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}},
-	{ID: 9303, Label: "Tietokoneet", FullPath: "Elektroniikka > Tietokoneet", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}},
-	{ID: 9304, Label: "Kannettavat", FullPath: "Elektroniikka > Kannettavat", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}},
-	{ID: 9305, Label: "Näytöt", FullPath: "Elektroniikka > Näytöt", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}},
-	{ID: 9306, Label: "Näytönohjaimet", FullPath: "Elektroniikka > Näytönohjaimet", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}},
-	{ID: 9307, Label: "Televisiot", FullPath: "Elektroniikka > Televisiot", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}},
-	{ID: 9308, Label: "Kamerat", FullPath: "Elektroniikka > Kamerat", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}},
-	{ID: 9309, Label: "Pelikonsolit", FullPath: "Elektroniikka > Pelikonsolit", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}},
-	{ID: 9310, Label: "Äänentoistolaitteet", FullPath: "Elektroniikka > Äänentoistolaitteet", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}},
-	{ID: 9311, Label: "Kuulokkeet", FullPath: "Elektroniikka > Kuulokkeet", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}},
-	{ID: 9312, Label: "Älykellot ja rannekkeet", FullPath: "Elektroniikka > Älykellot ja rannekkeet", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}},
-	{ID: 9313, Label: "Oheislaitteet", FullPath: "Elektroniikka > Oheislaitteet", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}},
-	{ID: 9314, Label: "Tulostimet ja skannerit", FullPath: "Elektroniikka > Tulostimet ja skannerit", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}},
-
-	// Kodinkoneet (Appliances) - parent 93
-	{ID: 9320, Label: "Kodinkoneet", FullPath: "Elektroniikka > Kodinkoneet", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}},
-	{ID: 9321, Label: "Jääkaapit ja pakastimet", FullPath: "Elektroniikka > Kodinkoneet > Jääkaapit ja pakastimet", Parent: &CategoryParent{ID: 9320, Label: "Kodinkoneet", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}}},
-	{ID: 9322, Label: "Pesukoneet ja kuivausrummut", FullPath: "Elektroniikka > Kodinkoneet > Pesukoneet ja kuivausrummut", Parent: &CategoryParent{ID: 9320, Label: "Kodinkoneet", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}}},
-	{ID: 9323, Label: "Astianpesukoneet", FullPath: "Elektroniikka > Kodinkoneet > Astianpesukoneet", Parent: &CategoryParent{ID: 9320, Label: "Kodinkoneet", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}}},
-	{ID: 9324, Label: "Liedet ja uunit", FullPath: "Elektroniikka > Kodinkoneet > Liedet ja uunit", Parent: &CategoryParent{ID: 9320, Label: "Kodinkoneet", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}}},
-	{ID: 9325, Label: "Mikroaaltouunit", FullPath: "Elektroniikka > Kodinkoneet > Mikroaaltouunit", Parent: &CategoryParent{ID: 9320, Label: "Kodinkoneet", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}}},
-	{ID: 9326, Label: "Pölynimurit", FullPath: "Elektroniikka > Kodinkoneet > Pölynimurit", Parent: &CategoryParent{ID: 9320, Label: "Kodinkoneet", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}}},
-	{ID: 9327, Label: "Kahvinkeittimet ja -koneet", FullPath: "Elektroniikka > Kodinkoneet > Kahvinkeittimet ja -koneet", Parent: &CategoryParent{ID: 9320, Label: "Kodinkoneet", Parent: &CategoryParent{ID: 93, Label: "Elektroniikka"}}},
-
-	// Urheilu ja ulkoilu (Sports) - parent 69
-	{ID: 6901, Label: "Pyörät", FullPath: "Urheilu ja ulkoilu > Pyörät", Parent: &CategoryParent{ID: 69, Label: "Urheilu ja ulkoilu"}},
-	{ID: 6902, Label: "Sähköpyörät", FullPath: "Urheilu ja ulkoilu > Sähköpyörät", Parent: &CategoryParent{ID: 69, Label: "Urheilu ja ulkoilu"}},
-	{ID: 6903, Label: "Lasketteluvälineet", FullPath: "Urheilu ja ulkoilu > Lasketteluvälineet", Parent: &CategoryParent{ID: 69, Label: "Urheilu ja ulkoilu"}},
-	{ID: 6904, Label: "Hiihtovälineet", FullPath: "Urheilu ja ulkoilu > Hiihtovälineet", Parent: &CategoryParent{ID: 69, Label: "Urheilu ja ulkoilu"}},
-	{ID: 6905, Label: "Golf", FullPath: "Urheilu ja ulkoilu > Golf", Parent: &CategoryParent{ID: 69, Label: "Urheilu ja ulkoilu"}},
-	{ID: 6906, Label: "Kalastus", FullPath: "Urheilu ja ulkoilu > Kalastus", Parent: &CategoryParent{ID: 69, Label: "Urheilu ja ulkoilu"}},
-	{ID: 6907, Label: "Retkeily ja vaellus", FullPath: "Urheilu ja ulkoilu > Retkeily ja vaellus", Parent: &CategoryParent{ID: 69, Label: "Urheilu ja ulkoilu"}},
-	{ID: 6908, Label: "Kuntosalilaitteet", FullPath: "Urheilu ja ulkoilu > Kuntosalilaitteet", Parent: &CategoryParent{ID: 69, Label: "Urheilu ja ulkoilu"}},
-	{ID: 6909, Label: "Palloilu", FullPath: "Urheilu ja ulkoilu > Palloilu", Parent: &CategoryParent{ID: 69, Label: "Urheilu ja ulkoilu"}},
-	{ID: 6910, Label: "Rullaluistelu ja skeittaus", FullPath: "Urheilu ja ulkoilu > Rullaluistelu ja skeittaus", Parent: &CategoryParent{ID: 69, Label: "Urheilu ja ulkoilu"}},
-	{ID: 6911, Label: "Vesiurheilu", FullPath: "Urheilu ja ulkoilu > Vesiurheilu", Parent: &CategoryParent{ID: 69, Label: "Urheilu ja ulkoilu"}},
-
-	// Vaatteet ja asusteet (Clothing) - parent 71
-	{ID: 7101, Label: "Naisten vaatteet", FullPath: "Vaatteet ja asusteet > Naisten vaatteet", Parent: &CategoryParent{ID: 71, Label: "Vaatteet ja asusteet"}},
-	{ID: 7102, Label: "Miesten vaatteet", FullPath: "Vaatteet ja asusteet > Miesten vaatteet", Parent: &CategoryParent{ID: 71, Label: "Vaatteet ja asusteet"}},
-	{ID: 7103, Label: "Kengät", FullPath: "Vaatteet ja asusteet > Kengät", Parent: &CategoryParent{ID: 71, Label: "Vaatteet ja asusteet"}},
-	{ID: 7104, Label: "Laukut ja lompakot", FullPath: "Vaatteet ja asusteet > Laukut ja lompakot", Parent: &CategoryParent{ID: 71, Label: "Vaatteet ja asusteet"}},
-	{ID: 7105, Label: "Kellot ja korut", FullPath: "Vaatteet ja asusteet > Kellot ja korut", Parent: &CategoryParent{ID: 71, Label: "Vaatteet ja asusteet"}},
-	{ID: 7106, Label: "Asusteet", FullPath: "Vaatteet ja asusteet > Asusteet", Parent: &CategoryParent{ID: 71, Label: "Vaatteet ja asusteet"}},
-
-	// Lapset ja vanhemmuus (Children) - parent 68
-	{ID: 6801, Label: "Lastenvaatteet", FullPath: "Lapset ja vanhemmuus > Lastenvaatteet", Parent: &CategoryParent{ID: 68, Label: "Lapset ja vanhemmuus"}},
-	{ID: 6802, Label: "Lastenkengät", FullPath: "Lapset ja vanhemmuus > Lastenkengät", Parent: &CategoryParent{ID: 68, Label: "Lapset ja vanhemmuus"}},
-	{ID: 6803, Label: "Lastenvaunut ja rattaat", FullPath: "Lapset ja vanhemmuus > Lastenvaunut ja rattaat", Parent: &CategoryParent{ID: 68, Label: "Lapset ja vanhemmuus"}},
-	{ID: 6804, Label: "Turvaistuimet", FullPath: "Lapset ja vanhemmuus > Turvaistuimet", Parent: &CategoryParent{ID: 68, Label: "Lapset ja vanhemmuus"}},
-	{ID: 6805, Label: "Lastenhuoneen kalusteet", FullPath: "Lapset ja vanhemmuus > Lastenhuoneen kalusteet", Parent: &CategoryParent{ID: 68, Label: "Lapset ja vanhemmuus"}},
-	{ID: 6806, Label: "Lelut", FullPath: "Lapset ja vanhemmuus > Lelut", Parent: &CategoryParent{ID: 68, Label: "Lapset ja vanhemmuus"}},
-
-	// Viihde ja harrastukset (Entertainment) - parent 86
-	{ID: 8601, Label: "Kirjat", FullPath: "Viihde ja harrastukset > Kirjat", Parent: &CategoryParent{ID: 86, Label: "Viihde ja harrastukset"}},
-	{ID: 8602, Label: "Elokuvat", FullPath: "Viihde ja harrastukset > Elokuvat", Parent: &CategoryParent{ID: 86, Label: "Viihde ja harrastukset"}},
-	{ID: 8603, Label: "Musiikki", FullPath: "Viihde ja harrastukset > Musiikki", Parent: &CategoryParent{ID: 86, Label: "Viihde ja harrastukset"}},
-	{ID: 8604, Label: "Pelit", FullPath: "Viihde ja harrastukset > Pelit", Parent: &CategoryParent{ID: 86, Label: "Viihde ja harrastukset"}},
-	{ID: 8605, Label: "Videopelit", FullPath: "Viihde ja harrastukset > Videopelit", Parent: &CategoryParent{ID: 86, Label: "Viihde ja harrastukset"}},
-	{ID: 8606, Label: "Soittimet", FullPath: "Viihde ja harrastukset > Soittimet", Parent: &CategoryParent{ID: 86, Label: "Viihde ja harrastukset"}},
-	{ID: 8607, Label: "Keräily", FullPath: "Viihde ja harrastukset > Keräily", Parent: &CategoryParent{ID: 86, Label: "Viihde ja harrastukset"}},
-	{ID: 8608, Label: "Käsityöt ja askartelu", FullPath: "Viihde ja harrastukset > Käsityöt ja askartelu", Parent: &CategoryParent{ID: 86, Label: "Viihde ja harrastukset"}},
-	{ID: 8609, Label: "Valokuvaus", FullPath: "Viihde ja harrastukset > Valokuvaus", Parent: &CategoryParent{ID: 86, Label: "Viihde ja harrastukset"}},
-
-	// Puutarha ja remontointi (Garden) - parent 67
-	{ID: 6701, Label: "Puutarhakalusteet", FullPath: "Puutarha ja remontointi > Puutarhakalusteet", Parent: &CategoryParent{ID: 67, Label: "Puutarha ja remontointi"}},
-	{ID: 6702, Label: "Puutarhatyökalut", FullPath: "Puutarha ja remontointi > Puutarhatyökalut", Parent: &CategoryParent{ID: 67, Label: "Puutarha ja remontointi"}},
-	{ID: 6703, Label: "Grillit", FullPath: "Puutarha ja remontointi > Grillit", Parent: &CategoryParent{ID: 67, Label: "Puutarha ja remontointi"}},
-	{ID: 6704, Label: "Rakennustarvikkeet", FullPath: "Puutarha ja remontointi > Rakennustarvikkeet", Parent: &CategoryParent{ID: 67, Label: "Puutarha ja remontointi"}},
-	{ID: 6705, Label: "Työkalut", FullPath: "Puutarha ja remontointi > Työkalut", Parent: &CategoryParent{ID: 67, Label: "Puutarha ja remontointi"}},
-	{ID: 6706, Label: "Lämmitys ja ilmanvaihto", FullPath: "Puutarha ja remontointi > Lämmitys ja ilmanvaihto", Parent: &CategoryParent{ID: 67, Label: "Puutarha ja remontointi"}},
-	{ID: 6707, Label: "Porealtaat ja saunat", FullPath: "Puutarha ja remontointi > Porealtaat ja saunat", Parent: &CategoryParent{ID: 67, Label: "Puutarha ja remontointi"}},
-
-	// Eläimet (Animals) - parent 77
-	{ID: 7701, Label: "Koirat", FullPath: "Eläimet > Koirat", Parent: &CategoryParent{ID: 77, Label: "Eläimet"}},
-	{ID: 7702, Label: "Kissat", FullPath: "Eläimet > Kissat", Parent: &CategoryParent{ID: 77, Label: "Eläimet"}},
-	{ID: 7703, Label: "Pieneläimet", FullPath: "Eläimet > Pieneläimet", Parent: &CategoryParent{ID: 77, Label: "Eläimet"}},
-	{ID: 7704, Label: "Linnut", FullPath: "Eläimet > Linnut", Parent: &CategoryParent{ID: 77, Label: "Eläimet"}},
-	{ID: 7705, Label: "Akvaarioeläimet", FullPath: "Eläimet > Akvaarioeläimet", Parent: &CategoryParent{ID: 77, Label: "Eläimet"}},
-	{ID: 7706, Label: "Eläintarvikkeet", FullPath: "Eläimet > Eläintarvikkeet", Parent: &CategoryParent{ID: 77, Label: "Eläimet"}},
-
-	// Autot ja kuljetusvälineet (Vehicles) - parent 90
-	{ID: 9001, Label: "Autot", FullPath: "Autot ja kuljetusvälineet > Autot", Parent: &CategoryParent{ID: 90, Label: "Autot ja kuljetusvälineet"}},
-	{ID: 9002, Label: "Moottoripyörät", FullPath: "Autot ja kuljetusvälineet > Moottoripyörät", Parent: &CategoryParent{ID: 90, Label: "Autot ja kuljetusvälineet"}},
-	{ID: 9003, Label: "Mopot ja skootterit", FullPath: "Autot ja kuljetusvälineet > Mopot ja skootterit", Parent: &CategoryParent{ID: 90, Label: "Autot ja kuljetusvälineet"}},
-	{ID: 9004, Label: "Veneet", FullPath: "Autot ja kuljetusvälineet > Veneet", Parent: &CategoryParent{ID: 90, Label: "Autot ja kuljetusvälineet"}},
-	{ID: 9005, Label: "Perävaunut", FullPath: "Autot ja kuljetusvälineet > Perävaunut", Parent: &CategoryParent{ID: 90, Label: "Autot ja kuljetusvälineet"}},
-	{ID: 9006, Label: "Mönkijät", FullPath: "Autot ja kuljetusvälineet > Mönkijät", Parent: &CategoryParent{ID: 90, Label: "Autot ja kuljetusvälineet"}},
-	{ID: 9007, Label: "Moottorikelkat", FullPath: "Autot ja kuljetusvälineet > Moottorikelkat", Parent: &CategoryParent{ID: 90, Label: "Autot ja kuljetusvälineet"}},
-	{ID: 9008, Label: "Renkaat ja vanteet", FullPath: "Autot ja kuljetusvälineet > Renkaat ja vanteet", Parent: &CategoryParent{ID: 90, Label: "Autot ja kuljetusvälineet"}},
-	{ID: 9009, Label: "Varaosat", FullPath: "Autot ja kuljetusvälineet > Varaosat", Parent: &CategoryParent{ID: 90, Label: "Autot ja kuljetusvälineet"}},
-	{ID: 9010, Label: "Autotarvikkeet", FullPath: "Autot ja kuljetusvälineet > Autotarvikkeet", Parent: &CategoryParent{ID: 90, Label: "Autot ja kuljetusvälineet"}},
-
-	// Antiikki ja taide (Antiques) - parent 76
-	{ID: 7601, Label: "Antiikki", FullPath: "Antiikki ja taide > Antiikki", Parent: &CategoryParent{ID: 76, Label: "Antiikki ja taide"}},
-	{ID: 7602, Label: "Taulut ja taide", FullPath: "Antiikki ja taide > Taulut ja taide", Parent: &CategoryParent{ID: 76, Label: "Antiikki ja taide"}},
-	{ID: 7603, Label: "Design", FullPath: "Antiikki ja taide > Design", Parent: &CategoryParent{ID: 76, Label: "Antiikki ja taide"}},
-
-	// Liike-elämä (Business) - parent 91
-	{ID: 9101, Label: "Toimistolaitteet", FullPath: "Liike-elämä > Toimistolaitteet", Parent: &CategoryParent{ID: 91, Label: "Liike-elämä"}},
-	{ID: 9102, Label: "Myymäläkalusteet", FullPath: "Liike-elämä > Myymäläkalusteet", Parent: &CategoryParent{ID: 91, Label: "Liike-elämä"}},
-	{ID: 9103, Label: "Ravintola- ja kahvilakalusto", FullPath: "Liike-elämä > Ravintola- ja kahvilakalusto", Parent: &CategoryParent{ID: 91, Label: "Liike-elämä"}},
-
-	// Muu (Other) - fallback
-	{ID: 76, Label: "Muu", FullPath: "Muu", Parent: nil},
-}
+// embeddedCategories is initialized empty and populated dynamically from the Tori API.
+// The UpdateFromModel method extracts real category IDs from the /ad/withModel response.
+// This replaces the previous hardcoded list which contained fake category IDs.
+var embeddedCategories = []Category{}

@@ -1596,11 +1596,18 @@ func (h *ListingHandler) showAdSummary(session *UserSession) {
 }
 
 // startNewAdFlow creates a draft and returns the ID and ETag.
+// It also populates the category cache from the model response if not already initialized.
 func (h *ListingHandler) startNewAdFlow(ctx context.Context, client tori.AdService) (draftID string, etag string, err error) {
 	log.Info().Msg("creating draft ad")
-	draft, err := client.CreateDraftAd(ctx)
+	draft, model, err := client.CreateDraftAd(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create draft: %w", err)
+	}
+
+	// Populate category cache from model if not already initialized
+	if model != nil && h.categoryService != nil && !h.categoryService.IsInitialized() {
+		log.Info().Msg("initializing category cache from API model")
+		h.categoryService.UpdateFromModel(model)
 	}
 
 	log.Info().Str("draftId", draft.ID).Msg("draft ad created")

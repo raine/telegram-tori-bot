@@ -5,8 +5,8 @@ import "context"
 // AdService abstracts the Tori.fi ad creation API operations.
 // This interface allows for easy mocking in tests.
 type AdService interface {
-	// CreateDraftAd creates a new draft ad.
-	CreateDraftAd(ctx context.Context) (*DraftAd, error)
+	// CreateDraftAd creates a new draft ad and returns the model containing the category tree.
+	CreateDraftAd(ctx context.Context) (*DraftAd, *AdModel, error)
 
 	// UploadImage uploads an image to the draft ad.
 	UploadImage(ctx context.Context, adID string, imageData []byte) (*UploadImageResponse, error)

@@ -253,7 +253,7 @@ func (h *BulkHandler) analyzeAndCreateDraft(ctx context.Context, session *UserSe
 		return
 	}
 
-	toriDraft, err := client.CreateDraftAd(ctx)
+	toriDraft, _, err := client.CreateDraftAd(ctx)
 	if err != nil {
 		log.Error().Err(err).Str("draftID", draftID).Msg("failed to create Tori draft in bulk mode")
 		h.setDraftError(session, draftID, MsgBulkErrDraftCreation)

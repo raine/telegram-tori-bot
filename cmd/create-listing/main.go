@@ -53,7 +53,7 @@ func main() {
 
 	// Step 1: Create draft
 	fmt.Println("Creating draft ad...")
-	draft, err := client.CreateDraftAd(ctx)
+	draft, _, err := client.CreateDraftAd(ctx)
 	if err != nil {
 		fmt.Printf("Failed to create draft: %v\n", err)
 		os.Exit(1)

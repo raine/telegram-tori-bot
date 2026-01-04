@@ -495,7 +495,7 @@ func (m *ListingManager) startRepublish(ctx context.Context, session *UserSessio
 	values := oldAd.Ad.Values
 
 	// Create new draft
-	draft, err := client.CreateDraftAd(ctx)
+	draft, _, err := client.CreateDraftAd(ctx)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to create draft for republish")
 		session.reply(MsgRepublishCreateError, err.Error())

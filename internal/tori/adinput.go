@@ -171,22 +171,54 @@ type DraftAd struct {
 	CheckoutURL string `json:"checkout-url"`
 }
 
-// CreateDraftResponse is the response from creating a draft ad
-type CreateDraftResponse struct {
-	Ad DraftAd `json:"ad"`
-	// Model is ignored - too large and we fetch attributes separately
+// AdModel represents the model/schema returned with draft ad responses.
+// It contains the full category tree and form field definitions.
+type AdModel struct {
+	Sections []ModelSection `json:"sections"`
 }
 
-// CreateDraftAd creates a new draft ad
-func (c *AdinputClient) CreateDraftAd(ctx context.Context) (*DraftAd, error) {
+// ModelSection represents a section in the ad model
+type ModelSection struct {
+	Content ModelContent `json:"content"`
+}
+
+// ModelContent represents the content of a model section
+type ModelContent struct {
+	Widgets []ModelWidget `json:"widgets"`
+}
+
+// ModelWidget represents a widget in the model (e.g., category selector)
+type ModelWidget struct {
+	ID    string      `json:"id"` // e.g., "category"
+	Nodes []ModelNode `json:"value-nodes"`
+}
+
+// ModelNode represents a node in the category tree from the model response.
+// Used for parsing the hierarchical category structure.
+type ModelNode struct {
+	ID          string      `json:"id"` // Category ID as string (e.g., "78")
+	Label       string      `json:"label"`
+	Persistable bool        `json:"persistable"` // true = selectable leaf category
+	Children    []ModelNode `json:"children,omitempty"`
+}
+
+// CreateDraftResponse is the response from creating a draft ad
+type CreateDraftResponse struct {
+	Ad    DraftAd  `json:"ad"`
+	Model *AdModel `json:"model,omitempty"`
+}
+
+// CreateDraftAd creates a new draft ad and returns the model containing the category tree.
+// The model can be used to populate the category cache with real Tori category IDs.
+func (c *AdinputClient) CreateDraftAd(ctx context.Context) (*DraftAd, *AdModel, error) {
 	var result CreateDraftResponse
 	err := c.doJSON(ctx, "POST", AdinputBaseURL+"/adinput/ad/withModel/recommerce", ServiceAdinput, nil, &result, &requestOptions{
 		expectedCodes: []int{http.StatusCreated},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("create draft: %w", err)
+		return nil, nil, fmt.Errorf("create draft: %w", err)
 	}
-	return &result.Ad, nil
+	return &result.Ad, result.Model, nil
 }
 
 // UploadImageResponse contains the image path from upload
