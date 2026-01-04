@@ -381,6 +381,10 @@ func (m *ListingManager) executeAction(ctx context.Context, session *UserSession
 		session.deletedListingID = adIDStr // Track deleted ID to filter from stale API data
 		m.refreshListingView(ctx, session, false)
 		session.deletedListingID = "" // Clear after refresh
+	} else if actionName == "UNDISPOSE" {
+		// Go back to list after reactivation
+		session.activeListingID = 0
+		m.refreshListingView(ctx, session, false)
 	} else {
 		// Refresh list to get updated state, then show detail again
 		adID, _ := strconv.ParseInt(adIDStr, 10, 64)
