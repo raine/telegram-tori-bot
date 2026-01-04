@@ -250,8 +250,8 @@ func (m *ListingManager) showAdDetail(ctx context.Context, session *UserSession,
 
 		switch action.Name {
 		case "DISPOSE":
-			// Can't mark as sold while in review
-			if ad.State.Type == "PENDING" {
+			// Can't mark as sold while in review or expired
+			if ad.State.Type == "PENDING" || ad.State.Type == "EXPIRED" {
 				continue
 			}
 			btnLabel = "Merkitse myydyksi"
