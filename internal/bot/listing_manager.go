@@ -366,6 +366,14 @@ func (m *ListingManager) executeAction(ctx context.Context, session *UserSession
 
 	log.Info().Str("action", actionName).Str("adID", adIDStr).Msg("action executed successfully")
 
+	// Show success feedback
+	switch actionName {
+	case "DISPOSE":
+		session.reply("✅ Ilmoitus merkitty myydyksi")
+	case "UNDISPOSE":
+		session.reply("✅ Ilmoitus aktivoitu uudelleen")
+	}
+
 	// After successful action, refresh the view
 	if actionName == "DELETE" {
 		// Go back to list after deletion
