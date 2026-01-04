@@ -41,6 +41,18 @@ listings. Supports conditional text for shipping:
 /malli Nouto Kannelmäestä{{#if shipping}} tai postitus{{/end}}. Mobilepay/käteinen.
 ```
 
+### Listing management
+
+Use `/ilmoitukset` to browse and manage your existing Tori listings directly in
+Telegram:
+
+- View all your active and pending listings with click/favorite stats
+- Mark items as sold or reactivate sold listings
+- Delete listings with confirmation
+- Toggle between active listings and older/expired ones
+- Republish expired listings with a single button click (copies all data
+  including images)
+
 ### Other features
 
 - **Built-in login flow**: Login directly through the bot with `/login` (email
@@ -149,6 +161,7 @@ The admin can manage allowed users with these commands (not shown in bot menu):
 | `/malli`       | View or set description template    |
 | `/poistamalli` | Remove description template         |
 | `/postinumero` | View or change postal code          |
+| `/ilmoitukset` | Manage your Tori listings           |
 
 ## FAQ
 
