@@ -14,6 +14,7 @@ import (
 	"github.com/raine/telegram-tori-bot/internal/bot"
 	"github.com/raine/telegram-tori-bot/internal/llm"
 	"github.com/raine/telegram-tori-bot/internal/storage"
+	"github.com/raine/telegram-tori-bot/internal/watcher"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
@@ -136,6 +137,13 @@ func main() {
 	// Run bot update loop
 	g.Go(func() error {
 		return runBot(ctx, tg, sessionStore, visionAnalyzer, adminID)
+	})
+
+	// Run watcher service for search watch notifications
+	watcherService := watcher.NewService(sessionStore, tg)
+	g.Go(func() error {
+		watcherService.Run(ctx)
+		return nil
 	})
 
 	if err := g.Wait(); err != nil && err != context.Canceled {

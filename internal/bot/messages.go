@@ -333,3 +333,40 @@ const (
 	BtnPrev          = "Edellinen"
 	BtnNext          = "Seuraava"
 )
+
+// =============================================================================
+// Search watch messages (/haku, /seuraa, /seurattavat)
+// =============================================================================
+
+const (
+	MsgSearchResults      = "🔍 *Hakutulokset: \"%s\"*\nLöytyi %d ilmoitusta\n\n"
+	MsgSearchNoResults    = "🔍 *Hakutulokset: \"%s\"*\nEi tuloksia\n"
+	MsgSearchError        = "❌ Haku epäonnistui: %s"
+	MsgSearchQueryMissing = "Käyttö: `/haku <hakusana>`\nEsim: `/haku iphone 14`"
+
+	MsgWatchCreated       = "✅ Seuranta luotu: \"%s\"\n\nIlmoitan kun uusia ilmoituksia ilmestyy."
+	MsgWatchDeleted       = "🗑 Seuranta poistettu."
+	MsgWatchAlreadyExists = "Seuranta haulle \"%s\" on jo olemassa."
+	MsgWatchLimitReached  = "Olet saavuttanut seurantojen maksimimäärän (%d)."
+	MsgWatchNotFound      = "Seurantaa ei löydy."
+	MsgWatchQueryMissing  = "Käyttö: `/seuraa <hakusana>`\nEsim: `/seuraa iphone 14`"
+
+	MsgNoWatches     = "Sinulla ei ole seurantoja.\n\nLuo seuranta: `/seuraa <hakusana>`"
+	MsgWatchesHeader = "🔔 *Seurannat* (%d kpl)\n\n"
+	MsgWatchItem     = "%d. \"%s\"\n"
+
+	MsgNewListing      = "🔔 *Uusi ilmoitus:* \"%s\"\n\n"
+	MsgListingTitle    = "*%s*\n"
+	MsgListingPrice    = "💰 %s\n"
+	MsgListingLocation = "📍 %s\n"
+)
+
+// Search watch button labels
+const (
+	BtnCreateWatch = "🔔 Seuraa hakua"
+	BtnDeleteWatch = "🗑️"
+	BtnOpenInTori  = "Avaa Torissa"
+)
+
+// Maximum watches per user
+const MaxWatchesPerUser = 10

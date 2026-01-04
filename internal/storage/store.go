@@ -171,6 +171,39 @@ func (s *SQLiteStore) init() error {
 		return fmt.Errorf("failed to create allowed_users table: %w", err)
 	}
 
+	watchesQuery := `
+	CREATE TABLE IF NOT EXISTS watches (
+		id TEXT PRIMARY KEY,
+		user_id INTEGER NOT NULL,
+		query TEXT NOT NULL,
+		created_at DATETIME NOT NULL
+	);
+	`
+	_, err = s.db.Exec(watchesQuery)
+	if err != nil {
+		return fmt.Errorf("failed to create watches table: %w", err)
+	}
+
+	watchSeenListingsQuery := `
+	CREATE TABLE IF NOT EXISTS watch_seen_listings (
+		watch_id TEXT NOT NULL,
+		listing_id TEXT NOT NULL,
+		seen_at DATETIME NOT NULL,
+		PRIMARY KEY (watch_id, listing_id),
+		FOREIGN KEY (watch_id) REFERENCES watches(id) ON DELETE CASCADE
+	);
+	`
+	_, err = s.db.Exec(watchSeenListingsQuery)
+	if err != nil {
+		return fmt.Errorf("failed to create watch_seen_listings table: %w", err)
+	}
+
+	// Enable foreign keys for cascade delete
+	_, err = s.db.Exec("PRAGMA foreign_keys = ON")
+	if err != nil {
+		return fmt.Errorf("failed to enable foreign keys: %w", err)
+	}
+
 	return nil
 }
 

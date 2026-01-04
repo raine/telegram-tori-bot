@@ -24,6 +24,9 @@ var botCommands = []Command{
 	{Name: "poistamalli", Description: "Poista kuvauspohja"},
 	{Name: "postinumero", Description: "Näytä/vaihda postinumero"},
 	{Name: "ilmoitukset", Description: "Hallitse Tori-ilmoituksia"},
+	{Name: "haku", Description: "Hae Torista"},
+	{Name: "seuraa", Description: "Luo seuranta haulle"},
+	{Name: "seurattavat", Description: "Näytä seurannat"},
 	{Name: "login", Description: "Kirjaudu Toriin"},
 	{Name: "versio", Description: "Näytä version tiedot"},
 }

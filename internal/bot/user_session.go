@@ -139,6 +139,9 @@ type UserSession struct {
 	activeListingID   int64            // ID of listing being viewed (for detail view)
 	showOldListings   bool             // Show expired/sold listings
 	deletedListingID  string           // ID of listing just deleted (to filter from stale API)
+
+	// Search Watch State
+	pendingSearchQuery string // Stores the query from the last /haku command for callback
 }
 
 // --- Thread-safe accessors ---

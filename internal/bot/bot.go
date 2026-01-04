@@ -33,6 +33,7 @@ type Bot struct {
 	listingHandler *ListingHandler
 	bulkHandler    *BulkHandler
 	listingManager *ListingManager
+	watchHandler   *WatchHandler
 }
 
 // NewBot creates a new Bot instance.
@@ -46,6 +47,7 @@ func NewBot(tg BotAPI, sessionStore storage.SessionStore, adminID int64) *Bot {
 	bot.state = bot.NewBotState()
 	bot.authHandler = NewAuthHandler(sessionStore)
 	bot.listingManager = NewListingManager(tg)
+	bot.watchHandler = NewWatchHandler(tg, sessionStore)
 
 	return bot
 }
@@ -293,6 +295,12 @@ func (b *Bot) handleCommand(ctx context.Context, session *UserSession, message *
 			return
 		}
 		b.listingManager.HandleIlmoituksetCommand(ctx, session)
+	case "/haku":
+		b.watchHandler.HandleHakuCommand(ctx, session, argsStr)
+	case "/seuraa":
+		b.watchHandler.HandleSeuraaCommand(ctx, session, argsStr)
+	case "/seurattavat":
+		b.watchHandler.HandleSeurattavatCommand(ctx, session)
 	case "/admin":
 		b.handleAdminCommand(session, argsStr)
 	case "/versio":
@@ -330,6 +338,8 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, session *UserSession, que
 		b.handleReselectCallback(ctx, session, query)
 	} else if strings.HasPrefix(query.Data, "publish:") {
 		b.listingHandler.HandlePublishCallback(ctx, session, query)
+	} else if strings.HasPrefix(query.Data, "watch:") {
+		b.watchHandler.HandleWatchCallback(ctx, session, query)
 	}
 }
 
