@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Teardown script for Raspberry Pi
+# Removes telegram-tori-bot installation (inverse of setup-pi)
+#
+# Usage: ./teardown-pi <PI_HOST>
+# Example: ./teardown-pi pi@raspberrypi.local
+
+readonly APP_NAME="telegram-tori-bot"
+
+# Colors for output
+readonly RED='\033[0;31m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly NC='\033[0m'
+
+info() { printf '%b[INFO]%b %s\n' "$GREEN" "$NC" "$*"; }
+warn() { printf '%b[WARN]%b %s\n' "$YELLOW" "$NC" "$*"; }
+error() { printf '%b[ERROR]%b %s\n' "$RED" "$NC" "$*" >&2; }
+
+usage() {
+    cat <<EOF
+Usage: $0 <PI_HOST>
+Example: $0 pi@raspberrypi.local
+EOF
+    exit 1
+}
+
+if [[ $# -lt 1 ]]; then
+    usage
+fi
+
+readonly pi_host="$1"
+
+warn "This will remove $APP_NAME from $pi_host"
+warn "Including: service, binary, .env, and tori user"
+echo ""
+read -r -p "Are you sure? Type 'yes' to confirm: " confirm
+if [[ "$confirm" != "yes" ]]; then
+    error "Aborted"
+    exit 1
+fi
+
+echo ""
+read -r -p "Also delete database (sessions.db)? [y/N] " -n 1 delete_data
+echo ""
+
+# Check if Pi is reachable
+if ! ssh -o ConnectTimeout=5 "$pi_host" true 2>/dev/null; then
+    error "Cannot connect to $pi_host"
+    exit 1
+fi
+
+info "Tearing down $APP_NAME on $pi_host..."
+
+ssh -T "$pi_host" bash -s -- "$delete_data" <<'ENDSSH'
+set -euo pipefail
+
+delete_data="$1"
+readonly app_name="telegram-tori-bot"
+readonly install_dir="/opt/$app_name"
+readonly data_dir="/var/lib/$app_name"
+
+# Safety check
+if [[ -z "$install_dir" || "$install_dir" == "/" || -z "$data_dir" || "$data_dir" == "/" ]]; then
+    echo "[ERROR] Safety check failed - refusing to delete"
+    exit 1
+fi
+
+echo "[INFO] Stopping and disabling service..."
+if systemctl is-active --quiet "$app_name" 2>/dev/null; then
+    sudo systemctl stop "$app_name"
+fi
+if systemctl is-enabled --quiet "$app_name" 2>/dev/null; then
+    sudo systemctl disable "$app_name"
+fi
+
+echo "[INFO] Removing systemd service file..."
+sudo rm -f "/etc/systemd/system/$app_name.service"
+sudo systemctl daemon-reload
+
+echo "[INFO] Removing install directory ($install_dir)..."
+sudo rm -rf "$install_dir"
+
+if [[ "$delete_data" =~ ^[Yy]$ ]]; then
+    echo "[INFO] Removing data directory ($data_dir)..."
+    sudo rm -rf "$data_dir"
+else
+    echo "[INFO] Keeping data directory ($data_dir)"
+fi
+
+echo "[INFO] Removing tori user..."
+if id -u tori &>/dev/null; then
+    sudo userdel tori
+    echo "[INFO] Removed tori user"
+else
+    echo "[INFO] tori user does not exist"
+fi
+
+cat <<EOF
+
+=====================================
+Teardown complete!
+=====================================
+EOF
+ENDSSH
+
+info "Teardown complete!"

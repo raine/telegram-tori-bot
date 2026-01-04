@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Wrapper script that loads environment variables and starts the bot
+# This script is run by systemd
+
+readonly env_file="/opt/telegram-tori-bot/.env"
+
+if [[ ! -f "$env_file" ]]; then
+    echo "Error: Environment file not found at $env_file" >&2
+    exit 1
+fi
+
+# Export all variables from .env file
+set -a
+# shellcheck source=/dev/null
+source "$env_file"
+set +a
+
+exec /opt/telegram-tori-bot/telegram-tori-bot

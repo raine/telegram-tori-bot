@@ -9,7 +9,7 @@ Type=simple
 User=tori
 Group=tori
 WorkingDirectory=/opt/telegram-tori-bot
-ExecStart=/opt/telegram-tori-bot/start.sh
+ExecStart=/opt/telegram-tori-bot/start
 Restart=on-failure
 RestartSec=5
 

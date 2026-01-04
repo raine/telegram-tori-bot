@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Initial setup script for Raspberry Pi
+# Run this once to prepare the Pi for telegram-tori-bot deployment
+#
+# Usage: ./setup-pi <PI_HOST>
+# Example: ./setup-pi pi@raspberrypi.local
+
+readonly APP_NAME="telegram-tori-bot"
+
+# Colors for output
+readonly RED='\033[0;31m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly NC='\033[0m'
+
+info() { printf '%b[INFO]%b %s\n' "$GREEN" "$NC" "$*"; }
+warn() { printf '%b[WARN]%b %s\n' "$YELLOW" "$NC" "$*"; }
+error() { printf '%b[ERROR]%b %s\n' "$RED" "$NC" "$*" >&2; }
+
+usage() {
+    cat <<EOF
+Usage: $0 <PI_HOST>
+Example: $0 pi@raspberrypi.local
+EOF
+    exit 1
+}
+
+if [[ $# -lt 1 ]]; then
+    usage
+fi
+
+readonly pi_host="$1"
+
+info "Setting up $APP_NAME on $pi_host..."
+
+# Check if Pi is reachable
+if ! ssh -o ConnectTimeout=5 "$pi_host" true 2>/dev/null; then
+    error "Cannot connect to $pi_host"
+    exit 1
+fi
+
+# Run setup on the Pi
+ssh -T "$pi_host" bash -s <<'ENDSSH'
+set -euo pipefail
+
+readonly app_name="telegram-tori-bot"
+readonly install_dir="/opt/$app_name"
+readonly data_dir="/var/lib/$app_name"
+
+echo "[INFO] Creating tori user..."
+if ! id -u tori &>/dev/null; then
+    sudo useradd --system --shell /usr/sbin/nologin --home-dir "$data_dir" tori
+    echo "[INFO] Created tori user"
+else
+    echo "[INFO] tori user already exists"
+fi
+
+echo "[INFO] Creating directories..."
+sudo mkdir -p "$install_dir"
+sudo mkdir -p "$data_dir"
+
+echo "[INFO] Setting permissions..."
+sudo chown -R tori:tori "$install_dir"
+sudo chown -R tori:tori "$data_dir"
+sudo chmod 750 "$install_dir"
+sudo chmod 750 "$data_dir"
+
+cat <<EOF
+
+=====================================
+Setup complete!
+=====================================
+
+Next steps:
+1. Create deployment/.env with your configuration
+2. Run: ./deployment/deploy \$USER@\$(hostname -I | awk '{print \$1}')
+
+EOF
+ENDSSH
+
+info "Pi setup complete!"
+info ""
+info "Next steps:"
+info "1. Create deployment/.env with your configuration"
+info "2. Run: ./deployment/deploy $pi_host"
