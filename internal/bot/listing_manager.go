@@ -3,11 +3,8 @@ package bot
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/raine/telegram-tori-bot/internal/tori"
@@ -521,7 +518,7 @@ func (m *ListingManager) startRepublish(ctx context.Context, session *UserSessio
 			}
 
 			// Download image
-			imageData, err := downloadImage(ctx, imgURL)
+			imageData, err := DownloadImage(ctx, imgURL)
 			if err != nil {
 				log.Warn().Err(err).Str("url", imgURL).Int("index", i).Msg("failed to download image, skipping")
 				continue
@@ -698,28 +695,4 @@ type republishImage struct {
 	width    int
 	height   int
 	imgType  string
-}
-
-// downloadImage fetches image data from a URL with a 30 second timeout
-func downloadImage(ctx context.Context, imageURL string) ([]byte, error) {
-	// Add timeout to prevent hanging on slow/unresponsive servers
-	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(reqCtx, "GET", imageURL, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to download image: status %d", resp.StatusCode)
-	}
-
-	return io.ReadAll(resp.Body)
 }

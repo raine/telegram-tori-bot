@@ -343,7 +343,7 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 	var photoDataList [][]byte
 	var validPhotos []tgbotapi.PhotoSize
 	for _, photo := range photos {
-		data, err := downloadFileID(h.tg.GetFileDirectURL, photo.FileID)
+		data, err := DownloadTelegramFile(ctx, h.tg.GetFileDirectURL, photo.FileID)
 		if err != nil {
 			log.Error().Err(err).Str("fileID", photo.FileID).Msg("failed to download photo")
 			continue
@@ -500,7 +500,7 @@ func (h *ListingHandler) addPhotoToExistingDraft(ctx context.Context, session *U
 	}
 
 	// Download the photo (network I/O)
-	photoData, err := downloadFileID(h.tg.GetFileDirectURL, photo.FileID)
+	photoData, err := DownloadTelegramFile(ctx, h.tg.GetFileDirectURL, photo.FileID)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to download photo")
 		session.replyWithError(err)

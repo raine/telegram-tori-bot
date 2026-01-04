@@ -15,12 +15,13 @@ func TestDownloadImage_Success(t *testing.T) {
 	// Create a test server that returns image data
 	imageData := []byte{0x89, 0x50, 0x4E, 0x47} // PNG magic bytes
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
 		w.WriteHeader(http.StatusOK)
 		w.Write(imageData)
 	}))
 	defer ts.Close()
 
-	data, err := downloadImage(context.Background(), ts.URL)
+	data, err := DownloadImage(context.Background(), ts.URL)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -35,7 +36,7 @@ func TestDownloadImage_NotFound(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	_, err := downloadImage(context.Background(), ts.URL)
+	_, err := DownloadImage(context.Background(), ts.URL)
 	if err == nil {
 		t.Fatal("expected error for 404 response")
 	}
@@ -51,7 +52,7 @@ func TestDownloadImage_ContextCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	_, err := downloadImage(ctx, ts.URL)
+	_, err := DownloadImage(ctx, ts.URL)
 	if err == nil {
 		t.Fatal("expected error for canceled context")
 	}
@@ -234,6 +235,7 @@ func TestStartRepublish_WithImages(t *testing.T) {
 	// Create image server
 	imageData := []byte{0xFF, 0xD8, 0xFF, 0xE0} // JPEG magic bytes
 	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
 		w.WriteHeader(http.StatusOK)
 		w.Write(imageData)
 	}))
@@ -319,6 +321,7 @@ func TestStartRepublish_ImageDownloadFailure_ContinuesWithRemainingImages(t *tes
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
+		w.Header().Set("Content-Type", "image/jpeg")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte{0xFF, 0xD8, 0xFF, 0xE0})
 	}))

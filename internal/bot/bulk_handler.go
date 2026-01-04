@@ -199,7 +199,7 @@ func (h *BulkHandler) analyzeAndCreateDraft(ctx context.Context, session *UserSe
 	var photoDataList [][]byte
 	var validPhotos []AlbumPhoto
 	for _, photo := range photos {
-		data, err := downloadFileID(h.tg.GetFileDirectURL, photo.FileID)
+		data, err := DownloadTelegramFile(ctx, h.tg.GetFileDirectURL, photo.FileID)
 		if err != nil {
 			log.Error().Err(err).Str("fileID", photo.FileID).Msg("failed to download photo in bulk mode")
 			continue
