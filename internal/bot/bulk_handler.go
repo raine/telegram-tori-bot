@@ -45,18 +45,18 @@ func NewBulkHandler(tg BotAPI, visionAnalyzer llm.Analyzer, sessionStore storage
 // HandleEräCommand enters bulk listing mode.
 func (h *BulkHandler) HandleEräCommand(ctx context.Context, session *UserSession) {
 	if session.bulkSession != nil && session.bulkSession.Active {
-		session.reply("Olet jo erätilassa. Käytä /valmis kun olet valmis tai /peru peruuttaaksesi.")
+		session.reply(MsgBulkAlreadyActive)
 		return
 	}
 
 	// Check if there's an active single listing
 	if session.draftID != "" {
-		session.reply("Sinulla on aktiivinen ilmoitus. Lähetä se ensin /laheta tai peru /peru ennen erätilaa.")
+		session.reply(MsgBulkHasActiveListing)
 		return
 	}
 
 	session.StartBulkSession()
-	session.reply("*Erätila aloitettu*\n\nLähetä kuvia luodaksesi useita ilmoituksia kerralla.\n• Yksittäiset kuvat = erilliset ilmoitukset\n• Albumit = yksi ilmoitus useilla kuvilla\n\nMax 10 ilmoitusta. Käytä /valmis kun olet valmis.")
+	session.reply(MsgBulkStarted)
 }
 
 // HandlePhoto processes a photo in bulk mode.
@@ -68,7 +68,7 @@ func (h *BulkHandler) HandlePhoto(ctx context.Context, session *UserSession, mes
 
 	// Check draft limit
 	if len(bulk.Drafts) >= maxBulkDrafts {
-		session.reply(fmt.Sprintf("Maksimimäärä (%d) ilmoituksia saavutettu.", maxBulkDrafts))
+		session.reply(fmt.Sprintf(MsgBulkMaxDraftsReached, maxBulkDrafts))
 		return
 	}
 
@@ -163,7 +163,7 @@ func (h *BulkHandler) createDraftFromPhoto(ctx context.Context, session *UserSes
 
 	// Check draft limit again
 	if len(bulk.Drafts) >= maxBulkDrafts {
-		session.reply(fmt.Sprintf("Maksimimäärä (%d) ilmoituksia saavutettu.", maxBulkDrafts))
+		session.reply(fmt.Sprintf(MsgBulkMaxDraftsReached, maxBulkDrafts))
 		return
 	}
 
@@ -209,7 +209,7 @@ func (h *BulkHandler) analyzeAndCreateDraft(ctx context.Context, session *UserSe
 	}
 
 	if len(photoDataList) == 0 {
-		h.setDraftError(session, draftID, "Kuvien lataus epäonnistui")
+		h.setDraftError(session, draftID, MsgBulkErrImageDownload)
 		return
 	}
 
@@ -222,14 +222,14 @@ func (h *BulkHandler) analyzeAndCreateDraft(ctx context.Context, session *UserSe
 
 	// Vision analysis
 	if h.visionAnalyzer == nil {
-		h.setDraftError(session, draftID, "Kuva-analyysi ei käytettävissä")
+		h.setDraftError(session, draftID, MsgBulkErrImageAnalysis)
 		return
 	}
 
 	result, err := h.visionAnalyzer.AnalyzeImages(ctx, photoDataList)
 	if err != nil {
 		log.Error().Err(err).Str("draftID", draftID).Msg("bulk vision analysis failed")
-		h.setDraftError(session, draftID, "Analyysi epäonnistui")
+		h.setDraftError(session, draftID, MsgBulkErrAnalysisFailed)
 		return
 	}
 
@@ -249,14 +249,14 @@ func (h *BulkHandler) analyzeAndCreateDraft(ctx context.Context, session *UserSe
 
 	// Create Tori draft
 	if client == nil {
-		h.setDraftError(session, draftID, "Tori-yhteys epäonnistui")
+		h.setDraftError(session, draftID, MsgBulkErrToriConnection)
 		return
 	}
 
 	toriDraft, err := client.CreateDraftAd(ctx)
 	if err != nil {
 		log.Error().Err(err).Str("draftID", draftID).Msg("failed to create Tori draft in bulk mode")
-		h.setDraftError(session, draftID, "Luonnin luonti epäonnistui")
+		h.setDraftError(session, draftID, MsgBulkErrDraftCreation)
 		return
 	}
 
@@ -284,7 +284,7 @@ func (h *BulkHandler) analyzeAndCreateDraft(ctx context.Context, session *UserSe
 	}
 
 	if len(uploadedImages) == 0 {
-		h.setDraftError(session, draftID, "Kuvien lähetys epäonnistui")
+		h.setDraftError(session, draftID, MsgBulkErrImageUpload)
 		return
 	}
 
@@ -305,7 +305,7 @@ func (h *BulkHandler) analyzeAndCreateDraft(ctx context.Context, session *UserSe
 	})
 	if err != nil {
 		log.Error().Err(err).Str("draftID", draftID).Msg("failed to set images on draft in bulk mode")
-		h.setDraftError(session, draftID, "Kuvien asetus epäonnistui")
+		h.setDraftError(session, draftID, MsgBulkErrImageSet)
 		return
 	}
 	etag = patchResp.ETag
@@ -587,10 +587,10 @@ func (h *BulkHandler) HandleStatusUpdate(session *UserSession) {
 // formatStatusMessage formats the bulk session status.
 func (h *BulkHandler) formatStatusMessage(bulk *BulkSession) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("📦 *Ilmoitukset (%d)*\n\n", len(bulk.Drafts)))
+	sb.WriteString(fmt.Sprintf(MsgBulkStatusHeader, len(bulk.Drafts)))
 
 	if len(bulk.Drafts) == 0 {
-		sb.WriteString("Lähetä kuvia aloittaaksesi...\n")
+		sb.WriteString(MsgBulkSendPhotosToStart)
 	} else {
 		for _, draft := range bulk.Drafts {
 			emoji := draft.StatusEmoji()
@@ -598,7 +598,7 @@ func (h *BulkHandler) formatStatusMessage(bulk *BulkSession) string {
 
 			switch draft.AnalysisStatus {
 			case BulkAnalysisPending, BulkAnalysisAnalyzing:
-				sb.WriteString(fmt.Sprintf("%s %s Analysoidaan... (📷 %d)\n", indexEmoji, emoji, len(draft.Photos)))
+				sb.WriteString(fmt.Sprintf("%s %s "+MsgBulkAnalyzing, indexEmoji, emoji, len(draft.Photos)))
 			case BulkAnalysisDone:
 				title := draft.Title
 				if len(title) > 50 {
@@ -606,12 +606,12 @@ func (h *BulkHandler) formatStatusMessage(bulk *BulkSession) string {
 				}
 				sb.WriteString(fmt.Sprintf("%s %s %s\n", indexEmoji, emoji, escapeMarkdown(title)))
 			case BulkAnalysisError:
-				sb.WriteString(fmt.Sprintf("%s %s Virhe: %s\n", indexEmoji, emoji, draft.ErrorMessage))
+				sb.WriteString(fmt.Sprintf("%s %s "+MsgBulkError, indexEmoji, emoji, draft.ErrorMessage))
 			}
 		}
 	}
 
-	sb.WriteString("\nLähetä lisää kuvia tai /valmis")
+	sb.WriteString("\n" + MsgBulkSendPhotosOrCommand)
 	return sb.String()
 }
 
@@ -619,18 +619,18 @@ func (h *BulkHandler) formatStatusMessage(bulk *BulkSession) string {
 func (h *BulkHandler) HandleValmisCommand(ctx context.Context, session *UserSession) {
 	bulk := session.bulkSession
 	if bulk == nil || !bulk.Active {
-		session.reply("Et ole erätilassa. Aloita /era komennolla.")
+		session.reply(MsgBulkNotInBulkMode)
 		return
 	}
 
 	if len(bulk.Drafts) == 0 {
-		session.reply("Lähetä ensin kuvia.")
+		session.reply(MsgBulkSendPhotosFirst)
 		return
 	}
 
 	// Check if analysis is still in progress
 	if !bulk.IsAnalysisComplete() {
-		session.reply("Odota, analysointi on vielä kesken...")
+		session.reply(MsgBulkWaitAnalysis)
 		return
 	}
 
@@ -645,7 +645,7 @@ func (h *BulkHandler) showEditView(session *UserSession) {
 		return
 	}
 
-	session.reply("📋 *Muokkaa ilmoituksia:*\n\nKlikkaa painikkeita muokataksesi. Kun valmis, käytä /laheta.")
+	session.reply(MsgBulkEditListings)
 
 	for _, draft := range bulk.Drafts {
 		h.sendDraftMessage(session, draft)
@@ -682,45 +682,45 @@ func (h *BulkHandler) formatDraftMessage(draft *BulkDraft) string {
 	// Photo count with correct pluralization
 	photoCount := len(draft.Photos)
 	if photoCount == 1 {
-		sb.WriteString("📷 1 kuva\n\n")
+		sb.WriteString(MsgBulkOnePhoto)
 	} else {
-		sb.WriteString(fmt.Sprintf("📷 %d kuvaa\n\n", photoCount))
+		sb.WriteString(fmt.Sprintf(MsgBulkMultiPhotos, photoCount))
 	}
 
 	// Price with estimation details
 	if draft.TradeType == TradeTypeGive {
-		sb.WriteString("💰 Hinta: Annetaan\n")
+		sb.WriteString(MsgBulkPriceGiven)
 	} else if draft.Price > 0 {
 		if draft.PriceEstimate != nil {
-			sb.WriteString(fmt.Sprintf("💰 Hinta: %d€ _(keskihinta %d ilmoituksesta, %d–%d€)_\n",
+			sb.WriteString(fmt.Sprintf(MsgBulkPriceWithEstimate,
 				draft.Price, draft.PriceEstimate.Count, draft.PriceEstimate.Min, draft.PriceEstimate.Max))
 		} else {
-			sb.WriteString(fmt.Sprintf("💰 Hinta: %d€\n", draft.Price))
+			sb.WriteString(fmt.Sprintf(MsgBulkPriceFmt, draft.Price))
 		}
 	} else {
-		sb.WriteString("💰 Hinta: _ei asetettu_\n")
+		sb.WriteString(MsgBulkPriceNotSet)
 	}
 
 	// Category
 	if draft.CategoryLabel != "" {
 		categoryPath := getCategoryPathByID(draft.CategoryPredictions, draft.CategoryID, draft.CategoryLabel)
-		sb.WriteString(fmt.Sprintf("🏷️ Osasto: %s\n", categoryPath))
+		sb.WriteString(fmt.Sprintf(MsgBulkCategoryFmt, categoryPath))
 	} else {
-		sb.WriteString("🏷️ Osasto: _ei valittu_\n")
+		sb.WriteString(MsgBulkCategoryNone)
 	}
 
 	// Shipping
 	if draft.ShippingPossible {
-		sb.WriteString("🚚 Postitus: Kyllä\n")
+		sb.WriteString(MsgBulkShippingYes)
 	} else {
-		sb.WriteString("🚚 Postitus: Ei\n")
+		sb.WriteString(MsgBulkShippingNo)
 	}
 
 	// Ready status
 	if draft.IsReadyToPublish() {
-		sb.WriteString("\n✅ Valmis lähetettäväksi")
+		sb.WriteString(MsgBulkReadyToSend)
 	} else {
-		sb.WriteString("\n⚠️ Täytä puuttuvat tiedot")
+		sb.WriteString(MsgBulkFillMissing)
 	}
 
 	return sb.String()
@@ -731,16 +731,16 @@ func (h *BulkHandler) makeDraftKeyboard(draft *BulkDraft) tgbotapi.InlineKeyboar
 	id := draft.ID
 
 	row1 := []tgbotapi.InlineKeyboardButton{
-		tgbotapi.NewInlineKeyboardButtonData("Otsikko", "bulk:edit:title:"+id),
-		tgbotapi.NewInlineKeyboardButtonData("Kuvaus", "bulk:edit:desc:"+id),
+		tgbotapi.NewInlineKeyboardButtonData(BtnBulkTitle, "bulk:edit:title:"+id),
+		tgbotapi.NewInlineKeyboardButtonData(BtnBulkDescription, "bulk:edit:desc:"+id),
 	}
 	row2 := []tgbotapi.InlineKeyboardButton{
-		tgbotapi.NewInlineKeyboardButtonData("Hinta", "bulk:edit:price:"+id),
-		tgbotapi.NewInlineKeyboardButtonData("Osasto", "bulk:edit:cat:"+id),
+		tgbotapi.NewInlineKeyboardButtonData(BtnBulkPrice, "bulk:edit:price:"+id),
+		tgbotapi.NewInlineKeyboardButtonData(BtnBulkCategory, "bulk:edit:cat:"+id),
 	}
 	row3 := []tgbotapi.InlineKeyboardButton{
-		tgbotapi.NewInlineKeyboardButtonData("Postitus", "bulk:edit:shipping:"+id),
-		tgbotapi.NewInlineKeyboardButtonData("Poista", "bulk:delete:"+id),
+		tgbotapi.NewInlineKeyboardButtonData(BtnBulkShipping, "bulk:edit:shipping:"+id),
+		tgbotapi.NewInlineKeyboardButtonData(BtnBulkDelete, "bulk:delete:"+id),
 	}
 
 	return tgbotapi.NewInlineKeyboardMarkup(row1, row2, row3)
@@ -790,7 +790,7 @@ func (h *BulkHandler) HandleBulkCallback(ctx context.Context, session *UserSessi
 		// Cancel editing
 		bulk.EditingDraftID = ""
 		bulk.EditingField = ""
-		session.reply("Muokkaus peruutettu.")
+		session.reply(MsgBulkEditCancelled)
 
 	case "cat":
 		// Category selection: bulk:cat:draftID:categoryId
@@ -844,17 +844,17 @@ func (h *BulkHandler) handleEditCallback(ctx context.Context, session *UserSessi
 
 	cancelButton := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("Peruuta", "bulk:cancel:0"),
+			tgbotapi.NewInlineKeyboardButtonData(BtnCancel, "bulk:cancel:0"),
 		),
 	)
 
 	switch field {
 	case "title":
-		msg := tgbotapi.NewMessage(session.userId, fmt.Sprintf("Syötä uusi otsikko ilmoitukselle %d:", draft.Index+1))
+		msg := tgbotapi.NewMessage(session.userId, fmt.Sprintf(MsgBulkEnterNewTitle, draft.Index+1))
 		msg.ReplyMarkup = cancelButton
 		session.replyWithMessage(msg)
 	case "desc":
-		msg := tgbotapi.NewMessage(session.userId, fmt.Sprintf("Syötä uusi kuvaus ilmoitukselle %d:", draft.Index+1))
+		msg := tgbotapi.NewMessage(session.userId, fmt.Sprintf(MsgBulkEnterNewDesc, draft.Index+1))
 		msg.ReplyMarkup = cancelButton
 		session.replyWithMessage(msg)
 	case "price":
@@ -862,7 +862,7 @@ func (h *BulkHandler) handleEditCallback(ctx context.Context, session *UserSessi
 	case "cat":
 		// Show category selection
 		if len(draft.CategoryPredictions) == 0 {
-			session.reply("Ei osastoehdotuksia saatavilla.")
+			session.reply(MsgNoCategoryOptions)
 			bulk.EditingDraftID = ""
 			bulk.EditingField = ""
 			return
@@ -870,11 +870,11 @@ func (h *BulkHandler) handleEditCallback(ctx context.Context, session *UserSessi
 		h.showCategorySelection(session, draft)
 	case "shipping":
 		// Show shipping options
-		msg := tgbotapi.NewMessage(session.userId, "Onko postitus mahdollinen?")
+		msg := tgbotapi.NewMessage(session.userId, MsgShippingQuestion)
 		keyboard := tgbotapi.NewInlineKeyboardMarkup(
 			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("Kyllä", fmt.Sprintf("bulk:shipping:%s:yes", draftID)),
-				tgbotapi.NewInlineKeyboardButtonData("Ei", fmt.Sprintf("bulk:shipping:%s:no", draftID)),
+				tgbotapi.NewInlineKeyboardButtonData(BtnYes, fmt.Sprintf("bulk:shipping:%s:yes", draftID)),
+				tgbotapi.NewInlineKeyboardButtonData(BtnNo, fmt.Sprintf("bulk:shipping:%s:no", draftID)),
 			),
 		)
 		msg.ReplyMarkup = keyboard
@@ -950,7 +950,7 @@ func (h *BulkHandler) promptForBulkPrice(ctx context.Context, session *UserSessi
 		}
 
 		recommendedPrice = medianPrice
-		recommendationMsg = fmt.Sprintf("\n\n*Hinta-arvio* (%d ilmoitusta):\nKeskihinta: *%d€* (vaihteluväli %d–%d€)",
+		recommendationMsg = fmt.Sprintf(MsgBulkPriceEstimate,
 			len(prices), medianPrice, minPrice, maxPrice)
 
 		log.Info().
@@ -974,7 +974,7 @@ func (h *BulkHandler) promptForBulkPrice(ctx context.Context, session *UserSessi
 		return
 	}
 
-	msgText := fmt.Sprintf("Syötä hinta ilmoitukselle %d:%s", draft.Index+1, recommendationMsg)
+	msgText := fmt.Sprintf(MsgBulkEnterPrice, draft.Index+1, recommendationMsg)
 	msg := tgbotapi.NewMessage(session.userId, msgText)
 	msg.ParseMode = tgbotapi.ModeMarkdown
 
@@ -986,8 +986,8 @@ func (h *BulkHandler) promptForBulkPrice(ctx context.Context, session *UserSessi
 		))
 	}
 	rows = append(rows, tgbotapi.NewInlineKeyboardRow(
-		tgbotapi.NewInlineKeyboardButtonData("Annetaan", fmt.Sprintf("bulk:price:%s:give", draftID)),
-		tgbotapi.NewInlineKeyboardButtonData("Peruuta", "bulk:cancel:0"),
+		tgbotapi.NewInlineKeyboardButtonData(BtnBulkGiveaway, fmt.Sprintf("bulk:price:%s:give", draftID)),
+		tgbotapi.NewInlineKeyboardButtonData(BtnCancel, "bulk:cancel:0"),
 	))
 
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(rows...)
@@ -1013,7 +1013,7 @@ func (h *BulkHandler) showCategorySelection(session *UserSession, draft *BulkDra
 		rows = append(rows, []tgbotapi.InlineKeyboardButton{button})
 	}
 
-	msg := tgbotapi.NewMessage(session.userId, "Valitse osasto:")
+	msg := tgbotapi.NewMessage(session.userId, MsgBulkSelectCategory)
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(rows...)
 	session.replyWithMessage(msg)
 }
@@ -1066,7 +1066,7 @@ func (h *BulkHandler) handleCategorySelection(ctx context.Context, session *User
 	bulk.EditingDraftID = ""
 	bulk.EditingField = ""
 
-	session.reply(fmt.Sprintf("Osasto asetettu: *%s*", categoryPath))
+	session.reply(MsgBulkCategorySet, categoryPath)
 	h.sendDraftMessage(session, draft)
 }
 
@@ -1092,11 +1092,11 @@ func (h *BulkHandler) handleShippingSelection(session *UserSession, draftID stri
 	bulk.EditingDraftID = ""
 	bulk.EditingField = ""
 
-	shippingText := "Ei"
+	shippingText := BtnNo
 	if isYes {
-		shippingText = "Kyllä"
+		shippingText = BtnYes
 	}
-	session.reply(fmt.Sprintf("Postitus asetettu: *%s*", shippingText))
+	session.reply(MsgBulkShippingSet, shippingText)
 	h.sendDraftMessage(session, draft)
 }
 
@@ -1123,7 +1123,7 @@ func (h *BulkHandler) handleGiveawaySelection(session *UserSession, draftID stri
 	bulk.EditingDraftID = ""
 	bulk.EditingField = ""
 
-	session.reply("Hinta asetettu: *Annetaan*")
+	session.reply(MsgBulkPriceGiveaway)
 	h.sendDraftMessage(session, draft)
 }
 
@@ -1150,7 +1150,7 @@ func (h *BulkHandler) handlePriceButtonSelection(session *UserSession, draftID s
 	bulk.EditingDraftID = ""
 	bulk.EditingField = ""
 
-	session.reply(fmt.Sprintf("Hinta asetettu: *%d€*", price))
+	session.reply(MsgBulkPriceSet, price)
 	h.sendDraftMessage(session, draft)
 }
 
@@ -1162,11 +1162,11 @@ func (h *BulkHandler) handleDeleteCallback(session *UserSession, draftID string,
 		return
 	}
 
-	msg := tgbotapi.NewMessage(session.userId, fmt.Sprintf("Haluatko varmasti poistaa ilmoituksen %d?", draft.Index+1))
+	msg := tgbotapi.NewMessage(session.userId, fmt.Sprintf(MsgBulkConfirmDelete, draft.Index+1))
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("Kyllä, poista", fmt.Sprintf("bulk:confirm:delete:%s", draftID)),
-			tgbotapi.NewInlineKeyboardButtonData("Ei", "bulk:cancel:0"),
+			tgbotapi.NewInlineKeyboardButtonData(BtnBulkConfirmDel, fmt.Sprintf("bulk:confirm:delete:%s", draftID)),
+			tgbotapi.NewInlineKeyboardButtonData(BtnNo, "bulk:cancel:0"),
 		),
 	)
 	msg.ReplyMarkup = keyboard
@@ -1191,7 +1191,7 @@ func (h *BulkHandler) confirmDelete(session *UserSession, draftID string, query 
 	}
 
 	bulk.RemoveDraft(draftID)
-	session.reply("Ilmoitus poistettu.")
+	session.reply(MsgBulkListingDeleted)
 
 	// Update remaining draft messages
 	for _, draft := range bulk.Drafts {
@@ -1216,23 +1216,23 @@ func (h *BulkHandler) HandleBulkTextInput(session *UserSession, text string) boo
 	switch bulk.EditingField {
 	case "title":
 		draft.Title = text
-		session.reply(fmt.Sprintf("Otsikko päivitetty: *%s*", escapeMarkdown(text)))
+		session.reply(MsgBulkTitleUpdated, escapeMarkdown(text))
 		h.sendDraftMessage(session, draft)
 
 	case "desc":
 		draft.Description = text
-		session.reply("Kuvaus päivitetty.")
+		session.reply(MsgBulkDescUpdated)
 		h.sendDraftMessage(session, draft)
 
 	case "price":
 		price, err := parsePriceMessage(text)
 		if err != nil {
-			session.reply("En ymmärtänyt hintaa. Syötä hinta numerona (esim. 50€)")
+			session.reply(MsgPriceNotUnderstood)
 			return true
 		}
 		draft.Price = price
 		draft.TradeType = TradeTypeSell
-		session.reply(fmt.Sprintf("Hinta asetettu: *%d€*", price))
+		session.reply(MsgBulkPriceSet, price)
 		h.sendDraftMessage(session, draft)
 
 	default:
@@ -1256,13 +1256,13 @@ func (h *BulkHandler) HandleLahetaCommand(ctx context.Context, session *UserSess
 	if args != "" {
 		displayIdx, err := strconv.Atoi(args)
 		if err != nil || displayIdx < 1 || displayIdx > len(bulk.Drafts) {
-			session.reply(fmt.Sprintf("Virheellinen numero. Käytä 1-%d.", len(bulk.Drafts)))
+			session.reply(MsgBulkInvalidNumber, len(bulk.Drafts))
 			return
 		}
 		// Get draft by display index (0-based)
 		draft := bulk.GetDraft(displayIdx - 1)
 		if draft == nil {
-			session.reply("Ilmoitusta ei löydy.")
+			session.reply(MsgBulkListingNotFound)
 			return
 		}
 		// Publish single draft
@@ -1278,16 +1278,16 @@ func (h *BulkHandler) HandleLahetaCommand(ctx context.Context, session *UserSess
 func (h *BulkHandler) publishDraft(ctx context.Context, session *UserSession, draft *BulkDraft) {
 	bulk := session.bulkSession
 	if draft == nil {
-		session.reply("Ilmoitusta ei löydy.")
+		session.reply(MsgBulkListingNotFound)
 		return
 	}
 
 	if !draft.IsReadyToPublish() {
-		session.reply(fmt.Sprintf("Ilmoitus %d ei ole valmis. Täytä puuttuvat tiedot.", draft.Index+1))
+		session.reply(MsgBulkListingNotReady, draft.Index+1)
 		return
 	}
 
-	session.reply(fmt.Sprintf("Lähetetään ilmoitusta %d...", draft.Index+1))
+	session.reply(MsgBulkSendingSingle, draft.Index+1)
 
 	err := h.doPublishDraft(ctx, session, draft)
 	if err != nil {
@@ -1295,7 +1295,7 @@ func (h *BulkHandler) publishDraft(ctx context.Context, session *UserSession, dr
 		return
 	}
 
-	session.reply(fmt.Sprintf("✅ Ilmoitus %d julkaistu!", draft.Index+1))
+	session.reply(MsgBulkPublishedSingle, draft.Index+1)
 
 	// Remove published draft
 	bulk.RemoveDraft(draft.ID)
@@ -1303,7 +1303,7 @@ func (h *BulkHandler) publishDraft(ctx context.Context, session *UserSession, dr
 	// If no more drafts, end bulk session
 	if len(bulk.Drafts) == 0 {
 		session.EndBulkSession()
-		session.reply("Kaikki ilmoitukset lähetetty! Erätila päättyi.")
+		session.reply(MsgBulkAllSentEnded)
 	} else {
 		// Update remaining draft messages
 		for _, d := range bulk.Drafts {
@@ -1318,11 +1318,11 @@ func (h *BulkHandler) publishAllDrafts(ctx context.Context, session *UserSession
 	readyDrafts := bulk.GetCompleteDrafts()
 
 	if len(readyDrafts) == 0 {
-		session.reply("Ei valmiita ilmoituksia lähetettäväksi. Täytä puuttuvat tiedot.")
+		session.reply(MsgBulkNoReadyListings)
 		return
 	}
 
-	session.reply(fmt.Sprintf("Lähetetään %d ilmoitusta...", len(readyDrafts)))
+	session.reply(MsgBulkSendingMultiple, len(readyDrafts))
 
 	var published int
 	var failed int
@@ -1339,15 +1339,15 @@ func (h *BulkHandler) publishAllDrafts(ctx context.Context, session *UserSession
 	}
 
 	if failed > 0 {
-		session.reply(fmt.Sprintf("✅ %d ilmoitusta julkaistu, ❌ %d epäonnistui.", published, failed))
+		session.reply(MsgBulkPublishedWithErrors, published, failed)
 	} else {
-		session.reply(fmt.Sprintf("✅ %d ilmoitusta julkaistu!", published))
+		session.reply(MsgBulkPublishedMultiple, published)
 	}
 
 	// If no more drafts, end bulk session
 	if len(bulk.Drafts) == 0 {
 		session.EndBulkSession()
-		session.reply("Erätila päättyi.")
+		session.reply(MsgBulkEnded)
 	}
 }
 
@@ -1368,7 +1368,7 @@ func (h *BulkHandler) doPublishDraft(ctx context.Context, session *UserSession, 
 		}
 	}
 	if postalCode == "" {
-		return fmt.Errorf("postinumero puuttuu")
+		return fmt.Errorf(MsgPostalCodeMissing)
 	}
 
 	// Build payload
@@ -1446,7 +1446,7 @@ func (h *BulkHandler) HandlePeruCommand(ctx context.Context, session *UserSessio
 	}
 
 	session.EndBulkSession()
-	session.replyAndRemoveCustomKeyboard("Erätila peruutettu.")
+	session.replyAndRemoveCustomKeyboard(MsgBulkCancelled)
 }
 
 // setCategoryOnDraft sets the category on the Tori draft.

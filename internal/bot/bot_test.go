@@ -205,7 +205,7 @@ func TestHandleUpdate_UnauthenticatedUser(t *testing.T) {
 	}
 
 	// Unauthenticated user should get login required message
-	tg.On("Send", makeMessage(userId, loginRequiredText)).Return(tgbotapi.Message{}, nil).Once()
+	tg.On("Send", makeMessage(userId, MsgLoginRequired)).Return(tgbotapi.Message{}, nil).Once()
 
 	bot.handleUpdateSync(context.Background(), update)
 	tg.AssertExpectations(t)
@@ -217,7 +217,7 @@ func TestHandleUpdate_AuthenticatedUserStart(t *testing.T) {
 	update := makeUpdateWithMessageText(userId, "/start")
 
 	// Authenticated user should get start message
-	tg.On("Send", makeMessage(userId, startText)).Return(tgbotapi.Message{}, nil).Once()
+	tg.On("Send", makeMessage(userId, MsgStartPrompt)).Return(tgbotapi.Message{}, nil).Once()
 
 	bot.handleUpdateSync(context.Background(), update)
 	tg.AssertExpectations(t)
@@ -754,7 +754,7 @@ func TestHandleUpdate_PeruDuringAttributeInput(t *testing.T) {
 	// Expect "Ok!" message with keyboard removal
 	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
 		_, hasRemoveKeyboard := msg.ReplyMarkup.(tgbotapi.ReplyKeyboardRemove)
-		return msg.Text == okText && hasRemoveKeyboard
+		return msg.Text == MsgOk && hasRemoveKeyboard
 	})).Return(tgbotapi.Message{}, nil).Once()
 
 	bot.handleUpdateSync(context.Background(), update)
@@ -786,7 +786,7 @@ func TestHandleUpdate_PeruDuringPriceInput(t *testing.T) {
 	// Expect "Ok!" message with keyboard removal
 	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
 		_, hasRemoveKeyboard := msg.ReplyMarkup.(tgbotapi.ReplyKeyboardRemove)
-		return msg.Text == okText && hasRemoveKeyboard
+		return msg.Text == MsgOk && hasRemoveKeyboard
 	})).Return(tgbotapi.Message{}, nil).Once()
 
 	bot.handleUpdateSync(context.Background(), update)

@@ -27,7 +27,7 @@ func (h *AuthHandler) HandleMessage(ctx context.Context, session *UserSession, t
 	// Check auth flow timeout
 	if session.IsAuthFlowTimedOut() {
 		session.authFlow.Reset()
-		session.reply(loginTimeoutText)
+		session.reply(MsgLoginTimeout)
 		return true
 	}
 
@@ -47,13 +47,13 @@ func (h *AuthHandler) handleAuthFlowMessage(ctx context.Context, session *UserSe
 	// Handle /peru to cancel login
 	if text == "/peru" {
 		session.authFlow.Reset()
-		session.reply(loginCancelledText)
+		session.reply(MsgLoginCancelled)
 		return
 	}
 
 	// Reject other commands during auth flow
 	if len(text) > 0 && text[0] == '/' {
-		session.reply(loginInProgressText)
+		session.reply(MsgLoginInProgress)
 		return
 	}
 
@@ -74,19 +74,19 @@ func (h *AuthHandler) handleAuthFlowMessage(ctx context.Context, session *UserSe
 func (h *AuthHandler) HandleLoginCommand(session *UserSession) {
 	// Check if already logged in
 	if session.isLoggedIn() {
-		session.reply(loginAlreadyLoggedInText)
+		session.reply(MsgLoginAlreadyLoggedIn)
 		return
 	}
 
 	// Initialize auth flow
 	authenticator, err := auth.NewAuthenticator()
 	if err != nil {
-		session.reply(loginFailedText, err)
+		session.reply(MsgLoginFailed, err)
 		return
 	}
 
 	if err := authenticator.InitSession(); err != nil {
-		session.reply(loginFailedText, err)
+		session.reply(MsgLoginFailed, err)
 		return
 	}
 
@@ -94,7 +94,7 @@ func (h *AuthHandler) HandleLoginCommand(session *UserSession) {
 	session.authFlow.State = AuthStateAwaitingEmail
 	session.authFlow.Touch()
 
-	session.reply(loginPromptEmailText)
+	session.reply(MsgLoginPromptEmail)
 }
 
 func (h *AuthHandler) handleAuthEmail(ctx context.Context, session *UserSession, email string) {
@@ -102,20 +102,20 @@ func (h *AuthHandler) handleAuthEmail(ctx context.Context, session *UserSession,
 
 	if err := session.authFlow.Authenticator.StartLogin(email); err != nil {
 		log.Error().Err(err).Msg("login start failed")
-		session.reply(loginFailedText, err)
+		session.reply(MsgLoginFailed, err)
 		session.authFlow.Reset()
 		return
 	}
 
 	session.authFlow.State = AuthStateAwaitingEmailCode
-	session.reply(loginEmailCodeSentText)
+	session.reply(MsgLoginEmailCodeSent)
 }
 
 func (h *AuthHandler) handleAuthEmailCode(ctx context.Context, session *UserSession, code string) {
 	mfaRequired, err := session.authFlow.Authenticator.SubmitEmailCode(code)
 	if err != nil {
 		log.Error().Err(err).Msg("email code submission failed")
-		session.reply(loginFailedText, err)
+		session.reply(MsgLoginFailed, err)
 		session.authFlow.Reset()
 		return
 	}
@@ -124,12 +124,12 @@ func (h *AuthHandler) handleAuthEmailCode(ctx context.Context, session *UserSess
 		session.authFlow.MFARequired = true
 		if err := session.authFlow.Authenticator.RequestSMS(); err != nil {
 			log.Error().Err(err).Msg("SMS request failed")
-			session.reply(loginFailedText, err)
+			session.reply(MsgLoginFailed, err)
 			session.authFlow.Reset()
 			return
 		}
 		session.authFlow.State = AuthStateAwaitingSMSCode
-		session.reply(loginSMSCodeSentText)
+		session.reply(MsgLoginSMSCodeSent)
 		return
 	}
 
@@ -140,7 +140,7 @@ func (h *AuthHandler) handleAuthEmailCode(ctx context.Context, session *UserSess
 func (h *AuthHandler) handleAuthSMSCode(ctx context.Context, session *UserSession, code string) {
 	if err := session.authFlow.Authenticator.SubmitSMSCode(code); err != nil {
 		log.Error().Err(err).Msg("SMS code submission failed")
-		session.reply(loginFailedText, err)
+		session.reply(MsgLoginFailed, err)
 		session.authFlow.Reset()
 		return
 	}
@@ -152,7 +152,7 @@ func (h *AuthHandler) finalizeAuth(ctx context.Context, session *UserSession) {
 	tokens, err := session.authFlow.Authenticator.Finalize()
 	if err != nil {
 		log.Error().Err(err).Msg("auth finalization failed")
-		session.reply(loginFailedText, err)
+		session.reply(MsgLoginFailed, err)
 		session.authFlow.Reset()
 		return
 	}
@@ -166,7 +166,7 @@ func (h *AuthHandler) finalizeAuth(ctx context.Context, session *UserSession) {
 		}
 		if err := h.sessionStore.Save(storedSession); err != nil {
 			log.Error().Err(err).Msg("failed to save session")
-			session.reply(loginFailedText, err)
+			session.reply(MsgLoginFailed, err)
 			session.authFlow.Reset()
 			return
 		}
@@ -179,7 +179,7 @@ func (h *AuthHandler) finalizeAuth(ctx context.Context, session *UserSession) {
 	session.bearerToken = tokens.BearerToken
 
 	session.authFlow.Reset()
-	session.reply(loginSuccessText)
+	session.reply(MsgLoginSuccess)
 	log.Info().Int64("userId", session.userId).Str("toriUserId", tokens.UserID).Msg("user logged in successfully")
 }
 

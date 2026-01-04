@@ -343,7 +343,7 @@ func (s *UserSession) EndBulkSession() {
 
 func (s *UserSession) replyWithError(err error) tgbotapi.Message {
 	log.Error().Stack().Err(err).Send()
-	return s._reply(formatReplyText(unexpectedErrorText, err), false)
+	return s._reply(formatReplyText(MsgUnexpectedErr, err), false)
 }
 
 // sendTypingAction sends a "typing" chat action to show the user that the bot is processing.

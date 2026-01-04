@@ -173,7 +173,7 @@ func (b *Bot) HandleSessionMessage(ctx context.Context, session *UserSession, ms
 // Called from session worker - no locking needed.
 func (b *Bot) handlePhotoMessage(ctx context.Context, session *UserSession, message *tgbotapi.Message) {
 	if !session.isLoggedIn() {
-		session.reply(loginRequiredText)
+		session.reply(MsgLoginRequired)
 		return
 	}
 
@@ -240,9 +240,9 @@ func (b *Bot) handleCommand(ctx context.Context, session *UserSession, message *
 	switch command {
 	case "/start":
 		if !session.isLoggedIn() {
-			session.reply(loginRequiredText)
+			session.reply(MsgLoginRequired)
 		} else {
-			session.reply(startText)
+			session.reply(MsgStartPrompt)
 		}
 	case "/login":
 		b.authHandler.HandleLoginCommand(session)
@@ -254,7 +254,7 @@ func (b *Bot) handleCommand(ctx context.Context, session *UserSession, message *
 		}
 		session.deleteCurrentDraft(ctx)
 		session.reset()
-		session.replyAndRemoveCustomKeyboard(okText)
+		session.replyAndRemoveCustomKeyboard(MsgOk)
 	case "/laheta":
 		// Handle bulk mode publishing
 		if session.IsInBulkMode() {
@@ -264,13 +264,13 @@ func (b *Bot) handleCommand(ctx context.Context, session *UserSession, message *
 		b.listingHandler.HandleSendListingCommand(ctx, session)
 	case "/era":
 		if !session.isLoggedIn() {
-			session.reply(loginRequiredText)
+			session.reply(MsgLoginRequired)
 			return
 		}
 		b.bulkHandler.HandleEräCommand(ctx, session)
 	case "/valmis":
 		if !session.IsInBulkMode() {
-			session.reply("Et ole erätilassa. Aloita /era komennolla.")
+			session.reply(MsgBulkNotInBulkMode)
 			return
 		}
 		b.bulkHandler.HandleValmisCommand(ctx, session)
@@ -278,7 +278,7 @@ func (b *Bot) handleCommand(ctx context.Context, session *UserSession, message *
 		session.photos = nil
 		session.pendingPhotos = nil
 		session.currentDraft = nil
-		session.reply(photosRemoved)
+		session.reply(MsgPhotosRemoved)
 	case "/osasto":
 		b.handleOsastoCommand(session)
 	case "/malli":
@@ -289,24 +289,24 @@ func (b *Bot) handleCommand(ctx context.Context, session *UserSession, message *
 		b.handlePostalCodeCommand(session)
 	case "/ilmoitukset":
 		if !session.isLoggedIn() {
-			session.reply(loginRequiredText)
+			session.reply(MsgLoginRequired)
 			return
 		}
 		b.listingManager.HandleIlmoituksetCommand(ctx, session)
 	case "/admin":
 		b.handleAdminCommand(session, argsStr)
 	case "/versio":
-		session.reply("Versio: %s\nRakennettu: %s", Version, BuildTime)
+		session.reply(MsgVersionInfo, Version, BuildTime)
 	default:
 		if !session.isLoggedIn() {
-			session.reply(loginRequiredText)
+			session.reply(MsgLoginRequired)
 			return
 		}
 		if session.IsInBulkMode() {
-			session.reply("Lähetä kuvia tai käytä /valmis kun olet valmis.")
+			session.reply(MsgBulkSendPhotosOrFinish)
 			return
 		}
-		session.reply("Lähetä kuva aloittaaksesi ilmoituksen teon")
+		session.reply(MsgStartPrompt)
 	}
 }
 
@@ -338,7 +338,7 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, session *UserSession, que
 // handleTemplateCommand handles /malli command - view or set template.
 func (b *Bot) handleTemplateCommand(session *UserSession, text string) {
 	if b.sessionStore == nil {
-		session.reply("Mallit eivät ole käytettävissä")
+		session.reply(MsgTemplateNotAvailable)
 		return
 	}
 
@@ -352,10 +352,10 @@ func (b *Bot) handleTemplateCommand(session *UserSession, text string) {
 			return
 		}
 		if tmpl == nil {
-			session.reply("Ei tallennettua mallia.\n\nAseta malli: `/malli <teksti>`\n\nEsim: `/malli Nouto Kannelmäestä{{#if shipping}} tai postitus{{/end}}. Mobilepay/käteinen.`")
+			session.reply(MsgTemplateNotSet)
 			return
 		}
-		session.reply(fmt.Sprintf("*Nykyinen malli:*\n`%s`\n\nPoista malli: /poistamalli", escapeMarkdown(tmpl.Content)))
+		session.reply(fmt.Sprintf(MsgTemplateCurrentFmt, escapeMarkdown(tmpl.Content)))
 		return
 	}
 
@@ -364,13 +364,13 @@ func (b *Bot) handleTemplateCommand(session *UserSession, text string) {
 		session.replyWithError(err)
 		return
 	}
-	session.reply("✅ Malli tallennettu.")
+	session.reply(MsgTemplateSaved)
 }
 
 // handleDeleteTemplate handles /poistamalli command.
 func (b *Bot) handleDeleteTemplate(session *UserSession) {
 	if b.sessionStore == nil {
-		session.reply("Mallit eivät ole käytettävissä")
+		session.reply(MsgTemplateNotAvailable)
 		return
 	}
 
@@ -378,13 +378,13 @@ func (b *Bot) handleDeleteTemplate(session *UserSession) {
 		session.replyWithError(err)
 		return
 	}
-	session.reply("🗑 Malli poistettu.")
+	session.reply(MsgTemplateDeleted)
 }
 
 // handlePostalCodeCommand handles /postinumero command - view or change postal code.
 func (b *Bot) handlePostalCodeCommand(session *UserSession) {
 	if b.sessionStore == nil {
-		session.reply("Postinumerot eivät ole käytettävissä")
+		session.reply(MsgPostalCodeNotAvailable)
 		return
 	}
 
@@ -396,9 +396,9 @@ func (b *Bot) handlePostalCodeCommand(session *UserSession) {
 
 	session.awaitingPostalCodeInput = true
 	if currentCode != "" {
-		session.reply(postalCodeCurrentText, currentCode)
+		session.reply(MsgPostalCodeCurrent, currentCode)
 	} else {
-		session.reply(postalCodeNotSetText)
+		session.reply(MsgPostalCodeNotSet)
 	}
 }
 
@@ -413,13 +413,13 @@ func (b *Bot) handlePostalCodeInput(session *UserSession, text string) bool {
 	// Handle /peru command to cancel
 	if text == "/peru" {
 		session.awaitingPostalCodeInput = false
-		session.reply(postalCodeCommandCancelText)
+		session.reply(MsgPostalCodeCommandCancel)
 		return true
 	}
 
 	postalCode := strings.TrimSpace(text)
 	if !isValidPostalCode(postalCode) {
-		session.reply(postalCodeInvalidText)
+		session.reply(MsgPostalCodeInvalid)
 		return true
 	}
 
@@ -432,7 +432,7 @@ func (b *Bot) handlePostalCodeInput(session *UserSession, text string) bool {
 	}
 
 	session.awaitingPostalCodeInput = false
-	session.reply(postalCodeUpdatedText, postalCode)
+	session.reply(MsgPostalCodeUpdated, postalCode)
 	return true
 }
 
@@ -446,19 +446,19 @@ func (b *Bot) handleAdminCommand(session *UserSession, args string) {
 
 	parts := strings.Fields(args)
 	if len(parts) == 0 {
-		session.reply(adminUsageText)
+		session.reply(MsgAdminUsage)
 		return
 	}
 
 	switch parts[0] {
 	case "users":
 		if len(parts) < 2 {
-			session.reply(adminUsageText)
+			session.reply(MsgAdminUsage)
 			return
 		}
 		b.handleAdminUsersCommand(session, parts[1], parts[2:])
 	default:
-		session.reply(adminUsageText)
+		session.reply(MsgAdminUsage)
 	}
 }
 
@@ -467,35 +467,35 @@ func (b *Bot) handleAdminUsersCommand(session *UserSession, action string, args 
 	switch action {
 	case "add":
 		if len(args) < 1 {
-			session.reply(adminUserAddUsageText)
+			session.reply(MsgAdminUserAddUsage)
 			return
 		}
 		userID, err := strconv.ParseInt(args[0], 10, 64)
 		if err != nil {
-			session.reply(adminUserInvalidIDText)
+			session.reply(MsgAdminUserInvalidID)
 			return
 		}
 		if err := b.sessionStore.AddAllowedUser(userID, session.userId); err != nil {
 			session.replyWithError(err)
 			return
 		}
-		session.reply(adminUserAddedText, userID)
+		session.reply(MsgAdminUserAdded, userID)
 
 	case "remove":
 		if len(args) < 1 {
-			session.reply(adminUserRemoveUsageText)
+			session.reply(MsgAdminUserRemoveUsage)
 			return
 		}
 		userID, err := strconv.ParseInt(args[0], 10, 64)
 		if err != nil {
-			session.reply(adminUserInvalidIDText)
+			session.reply(MsgAdminUserInvalidID)
 			return
 		}
 		if err := b.sessionStore.RemoveAllowedUser(userID); err != nil {
 			session.replyWithError(err)
 			return
 		}
-		session.reply(adminUserRemovedText, userID)
+		session.reply(MsgAdminUserRemoved, userID)
 
 	case "list":
 		users, err := b.sessionStore.GetAllowedUsers()
@@ -504,36 +504,36 @@ func (b *Bot) handleAdminUsersCommand(session *UserSession, action string, args 
 			return
 		}
 		if len(users) == 0 {
-			session.reply(adminNoUsersText)
+			session.reply(MsgAdminNoUsers)
 			return
 		}
 		var sb strings.Builder
-		sb.WriteString("*Sallitut käyttäjät:*\n")
+		sb.WriteString(MsgAdminAllowedUsers)
 		for _, u := range users {
 			sb.WriteString(fmt.Sprintf("• `%d` (lisätty %s)\n", u.TelegramID, u.AddedAt.Format("2006-01-02")))
 		}
 		session.reply(sb.String())
 
 	default:
-		session.reply(adminUsageText)
+		session.reply(MsgAdminUsage)
 	}
 }
 
 // handleOsastoCommand handles /osasto command - re-select category or attributes
 func (b *Bot) handleOsastoCommand(session *UserSession) {
 	if session.currentDraft == nil {
-		session.reply("Ei aktiivista ilmoitusta. Lähetä ensin kuva.")
+		session.reply(MsgNoActiveListingPhoto)
 		return
 	}
 
 	if len(session.currentDraft.CategoryPredictions) == 0 {
-		session.reply("Ei osastoehdotuksia saatavilla.")
+		session.reply(MsgNoCategoryOptions)
 		return
 	}
 
 	// If still awaiting category, just show category keyboard
 	if session.currentDraft.State == AdFlowStateAwaitingCategory {
-		msg := tgbotapi.NewMessage(session.userId, "Valitse osasto")
+		msg := tgbotapi.NewMessage(session.userId, MsgSelectCategory)
 		msg.ParseMode = tgbotapi.ModeMarkdown
 		msg.ReplyMarkup = makeCategoryPredictionKeyboard(session.currentDraft.CategoryPredictions)
 		session.replyWithMessage(msg)
@@ -541,14 +541,14 @@ func (b *Bot) handleOsastoCommand(session *UserSession) {
 	}
 
 	// If past category selection, show options menu
-	msg := tgbotapi.NewMessage(session.userId, "Mitä haluat muuttaa?")
+	msg := tgbotapi.NewMessage(session.userId, MsgWhatToChange)
 	buttons := [][]tgbotapi.InlineKeyboardButton{
-		{tgbotapi.NewInlineKeyboardButtonData("Vaihda osasto", "reselect:category")},
+		{tgbotapi.NewInlineKeyboardButtonData(BtnChangeCategory, "reselect:category")},
 	}
 	// Only show attribute option if there were required attributes
 	if session.adAttributes != nil && len(session.adAttributes.Attributes) > 0 {
 		buttons = append(buttons, []tgbotapi.InlineKeyboardButton{
-			tgbotapi.NewInlineKeyboardButtonData("Valitse lisätiedot uudelleen", "reselect:attrs"),
+			tgbotapi.NewInlineKeyboardButtonData(BtnReselectAttributes, "reselect:attrs"),
 		})
 	}
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(buttons...)
@@ -559,7 +559,7 @@ func (b *Bot) handleOsastoCommand(session *UserSession) {
 // Called from session worker - no locking needed.
 func (b *Bot) handleReselectCallback(ctx context.Context, session *UserSession, query *tgbotapi.CallbackQuery) {
 	if session.currentDraft == nil {
-		session.reply("Ei aktiivista ilmoitusta.")
+		session.reply(MsgNoActiveListing)
 		return
 	}
 
@@ -597,7 +597,7 @@ func (b *Bot) handleReselectCallback(ctx context.Context, session *UserSession, 
 		session.currentDraft.PreservedValues = preserved
 
 		// Show category selection keyboard
-		msg := tgbotapi.NewMessage(session.userId, "Valitse osasto")
+		msg := tgbotapi.NewMessage(session.userId, MsgSelectCategory)
 		msg.ParseMode = tgbotapi.ModeMarkdown
 		msg.ReplyMarkup = makeCategoryPredictionKeyboard(session.currentDraft.CategoryPredictions)
 		session.replyWithMessage(msg)

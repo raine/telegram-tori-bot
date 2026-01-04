@@ -78,7 +78,7 @@ func (m *ListingManager) HandleListingCallback(ctx context.Context, session *Use
 func (m *ListingManager) refreshListingView(ctx context.Context, session *UserSession, forceNewMessage bool) {
 	client := session.GetAdInputClient()
 	if client == nil {
-		session.reply("Kirjaudu sisään ensin.")
+		session.reply(MsgLoginFirstRequired)
 		return
 	}
 
@@ -110,7 +110,7 @@ func (m *ListingManager) refreshListingView(ctx context.Context, session *UserSe
 	}
 
 	if len(filtered) == 0 {
-		session.reply("Sinulla ei ole ilmoituksia.")
+		session.reply(MsgNoListings)
 		return
 	}
 
@@ -128,11 +128,11 @@ func (m *ListingManager) refreshListingView(ctx context.Context, session *UserSe
 
 	// Build message text
 	var sb strings.Builder
-	countLabel := "ilmoitusta"
+	countLabel := MsgListingsCountPlural
 	if total == 1 {
-		countLabel = "ilmoitus"
+		countLabel = MsgListingsCountSingle
 	}
-	sb.WriteString(fmt.Sprintf("*Omat ilmoitukset* — Sivu %d/%d (%d %s)\n", session.listingBrowsePage, totalPages, total, countLabel))
+	sb.WriteString(fmt.Sprintf(MsgListingsHeader, session.listingBrowsePage, totalPages, total, countLabel))
 
 	// Build inline keyboard
 	var rows [][]tgbotapi.InlineKeyboardButton
@@ -170,9 +170,9 @@ func (m *ListingManager) refreshListingView(ctx context.Context, session *UserSe
 	}
 
 	// Toggle row
-	toggleLabel := "Näytä vanhat"
+	toggleLabel := BtnShowOld
 	if session.showOldListings {
-		toggleLabel = "Piilota vanhat"
+		toggleLabel = BtnHideOld
 	}
 	rows = append(rows, []tgbotapi.InlineKeyboardButton{
 		tgbotapi.NewInlineKeyboardButtonData(toggleLabel, "listings:toggle_old"),
@@ -181,11 +181,11 @@ func (m *ListingManager) refreshListingView(ctx context.Context, session *UserSe
 	// Navigation row
 	var navRow []tgbotapi.InlineKeyboardButton
 	if session.listingBrowsePage > 1 {
-		navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData("Edellinen", fmt.Sprintf("listings:page:%d", session.listingBrowsePage-1)))
+		navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData(BtnPrev, fmt.Sprintf("listings:page:%d", session.listingBrowsePage-1)))
 	}
-	navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData("Sulje", "listings:close"))
+	navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData(BtnClose, "listings:close"))
 	if end < total {
-		navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData("Seuraava", fmt.Sprintf("listings:page:%d", session.listingBrowsePage+1)))
+		navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData(BtnNext, fmt.Sprintf("listings:page:%d", session.listingBrowsePage+1)))
 	}
 	rows = append(rows, navRow)
 
@@ -230,13 +230,13 @@ func (m *ListingManager) showAdDetail(ctx context.Context, session *UserSession,
 
 	// Status
 	if ad.State.Type == "PENDING" {
-		sb.WriteString("⏳ Tarkistettavana\n")
+		sb.WriteString(MsgListingPending)
 	} else if ad.State.Type == "ACTIVE" {
 		if ad.DaysUntilExpires > 0 {
-			sb.WriteString(fmt.Sprintf("⏰ Vanhenee %d päivässä\n", ad.DaysUntilExpires))
+			sb.WriteString(fmt.Sprintf(MsgListingExpiresDays, ad.DaysUntilExpires))
 		}
 	} else {
-		sb.WriteString(fmt.Sprintf("📋 Tila: %s\n", ad.State.Label))
+		sb.WriteString(fmt.Sprintf(MsgListingStateFmt, ad.State.Label))
 	}
 
 	// Build action buttons based on available actions
@@ -251,19 +251,19 @@ func (m *ListingManager) showAdDetail(ctx context.Context, session *UserSession,
 			if ad.State.Type == "PENDING" || ad.State.Type == "EXPIRED" {
 				continue
 			}
-			btnLabel = "Merkitse myydyksi"
+			btnLabel = BtnMarkAsSold
 			btnData = fmt.Sprintf("ad:action:DISPOSE:%d", ad.ID)
 		case "UNDISPOSE":
-			btnLabel = "Aktivoi uudelleen"
+			btnLabel = BtnReactivate
 			btnData = fmt.Sprintf("ad:action:UNDISPOSE:%d", ad.ID)
 		case "DELETE":
 			// Add republish button for expired listings (before delete)
 			if ad.State.Type == "EXPIRED" {
 				rows = append(rows, []tgbotapi.InlineKeyboardButton{
-					tgbotapi.NewInlineKeyboardButtonData("Julkaise uudelleen", fmt.Sprintf("ad:republish:%d", ad.ID)),
+					tgbotapi.NewInlineKeyboardButtonData(BtnRepublish, fmt.Sprintf("ad:republish:%d", ad.ID)),
 				})
 			}
-			btnLabel = "Poista"
+			btnLabel = BtnDelete
 			btnData = fmt.Sprintf("ad:confirm_delete:%d", ad.ID)
 			// Skip EDIT, STATISTICS, OBJECT_PAGE, PAUSE for v1
 		}
@@ -277,7 +277,7 @@ func (m *ListingManager) showAdDetail(ctx context.Context, session *UserSession,
 
 	// Back button
 	rows = append(rows, []tgbotapi.InlineKeyboardButton{
-		tgbotapi.NewInlineKeyboardButtonData("Takaisin", fmt.Sprintf("listings:page:%d", session.listingBrowsePage)),
+		tgbotapi.NewInlineKeyboardButtonData(BtnBack, fmt.Sprintf("listings:page:%d", session.listingBrowsePage)),
 	})
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(rows...)
@@ -324,11 +324,11 @@ func (m *ListingManager) showDeleteConfirmation(ctx context.Context, session *Us
 		}
 	}
 
-	text := fmt.Sprintf("⚠️ *Haluatko varmasti poistaa ilmoituksen?*\n\n\"%s\"\n\nTätä ei voi perua.", escapeMarkdown(adTitle))
+	text := fmt.Sprintf(MsgConfirmDelete, escapeMarkdown(adTitle))
 
 	rows := [][]tgbotapi.InlineKeyboardButton{
-		{tgbotapi.NewInlineKeyboardButtonData("Poista pysyvästi", fmt.Sprintf("ad:action:DELETE:%s", adIDStr))},
-		{tgbotapi.NewInlineKeyboardButtonData("Peruuta", fmt.Sprintf("listings:view:%s", adIDStr))},
+		{tgbotapi.NewInlineKeyboardButtonData(BtnDeleteConfirm, fmt.Sprintf("ad:action:DELETE:%s", adIDStr))},
+		{tgbotapi.NewInlineKeyboardButtonData(BtnCancel, fmt.Sprintf("listings:view:%s", adIDStr))},
 	}
 
 	m.editOrSend(session, text, tgbotapi.NewInlineKeyboardMarkup(rows...), false)
@@ -338,7 +338,7 @@ func (m *ListingManager) showDeleteConfirmation(ctx context.Context, session *Us
 func (m *ListingManager) executeAction(ctx context.Context, session *UserSession, actionName, adIDStr string) {
 	client := session.GetAdInputClient()
 	if client == nil {
-		session.reply("Kirjaudu sisään ensin.")
+		session.reply(MsgLoginFirstRequired)
 		return
 	}
 
@@ -351,13 +351,13 @@ func (m *ListingManager) executeAction(ctx context.Context, session *UserSession
 	case "DELETE":
 		err = client.DeleteAd(ctx, adIDStr)
 	default:
-		session.reply("Tuntematon toiminto: " + actionName)
+		session.reply(MsgUnknownAction + actionName)
 		return
 	}
 
 	if err != nil {
 		log.Error().Err(err).Str("action", actionName).Str("adID", adIDStr).Msg("action failed")
-		session.reply(fmt.Sprintf("❌ Toiminto epäonnistui: %s", err.Error()))
+		session.reply(MsgActionFailed, err.Error())
 		return
 	}
 
@@ -366,9 +366,9 @@ func (m *ListingManager) executeAction(ctx context.Context, session *UserSession
 	// Show success feedback
 	switch actionName {
 	case "DISPOSE":
-		session.reply("✅ Ilmoitus merkitty myydyksi")
+		session.reply(MsgMarkedAsSold)
 	case "UNDISPOSE":
-		session.reply("✅ Ilmoitus aktivoitu uudelleen")
+		session.reply(MsgReactivated)
 	}
 
 	// After successful action, refresh the view
@@ -468,7 +468,7 @@ func formatSubtitle(subtitle string) string {
 		return strings.TrimPrefix(subtitle, "Tori myydään ")
 	}
 	if subtitle == "Tori annetaan" {
-		return "Annetaan"
+		return BtnBulkGiveaway // "Annetaan"
 	}
 	return subtitle
 }
@@ -477,18 +477,18 @@ func formatSubtitle(subtitle string) string {
 func (m *ListingManager) startRepublish(ctx context.Context, session *UserSession, adIDStr string) {
 	client := session.GetAdInputClient()
 	if client == nil {
-		session.reply("Kirjaudu sisään ensin.")
+		session.reply(MsgLoginFirstRequired)
 		return
 	}
 
 	// Show progress message
-	m.editOrSend(session, "⏳ Luodaan uusi ilmoitus samoilla tiedoilla...", tgbotapi.InlineKeyboardMarkup{}, false)
+	m.editOrSend(session, MsgRepublishProgress, tgbotapi.InlineKeyboardMarkup{}, false)
 
 	// Fetch full ad data
 	oldAd, err := client.GetAdWithModel(ctx, adIDStr)
 	if err != nil {
 		log.Error().Err(err).Str("adID", adIDStr).Msg("failed to fetch ad for republish")
-		session.reply("❌ Virhe haettaessa ilmoituksen tietoja: %s", err.Error())
+		session.reply(MsgRepublishFetchError, err.Error())
 		return
 	}
 
@@ -498,7 +498,7 @@ func (m *ListingManager) startRepublish(ctx context.Context, session *UserSessio
 	draft, err := client.CreateDraftAd(ctx)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to create draft for republish")
-		session.reply("❌ Virhe luotaessa ilmoitusta: %s", err.Error())
+		session.reply(MsgRepublishCreateError, err.Error())
 		return
 	}
 
@@ -653,7 +653,7 @@ func (m *ListingManager) startRepublish(ctx context.Context, session *UserSessio
 	updateResp, err := client.UpdateAd(ctx, draft.ID, etag, payload)
 	if err != nil {
 		log.Error().Err(err).Str("draftID", draft.ID).Msg("failed to update draft for republish")
-		session.reply("❌ Virhe päivitettäessä ilmoitusta: %s", err.Error())
+		session.reply(MsgRepublishUpdateError, err.Error())
 		return
 	}
 	_ = updateResp // etag not needed after this
@@ -668,7 +668,7 @@ func (m *ListingManager) startRepublish(ctx context.Context, session *UserSessio
 	})
 	if err != nil {
 		log.Error().Err(err).Str("draftID", draft.ID).Msg("failed to set delivery options for republish")
-		session.reply("❌ Virhe asetettaessa toimitustapoja: %s", err.Error())
+		session.reply(MsgRepublishDeliveryErr, err.Error())
 		return
 	}
 
@@ -676,14 +676,14 @@ func (m *ListingManager) startRepublish(ctx context.Context, session *UserSessio
 	_, err = client.PublishAd(ctx, draft.ID)
 	if err != nil {
 		log.Error().Err(err).Str("draftID", draft.ID).Msg("failed to publish republished ad")
-		session.reply("❌ Virhe julkaistaessa ilmoitusta: %s", err.Error())
+		session.reply(MsgRepublishPublishErr, err.Error())
 		return
 	}
 
 	log.Info().Str("oldAdID", adIDStr).Str("newAdID", draft.ID).Msg("ad republished successfully")
 
 	// Show success message and refresh the list
-	session.reply("✅ Ilmoitus julkaistu uudelleen!")
+	session.reply(MsgRepublishSuccess)
 	session.activeListingID = 0
 	m.refreshListingView(ctx, session, true)
 }

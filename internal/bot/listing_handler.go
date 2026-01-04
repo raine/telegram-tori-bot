@@ -72,7 +72,7 @@ func (h *ListingHandler) HandleInput(ctx context.Context, session *UserSession, 
 	if message.Text == "/peru" && (state == AdFlowStateAwaitingAttribute || state == AdFlowStateAwaitingPrice || state == AdFlowStateAwaitingPostalCode) {
 		session.deleteCurrentDraft(ctx)
 		session.reset()
-		session.replyAndRemoveCustomKeyboard(okText)
+		session.replyAndRemoveCustomKeyboard(MsgOk)
 		return true
 	}
 
@@ -248,7 +248,7 @@ func (h *ListingHandler) HandleDraftExpired(ctx context.Context, session *UserSe
 	session.reset()
 
 	// Notify user
-	session.replyAndRemoveCustomKeyboard(draftExpiredText)
+	session.replyAndRemoveCustomKeyboard(MsgDraftExpired)
 }
 
 // startDraftExpirationTimer starts or resets the draft expiration timer.
@@ -335,7 +335,7 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 
 	if client == nil {
 		session.isCreatingDraft = false
-		session.reply("Virhe: ei voitu alustaa yhteyttä")
+		session.reply(MsgConnectionInitFailed)
 		return
 	}
 
@@ -354,14 +354,14 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 
 	if len(photoDataList) == 0 {
 		session.isCreatingDraft = false
-		session.reply("Virhe: kuvien lataus epäonnistui")
+		session.reply(MsgImageDownloadFailed)
 		return
 	}
 
 	// Analyze with Gemini vision (network I/O)
 	if h.visionAnalyzer == nil {
 		session.isCreatingDraft = false
-		session.reply("Kuva-analyysi ei ole käytettävissä")
+		session.reply(MsgImageAnalysisNotAvail)
 		return
 	}
 
@@ -400,7 +400,7 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 
 	if len(allImages) == 0 {
 		session.isCreatingDraft = false
-		session.reply("Virhe: kuvien lähetys epäonnistui")
+		session.reply(MsgImageUploadFailed)
 		return
 	}
 
@@ -469,14 +469,14 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 
 		// Fall back to manual selection (use updated predictions if available)
 		categoriesToShow := selectionResult.UpdatedPredictions
-		msg := tgbotapi.NewMessage(session.userId, "Valitse osasto")
+		msg := tgbotapi.NewMessage(session.userId, MsgSelectCategory)
 		msg.ParseMode = tgbotapi.ModeMarkdown
 		msg.ReplyMarkup = makeCategoryPredictionKeyboard(categoriesToShow)
 		session.replyWithMessage(msg)
 	} else {
 		// No categories predicted, use default
 		session.currentDraft.CategoryID = 76 // "Muu" category
-		session.reply("Ei osastoehdotuksia, käytetään oletusta.")
+		session.reply(MsgNoCategoryPredictions)
 		h.promptForPrice(ctx, session)
 	}
 }
@@ -487,7 +487,7 @@ func (h *ListingHandler) addPhotoToExistingDraft(ctx context.Context, session *U
 	// Touch draft activity on photo addition
 	h.touchDraftActivity(session)
 
-	session.reply("Lisätään kuva...")
+	session.reply(MsgAddingPhoto)
 	// Send typing indicator after the reply (replies clear typing status)
 	session.sendTypingAction()
 	client := session.adInputClient
@@ -537,7 +537,7 @@ func (h *ListingHandler) addPhotoToExistingDraft(ctx context.Context, session *U
 		return
 	}
 	session.etag = newEtag
-	session.reply(fmt.Sprintf("Kuva lisätty! Kuvia yhteensä: %d", len(session.photos)))
+	session.reply(MsgPhotoAdded, len(session.photos))
 }
 
 // HandleCategorySelection processes category selection from callback query.
@@ -551,7 +551,7 @@ func (h *ListingHandler) HandleCategorySelection(ctx context.Context, session *U
 	}
 
 	if session.currentDraft == nil || session.currentDraft.State != AdFlowStateAwaitingCategory {
-		session.reply("Ei aktiivista ilmoitusta")
+		session.reply(MsgNoActiveListing)
 		return
 	}
 
@@ -618,7 +618,7 @@ func (h *ListingHandler) ProcessCategorySelection(ctx context.Context, session *
 		}
 		session.etag = newEtag
 		session.currentDraft.State = AdFlowStateAwaitingPrice
-		session.reply("Syötä hinta")
+		session.reply(MsgEnterPrice)
 		return
 	}
 
@@ -691,7 +691,7 @@ func (h *ListingHandler) HandleAttributeInput(ctx context.Context, session *User
 	opt := tori.FindOptionByLabel(&currentAttr, text)
 	if opt == nil {
 		// Invalid selection, prompt again
-		session.reply(fmt.Sprintf("Valitse jokin vaihtoehdoista tai paina '%s': %s", SkipButtonLabel, strings.ToLower(currentAttr.Label)))
+		session.reply(MsgSelectAttributeRetry, SkipButtonLabel, strings.ToLower(currentAttr.Label))
 		h.promptForAttribute(session, currentAttr)
 		return
 	}
@@ -722,7 +722,7 @@ func (h *ListingHandler) HandlePriceInput(ctx context.Context, session *UserSess
 	// Parse price from text
 	price, err := parsePriceMessage(text)
 	if err != nil {
-		session.reply("En ymmärtänyt hintaa. Syötä hinta numerona (esim. 50€ tai 50)")
+		session.reply(MsgPriceNotUnderstood)
 		return
 	}
 
@@ -731,14 +731,14 @@ func (h *ListingHandler) HandlePriceInput(ctx context.Context, session *UserSess
 	session.currentDraft.State = AdFlowStateAwaitingShipping
 
 	// Remove reply keyboard and confirm price
-	session.replyAndRemoveCustomKeyboard(fmt.Sprintf("Hinta: *%d€*", price))
+	session.replyAndRemoveCustomKeyboard(MsgPriceConfirmed, price)
 
 	// Ask about shipping
-	msg := tgbotapi.NewMessage(session.userId, "Onko postitus mahdollinen?")
+	msg := tgbotapi.NewMessage(session.userId, MsgShippingQuestion)
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("Kyllä", "shipping:yes"),
-			tgbotapi.NewInlineKeyboardButtonData("Ei", "shipping:no"),
+			tgbotapi.NewInlineKeyboardButtonData(BtnYes, "shipping:yes"),
+			tgbotapi.NewInlineKeyboardButtonData(BtnNo, "shipping:no"),
 		),
 	)
 	session.replyWithMessage(msg)
@@ -753,7 +753,7 @@ func (h *ListingHandler) HandlePostalCodeInput(session *UserSession, text string
 
 	postalCode := strings.TrimSpace(text)
 	if !isValidPostalCode(postalCode) {
-		session.reply(postalCodeInvalidText)
+		session.reply(MsgPostalCodeInvalid)
 		return
 	}
 
@@ -766,7 +766,7 @@ func (h *ListingHandler) HandlePostalCodeInput(session *UserSession, text string
 		}
 	}
 
-	session.reply(fmt.Sprintf(postalCodeUpdatedText, postalCode))
+	session.reply(MsgPostalCodeUpdated, postalCode)
 	h.showAdSummary(session)
 }
 
@@ -819,14 +819,14 @@ func (h *ListingHandler) handleGiveawaySelection(ctx context.Context, session *U
 	session.currentDraft.State = AdFlowStateAwaitingShipping
 
 	// Remove reply keyboard and confirm giveaway
-	session.replyAndRemoveCustomKeyboard("Hinta: *Annetaan*")
+	session.replyAndRemoveCustomKeyboard(MsgPriceGiveaway)
 
 	// Ask about shipping (meetup possible even for giveaways)
-	msg := tgbotapi.NewMessage(session.userId, "Onko postitus mahdollinen?")
+	msg := tgbotapi.NewMessage(session.userId, MsgShippingQuestion)
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("Kyllä", "shipping:yes"),
-			tgbotapi.NewInlineKeyboardButtonData("Ei", "shipping:no"),
+			tgbotapi.NewInlineKeyboardButtonData(BtnYes, "shipping:yes"),
+			tgbotapi.NewInlineKeyboardButtonData(BtnNo, "shipping:no"),
 		),
 	)
 	session.replyWithMessage(msg)
@@ -886,7 +886,7 @@ func (h *ListingHandler) HandleShippingSelection(ctx context.Context, session *U
 		if postalCode == "" {
 			// Prompt for postal code
 			session.currentDraft.State = AdFlowStateAwaitingPostalCode
-			session.reply(postalCodePromptText)
+			session.reply(MsgPostalCodePrompt)
 			return
 		}
 	}
@@ -929,7 +929,7 @@ func (h *ListingHandler) HandlePublishCallback(ctx context.Context, session *Use
 	case "cancel":
 		session.deleteCurrentDraft(ctx)
 		session.reset()
-		session.replyAndRemoveCustomKeyboard(okText)
+		session.replyAndRemoveCustomKeyboard(MsgOk)
 	}
 }
 
@@ -937,24 +937,24 @@ func (h *ListingHandler) HandlePublishCallback(ctx context.Context, session *Use
 // Called from session worker - no locking needed.
 func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSession) {
 	if session.currentDraft == nil || len(session.photos) == 0 {
-		session.reply("Ei ilmoitusta lähetettäväksi. Lähetä ensin kuva.")
+		session.reply(MsgNoListingToSend)
 		return
 	}
 
 	if session.currentDraft.State != AdFlowStateReadyToPublish {
 		switch session.currentDraft.State {
 		case AdFlowStateAwaitingCategory:
-			session.reply("Valitse ensin osasto.")
+			session.reply(MsgSelectCategoryFirst)
 		case AdFlowStateAwaitingAttribute:
-			session.reply("Täytä ensin lisätiedot.")
+			session.reply(MsgFillAttributesFirst)
 		case AdFlowStateAwaitingPrice:
-			session.reply("Syötä ensin hinta.")
+			session.reply(MsgEnterPriceFirst)
 		case AdFlowStateAwaitingShipping:
-			session.reply("Valitse ensin postitusvaihtoehto.")
+			session.reply(MsgSelectShippingFirst)
 		case AdFlowStateAwaitingPostalCode:
-			session.reply("Syötä ensin postinumero.")
+			session.reply(MsgEnterPostalCodeFirst)
 		default:
-			session.reply("Ilmoitus ei ole valmis lähetettäväksi.")
+			session.reply(MsgListingNotReady)
 		}
 		return
 	}
@@ -968,7 +968,7 @@ func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSes
 	client := session.adInputClient
 	userId := session.userId
 
-	session.reply("Lähetetään ilmoitusta...")
+	session.reply(MsgSendingListing)
 
 	// Get postal code from storage
 	var postalCode string
@@ -982,7 +982,7 @@ func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSes
 	if postalCode == "" {
 		// This shouldn't happen as we prompt for postal code before ReadyToPublish
 		session.currentDraft.State = AdFlowStateAwaitingPostalCode
-		session.reply(postalCodePromptText)
+		session.reply(MsgPostalCodePrompt)
 		return
 	}
 
@@ -1007,10 +1007,10 @@ func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSes
 			Int64("userId", session.userId).
 			Str("title", draftCopy.Title).
 			Msg("draft cancelled during publish but listing was published successfully")
-		session.replyAndRemoveCustomKeyboard(listingSentText)
+		session.replyAndRemoveCustomKeyboard(MsgListingSent)
 		return
 	}
-	session.replyAndRemoveCustomKeyboard(listingSentText)
+	session.replyAndRemoveCustomKeyboard(MsgListingSent)
 	log.Info().Str("title", draftCopy.Title).Int("price", draftCopy.Price).Msg("listing published")
 	session.reset()
 }
@@ -1359,7 +1359,7 @@ func (h *ListingHandler) proceedAfterAttributes(ctx context.Context, session *Us
 			postalCode, _ := h.sessionStore.GetPostalCode(session.userId)
 			if postalCode == "" {
 				session.currentDraft.State = AdFlowStateAwaitingPostalCode
-				session.reply(postalCodePromptText)
+				session.reply(MsgPostalCodePrompt)
 				return
 			}
 		}
@@ -1374,11 +1374,11 @@ func (h *ListingHandler) proceedAfterAttributes(ctx context.Context, session *Us
 
 	// Need to ask for shipping
 	session.currentDraft.State = AdFlowStateAwaitingShipping
-	msg := tgbotapi.NewMessage(session.userId, "Onko postitus mahdollinen?")
+	msg := tgbotapi.NewMessage(session.userId, MsgShippingQuestion)
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("Kyllä", "shipping:yes"),
-			tgbotapi.NewInlineKeyboardButtonData("Ei", "shipping:no"),
+			tgbotapi.NewInlineKeyboardButtonData(BtnYes, "shipping:yes"),
+			tgbotapi.NewInlineKeyboardButtonData(BtnNo, "shipping:no"),
 		),
 	)
 	session.replyWithMessage(msg)
@@ -1386,7 +1386,7 @@ func (h *ListingHandler) proceedAfterAttributes(ctx context.Context, session *Us
 
 // promptForAttribute shows a keyboard to select an attribute value.
 func (h *ListingHandler) promptForAttribute(session *UserSession, attr tori.Attribute) {
-	msg := tgbotapi.NewMessage(session.userId, fmt.Sprintf("Valitse %s", strings.ToLower(attr.Label)))
+	msg := tgbotapi.NewMessage(session.userId, fmt.Sprintf(MsgSelectAttribute, strings.ToLower(attr.Label)))
 	msg.ParseMode = tgbotapi.ModeMarkdown
 	msg.ReplyMarkup = makeAttributeKeyboard(attr)
 	session.replyWithMessage(msg)
@@ -1497,7 +1497,7 @@ func (h *ListingHandler) promptForPrice(ctx context.Context, session *UserSessio
 		return
 	}
 
-	msgText := fmt.Sprintf("Syötä hinta%s", recommendationMsg)
+	msgText := fmt.Sprintf(MsgEnterPriceWithEstimate, recommendationMsg)
 	msg := tgbotapi.NewMessage(session.userId, msgText)
 	msg.ParseMode = tgbotapi.ModeMarkdown
 
@@ -1506,11 +1506,11 @@ func (h *ListingHandler) promptForPrice(ctx context.Context, session *UserSessio
 	if recommendedPrice > 0 {
 		rows = append(rows, tgbotapi.NewKeyboardButtonRow(
 			tgbotapi.NewKeyboardButton(fmt.Sprintf("%d€", recommendedPrice)),
-			tgbotapi.NewKeyboardButton("🎁 Annetaan"),
+			tgbotapi.NewKeyboardButton("🎁 "+BtnBulkGiveaway),
 		))
 	} else {
 		rows = append(rows, tgbotapi.NewKeyboardButtonRow(
-			tgbotapi.NewKeyboardButton("🎁 Annetaan"),
+			tgbotapi.NewKeyboardButton("🎁 "+BtnBulkGiveaway),
 		))
 	}
 
@@ -1527,15 +1527,15 @@ func (h *ListingHandler) promptForPrice(ctx context.Context, session *UserSessio
 func (h *ListingHandler) showAdSummary(session *UserSession) {
 	session.currentDraft.State = AdFlowStateReadyToPublish
 
-	shippingText := "Ei"
+	shippingText := BtnNo
 	if session.currentDraft.ShippingPossible {
-		shippingText = "Kyllä"
+		shippingText = BtnYes
 	}
 
 	// Show "Annetaan" for giveaways, price for sales
 	var priceText string
 	if session.currentDraft.TradeType == TradeTypeGive {
-		priceText = "🎁 Annetaan"
+		priceText = "🎁 " + BtnBulkGiveaway
 	} else {
 		priceText = fmt.Sprintf("%d€", session.currentDraft.Price)
 	}
@@ -1555,8 +1555,8 @@ func (h *ListingHandler) showAdSummary(session *UserSession) {
 
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData("✅ Julkaise", "publish:confirm"),
-			tgbotapi.NewInlineKeyboardButtonData("❌ Peru", "publish:cancel"),
+			tgbotapi.NewInlineKeyboardButtonData(BtnPublish, "publish:confirm"),
+			tgbotapi.NewInlineKeyboardButtonData(BtnCancel, "publish:cancel"),
 		),
 	)
 
@@ -1789,7 +1789,7 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 	// Apply description change
 	if intent.NewDescription != nil {
 		session.currentDraft.Description = *intent.NewDescription
-		changes = append(changes, "Kuvaus päivitetty")
+		changes = append(changes, MsgDescriptionChange)
 
 		// Update description message in chat (include template if present)
 		if session.currentDraft.DescriptionMessageID != 0 {
@@ -1806,10 +1806,9 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 
 	// Send confirmation message
 	if len(changes) == 1 {
-		session.reply("✓ " + changes[0])
+		session.reply(MsgChangesConfirm, changes[0])
 	} else if len(changes) > 1 {
-		confirmMsg := "✓ Muutokset tehty:\n- " + strings.Join(changes, "\n- ")
-		session.reply(confirmMsg)
+		session.reply(MsgMultipleChanges, strings.Join(changes, "\n- "))
 	}
 
 	// Show updated summary if listing is ready to publish
