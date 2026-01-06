@@ -8,3 +8,4 @@ files:
     - tori/testdata
     - sessions.db
     - .claude/settings.local.json
+    - stuff
