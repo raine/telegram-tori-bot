@@ -30,6 +30,7 @@ type BulkHandler struct {
 	visionAnalyzer llm.Analyzer
 	sessionStore   storage.SessionStore
 	searchClient   *tori.SearchClient
+	draftService   *DraftService
 }
 
 // NewBulkHandler creates a new bulk handler.
@@ -39,6 +40,7 @@ func NewBulkHandler(tg BotAPI, visionAnalyzer llm.Analyzer, sessionStore storage
 		visionAnalyzer: visionAnalyzer,
 		sessionStore:   sessionStore,
 		searchClient:   tori.NewSearchClient(),
+		draftService:   NewDraftService(visionAnalyzer, tg.GetFileDirectURL),
 	}
 }
 
@@ -181,130 +183,38 @@ func (h *BulkHandler) createDraftFromPhoto(ctx context.Context, session *UserSes
 // analyzeAndCreateDraft performs vision analysis and creates Tori draft.
 // This runs in a background goroutine. It receives copies of data to avoid races.
 // Results are sent back through the worker channel.
-func (h *BulkHandler) analyzeAndCreateDraft(ctx context.Context, session *UserSession, draftID string, photos []AlbumPhoto, client tori.AdService) {
-	// Download photos
-	var photoDataList [][]byte
-	var validPhotos []AlbumPhoto
-	for _, photo := range photos {
-		data, err := DownloadTelegramFile(ctx, h.tg.GetFileDirectURL, photo.FileID)
-		if err != nil {
-			log.Error().Err(err).Str("fileID", photo.FileID).Msg("failed to download photo in bulk mode")
-			continue
-		}
-		photoDataList = append(photoDataList, data)
-		validPhotos = append(validPhotos, photo)
-	}
-
-	if len(photoDataList) == 0 {
-		h.setDraftError(session, draftID, MsgBulkErrImageDownload)
-		return
-	}
-
-	// Check if cancelled
-	select {
-	case <-ctx.Done():
-		return
-	default:
-	}
-
-	// Vision analysis
-	if h.visionAnalyzer == nil {
-		h.setDraftError(session, draftID, MsgBulkErrImageAnalysis)
-		return
-	}
-
-	result, err := h.visionAnalyzer.AnalyzeImages(ctx, photoDataList)
-	if err != nil {
-		log.Error().Err(err).Str("draftID", draftID).Msg("bulk vision analysis failed")
-		h.setDraftError(session, draftID, MsgBulkErrAnalysisFailed)
-		return
-	}
-
-	// Check if cancelled
-	select {
-	case <-ctx.Done():
-		return
-	default:
-	}
-
-	log.Info().
-		Str("title", result.Item.Title).
-		Int("imageCount", len(photoDataList)).
-		Str("draftID", draftID).
-		Float64("cost", result.Usage.CostUSD).
-		Msg("bulk image(s) analyzed")
-
-	// Create Tori draft
+func (h *BulkHandler) analyzeAndCreateDraft(ctx context.Context, session *UserSession, bulkDraftID string, photos []AlbumPhoto, client tori.AdService) {
+	// Check for nil client early
 	if client == nil {
-		h.setDraftError(session, draftID, MsgBulkErrToriConnection)
+		h.setDraftError(session, bulkDraftID, MsgErrToriConnection)
 		return
 	}
 
-	toriDraft, _, err := client.CreateDraftAd(ctx)
-	if err != nil {
-		log.Error().Err(err).Str("draftID", draftID).Msg("failed to create Tori draft in bulk mode")
-		h.setDraftError(session, draftID, MsgBulkErrDraftCreation)
-		return
-	}
-
-	// Check if cancelled
-	select {
-	case <-ctx.Done():
-		return
-	default:
-	}
-
-	// Upload images
-	var uploadedImages []UploadedImage
-	for i, photoData := range photoDataList {
-		resp, err := client.UploadImage(ctx, toriDraft.ID, photoData)
-		if err != nil {
-			log.Error().Err(err).Str("draftID", draftID).Int("photoIndex", i).Msg("failed to upload image in bulk mode")
-			continue
-		}
-		uploadedImages = append(uploadedImages, UploadedImage{
-			ImagePath: resp.ImagePath,
-			Location:  resp.Location,
-			Width:     validPhotos[i].Width,
-			Height:    validPhotos[i].Height,
-		})
-	}
-
-	if len(uploadedImages) == 0 {
-		h.setDraftError(session, draftID, MsgBulkErrImageUpload)
-		return
-	}
-
-	// Set images on draft
-	etag := toriDraft.ETag
-	imageData := make([]map[string]any, len(uploadedImages))
-	for i, img := range uploadedImages {
-		imageData[i] = map[string]any{
-			"uri":    img.ImagePath,
-			"width":  img.Width,
-			"height": img.Height,
-			"type":   "image/jpg",
+	// Convert AlbumPhoto to PhotoInput for DraftService
+	photoInputs := make([]PhotoInput, len(photos))
+	for i, p := range photos {
+		photoInputs[i] = PhotoInput{
+			FileID: p.FileID,
+			Width:  p.Width,
+			Height: p.Height,
 		}
 	}
 
-	patchResp, err := client.PatchItem(ctx, toriDraft.ID, etag, map[string]any{
-		"image": imageData,
-	})
+	// Use DraftService to create the draft
+	result, err := h.draftService.CreateDraftFromPhotos(ctx, client, photoInputs)
 	if err != nil {
-		log.Error().Err(err).Str("draftID", draftID).Msg("failed to set images on draft in bulk mode")
-		h.setDraftError(session, draftID, MsgBulkErrImageSet)
+		// Check if cancelled
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		log.Error().Err(err).Str("bulkDraftID", bulkDraftID).Msg("bulk draft creation failed")
+		h.setDraftError(session, bulkDraftID, err.Error())
 		return
 	}
-	etag = patchResp.ETag
 
-	// Get category predictions
-	categories, err := client.GetCategoryPredictions(ctx, toriDraft.ID)
-	if err != nil {
-		log.Warn().Err(err).Str("draftID", draftID).Msg("failed to get category predictions in bulk mode")
-		categories = []tori.CategoryPrediction{}
-	}
-
-	// Check if cancelled
+	// Check if cancelled before sending result
 	select {
 	case <-ctx.Done():
 		return
@@ -316,13 +226,13 @@ func (h *BulkHandler) analyzeAndCreateDraft(ctx context.Context, session *UserSe
 		Type: "bulk_analysis_complete",
 		Ctx:  context.Background(),
 		BulkAnalysisResult: &BulkAnalysisResult{
-			BulkDraftID:         draftID,
-			Title:               result.Item.Title,
-			Description:         result.Item.Description,
-			Images:              uploadedImages,
-			ToriDraftID:         toriDraft.ID,
-			ETag:                etag,
-			CategoryPredictions: categories,
+			BulkDraftID:         bulkDraftID,
+			Title:               result.Title,
+			Description:         result.Description,
+			Images:              result.Images,
+			ToriDraftID:         result.DraftID,
+			ETag:                result.ETag,
+			CategoryPredictions: result.CategoryPredictions,
 		},
 	})
 }

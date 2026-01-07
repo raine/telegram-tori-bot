@@ -277,15 +277,15 @@ const (
 	MsgBulkFillMissing       = "\n⚠️ Täytä puuttuvat tiedot"
 )
 
-// Bulk mode error messages
+// Draft creation error messages (shared by single listing and bulk modes)
 const (
-	MsgBulkErrImageDownload  = "Kuvien lataus epäonnistui"
-	MsgBulkErrImageAnalysis  = "Kuva-analyysi ei käytettävissä"
-	MsgBulkErrAnalysisFailed = "Analyysi epäonnistui"
-	MsgBulkErrToriConnection = "Tori-yhteys epäonnistui"
-	MsgBulkErrDraftCreation  = "Luonnin luonti epäonnistui"
-	MsgBulkErrImageUpload    = "Kuvien lähetys epäonnistui"
-	MsgBulkErrImageSet       = "Kuvien asetus epäonnistui"
+	MsgErrImageDownload  = "Kuvien lataus epäonnistui"
+	MsgErrImageAnalysis  = "Kuva-analyysi ei käytettävissä"
+	MsgErrAnalysisFailed = "Analyysi epäonnistui"
+	MsgErrToriConnection = "Tori-yhteys epäonnistui"
+	MsgErrDraftCreation  = "Luonnin luonti epäonnistui"
+	MsgErrImageUpload    = "Kuvien lähetys epäonnistui"
+	MsgErrImageSet       = "Kuvien asetus epäonnistui"
 )
 
 // =============================================================================

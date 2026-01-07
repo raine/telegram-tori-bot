@@ -33,12 +33,13 @@ type ListingHandler struct {
 	searchClient     *tori.SearchClient
 	categoryService  *tori.CategoryService
 	categoryTree     *tori.CategoryTree
+	draftService     *DraftService
 }
 
 // NewListingHandler creates a new listing handler.
 func NewListingHandler(tg BotAPI, visionAnalyzer llm.Analyzer, editIntentParser llm.EditIntentParser, sessionStore storage.SessionStore) *ListingHandler {
 	categoryService := tori.NewCategoryService()
-	return &ListingHandler{
+	h := &ListingHandler{
 		tg:               tg,
 		visionAnalyzer:   visionAnalyzer,
 		editIntentParser: editIntentParser,
@@ -47,6 +48,15 @@ func NewListingHandler(tg BotAPI, visionAnalyzer llm.Analyzer, editIntentParser 
 		categoryService:  categoryService,
 		categoryTree:     categoryService.Tree,
 	}
+	// Create DraftService with callback to populate category cache
+	h.draftService = NewDraftService(visionAnalyzer, tg.GetFileDirectURL).
+		WithOnModelCallback(func(model *tori.AdModel) {
+			if h.categoryService != nil && !h.categoryService.IsInitialized() {
+				log.Info().Msg("initializing category cache from API model")
+				h.categoryService.UpdateFromModel(model)
+			}
+		})
+	return h
 }
 
 // HandleInput handles text inputs during the listing flow (replies, attributes, prices).
@@ -321,123 +331,60 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 		return
 	}
 
-	// Download all photos (network I/O)
-	var photoDataList [][]byte
-	var validPhotos []tgbotapi.PhotoSize
-	for _, photo := range photos {
-		data, err := DownloadTelegramFile(ctx, h.tg.GetFileDirectURL, photo.FileID)
-		if err != nil {
-			log.Error().Err(err).Str("fileID", photo.FileID).Msg("failed to download photo")
-			continue
+	// Convert photos to PhotoInput for DraftService
+	photoInputs := make([]PhotoInput, len(photos))
+	for i, p := range photos {
+		photoInputs[i] = PhotoInput{
+			FileID: p.FileID,
+			Width:  p.Width,
+			Height: p.Height,
 		}
-		photoDataList = append(photoDataList, data)
-		validPhotos = append(validPhotos, photo)
 	}
 
-	if len(photoDataList) == 0 {
-		session.draft.IsCreatingDraft = false
-		session.reply(MsgImageDownloadFailed)
-		return
-	}
-
-	// Analyze with Gemini vision (network I/O)
-	if h.visionAnalyzer == nil {
-		session.draft.IsCreatingDraft = false
-		session.reply(MsgImageAnalysisNotAvail)
-		return
-	}
-
-	result, err := h.visionAnalyzer.AnalyzeImages(ctx, photoDataList)
-	if err != nil {
-		log.Error().Err(err).Msg("failed to analyze image(s)")
-		session.draft.IsCreatingDraft = false
-		session.replyWithError(err)
-		return
-	}
-
-	log.Info().
-		Str("title", result.Item.Title).
-		Int("imageCount", len(photoDataList)).
-		Float64("cost", result.Usage.CostUSD).
-		Msg("image(s) analyzed")
-
-	// Create draft ad (network I/O)
-	draftID, etag, err := h.startNewAdFlow(ctx, client)
+	// Use DraftService to create the draft
+	result, err := h.draftService.CreateDraftFromPhotos(ctx, client, photoInputs)
 	if err != nil {
 		session.draft.IsCreatingDraft = false
 		session.replyWithError(err)
 		return
-	}
-
-	// Upload all photos (network I/O)
-	var allImages []UploadedImage
-	for i, photoData := range photoDataList {
-		uploaded, err := h.uploadPhotoToAd(ctx, client, draftID, photoData, validPhotos[i].Width, validPhotos[i].Height)
-		if err != nil {
-			log.Error().Err(err).Int("index", i).Msg("failed to upload photo")
-			continue
-		}
-		allImages = append(allImages, *uploaded)
-	}
-
-	if len(allImages) == 0 {
-		session.draft.IsCreatingDraft = false
-		session.reply(MsgImageUploadFailed)
-		return
-	}
-
-	// Set images on draft (network I/O)
-	newEtag, err := h.setImageOnDraft(ctx, client, draftID, etag, allImages)
-	if err != nil {
-		session.draft.IsCreatingDraft = false
-		session.replyWithError(err)
-		return
-	}
-	etag = newEtag
-
-	// Get category predictions (network I/O)
-	categories, err := h.getCategoryPredictions(ctx, client, draftID)
-	if err != nil {
-		log.Warn().Err(err).Msg("failed to get category predictions")
-		categories = []tori.CategoryPrediction{}
 	}
 
 	// Update session state
 	session.draft.IsCreatingDraft = false
-	session.photoCol.Photos = append(session.photoCol.Photos, validPhotos...)
-	session.draft.DraftID = draftID
-	session.draft.Etag = etag
+	session.photoCol.Photos = append(session.photoCol.Photos, photos...)
+	session.draft.DraftID = result.DraftID
+	session.draft.Etag = result.ETag
 
 	// Initialize the draft with vision results
 	session.draft.CurrentDraft = &AdInputDraft{
 		State:               AdFlowStateAwaitingCategory,
-		Title:               result.Item.Title,
-		Description:         result.Item.Description,
+		Title:               result.Title,
+		Description:         result.Description,
 		TradeType:           "1", // Default to sell
 		CollectedAttrs:      make(map[string]string),
-		Images:              allImages,
-		CategoryPredictions: categories,
+		Images:              result.Images,
+		CategoryPredictions: result.CategoryPredictions,
 	}
 
 	// Start draft expiration timer
 	h.startDraftExpirationTimer(session)
 
 	// Send title message (user can reply to edit)
-	titleMsg := tgbotapi.NewMessage(session.userId, fmt.Sprintf("📦 *Otsikko:* %s", escapeMarkdown(result.Item.Title)))
+	titleMsg := tgbotapi.NewMessage(session.userId, fmt.Sprintf("📦 *Otsikko:* %s", escapeMarkdown(result.Title)))
 	titleMsg.ParseMode = tgbotapi.ModeMarkdown
 	sentTitle := session.replyWithMessage(titleMsg)
 	session.draft.CurrentDraft.TitleMessageID = sentTitle.MessageID
 
 	// Send description message (user can reply to edit)
-	descMsg := tgbotapi.NewMessage(session.userId, fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(result.Item.Description)))
+	descMsg := tgbotapi.NewMessage(session.userId, fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(result.Description)))
 	descMsg.ParseMode = tgbotapi.ModeMarkdown
 	sentDesc := session.replyWithMessage(descMsg)
 	session.draft.CurrentDraft.DescriptionMessageID = sentDesc.MessageID
 
 	// Auto-select category using LLM if possible
-	if len(categories) > 0 {
+	if len(result.CategoryPredictions) > 0 {
 		// Try LLM-based category selection (includes two-stage fallback)
-		selectionResult := h.tryAutoSelectCategory(ctx, result.Item.Title, result.Item.Description, categories)
+		selectionResult := h.tryAutoSelectCategory(ctx, result.Title, result.Description, result.CategoryPredictions)
 
 		// Update session's category predictions if fallback found new categories
 		if selectionResult.UsedFallback && len(selectionResult.UpdatedPredictions) > 0 {
@@ -481,16 +428,13 @@ func (h *ListingHandler) addPhotoToExistingDraft(ctx context.Context, session *U
 		return
 	}
 
-	// Download the photo (network I/O)
-	photoData, err := DownloadTelegramFile(ctx, h.tg.GetFileDirectURL, photo.FileID)
-	if err != nil {
-		log.Error().Err(err).Msg("failed to download photo")
-		session.replyWithError(err)
-		return
+	// Use DraftService to upload the additional photo
+	photoInput := PhotoInput{
+		FileID: photo.FileID,
+		Width:  photo.Width,
+		Height: photo.Height,
 	}
-
-	// Upload photo to draft (network I/O)
-	uploaded, err := h.uploadPhotoToAd(ctx, client, draftID, photoData, photo.Width, photo.Height)
+	uploaded, newEtag, err := h.draftService.UploadAdditionalPhoto(ctx, client, draftID, session.draft.Etag, photoInput, session.draft.CurrentDraft.Images)
 	if err != nil {
 		session.replyWithError(err)
 		return
@@ -503,21 +447,6 @@ func (h *ListingHandler) addPhotoToExistingDraft(ctx context.Context, session *U
 	}
 	session.photoCol.Photos = append(session.photoCol.Photos, photo)
 	session.draft.CurrentDraft.Images = append(session.draft.CurrentDraft.Images, *uploaded)
-	images := make([]UploadedImage, len(session.draft.CurrentDraft.Images))
-	copy(images, session.draft.CurrentDraft.Images)
-	currentEtag := session.draft.Etag
-
-	// Update images on draft (network I/O)
-	newEtag, err := h.setImageOnDraft(ctx, client, draftID, currentEtag, images)
-	if err != nil {
-		session.replyWithError(err)
-		return
-	}
-
-	if session.draft.CurrentDraft == nil {
-		log.Info().Int64("userId", session.userId).Msg("draft cancelled during image update")
-		return
-	}
 	session.draft.Etag = newEtag
 	session.reply(MsgPhotoAdded, len(session.photoCol.Photos))
 }
@@ -1575,79 +1504,6 @@ func (h *ListingHandler) showAdSummary(session *UserSession) {
 		sentMsg, _ := h.tg.Send(newMsg)
 		session.draft.CurrentDraft.SummaryMessageID = sentMsg.MessageID
 	}
-}
-
-// startNewAdFlow creates a draft and returns the ID and ETag.
-// It also populates the category cache from the model response if not already initialized.
-func (h *ListingHandler) startNewAdFlow(ctx context.Context, client tori.AdService) (draftID string, etag string, err error) {
-	log.Info().Msg("creating draft ad")
-	draft, model, err := client.CreateDraftAd(ctx)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to create draft: %w", err)
-	}
-
-	// Populate category cache from model if not already initialized
-	if model != nil && h.categoryService != nil && !h.categoryService.IsInitialized() {
-		log.Info().Msg("initializing category cache from API model")
-		h.categoryService.UpdateFromModel(model)
-	}
-
-	log.Info().Str("draftId", draft.ID).Msg("draft ad created")
-	return draft.ID, draft.ETag, nil
-}
-
-// uploadPhotoToAd uploads a photo to the draft ad.
-func (h *ListingHandler) uploadPhotoToAd(ctx context.Context, client tori.AdService, draftID string, photoData []byte, width, height int) (*UploadedImage, error) {
-	if draftID == "" {
-		return nil, fmt.Errorf("no draft ad to upload to")
-	}
-
-	resp, err := client.UploadImage(ctx, draftID, photoData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to upload image: %w", err)
-	}
-
-	return &UploadedImage{
-		ImagePath: resp.ImagePath,
-		Location:  resp.Location,
-		Width:     width,
-		Height:    height,
-	}, nil
-}
-
-// setImageOnDraft sets the uploaded image(s) on the draft and returns new ETag.
-func (h *ListingHandler) setImageOnDraft(ctx context.Context, client tori.AdService, draftID, etag string, images []UploadedImage) (string, error) {
-	if len(images) == 0 {
-		return etag, nil
-	}
-
-	imageData := make([]map[string]any, len(images))
-	for i, img := range images {
-		imageData[i] = map[string]any{
-			"uri":    img.ImagePath,
-			"width":  img.Width,
-			"height": img.Height,
-			"type":   "image/jpg",
-		}
-	}
-
-	patchResp, err := client.PatchItem(ctx, draftID, etag, map[string]any{
-		"image": imageData,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to set image on item: %w", err)
-	}
-
-	return patchResp.ETag, nil
-}
-
-// getCategoryPredictions gets AI-suggested categories from the uploaded image.
-func (h *ListingHandler) getCategoryPredictions(ctx context.Context, client tori.AdService, draftID string) ([]tori.CategoryPrediction, error) {
-	if draftID == "" {
-		return nil, fmt.Errorf("no draft ad")
-	}
-
-	return client.GetCategoryPredictions(ctx, draftID)
 }
 
 // setCategoryOnDraft sets the category on the draft and returns new ETag.
