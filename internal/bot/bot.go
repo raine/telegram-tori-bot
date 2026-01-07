@@ -277,9 +277,9 @@ func (b *Bot) handleCommand(ctx context.Context, session *UserSession, message *
 		}
 		b.bulkHandler.HandleValmisCommand(ctx, session)
 	case "/poistakuvat":
-		session.photos = nil
-		session.pendingPhotos = nil
-		session.currentDraft = nil
+		session.photoCol.Photos = nil
+		session.photoCol.PendingPhotos = nil
+		session.draft.CurrentDraft = nil
 		session.reply(MsgPhotosRemoved)
 	case "/osasto":
 		b.handleOsastoCommand(session)
@@ -531,21 +531,21 @@ func (b *Bot) handleAdminUsersCommand(session *UserSession, action string, args 
 
 // handleOsastoCommand handles /osasto command - re-select category or attributes
 func (b *Bot) handleOsastoCommand(session *UserSession) {
-	if session.currentDraft == nil {
+	if session.draft.CurrentDraft == nil {
 		session.reply(MsgNoActiveListingPhoto)
 		return
 	}
 
-	if len(session.currentDraft.CategoryPredictions) == 0 {
+	if len(session.draft.CurrentDraft.CategoryPredictions) == 0 {
 		session.reply(MsgNoCategoryOptions)
 		return
 	}
 
 	// If still awaiting category, just show category keyboard
-	if session.currentDraft.State == AdFlowStateAwaitingCategory {
+	if session.draft.CurrentDraft.State == AdFlowStateAwaitingCategory {
 		msg := tgbotapi.NewMessage(session.userId, MsgSelectCategory)
 		msg.ParseMode = tgbotapi.ModeMarkdown
-		msg.ReplyMarkup = makeCategoryPredictionKeyboard(session.currentDraft.CategoryPredictions)
+		msg.ReplyMarkup = makeCategoryPredictionKeyboard(session.draft.CurrentDraft.CategoryPredictions)
 		session.replyWithMessage(msg)
 		return
 	}
@@ -556,7 +556,7 @@ func (b *Bot) handleOsastoCommand(session *UserSession) {
 		{tgbotapi.NewInlineKeyboardButtonData(BtnChangeCategory, "reselect:category")},
 	}
 	// Only show attribute option if there were required attributes
-	if session.adAttributes != nil && len(session.adAttributes.Attributes) > 0 {
+	if session.draft.AdAttributes != nil && len(session.draft.AdAttributes.Attributes) > 0 {
 		buttons = append(buttons, []tgbotapi.InlineKeyboardButton{
 			tgbotapi.NewInlineKeyboardButtonData(BtnReselectAttributes, "reselect:attrs"),
 		})
@@ -568,7 +568,7 @@ func (b *Bot) handleOsastoCommand(session *UserSession) {
 // handleReselectCallback handles reselect:category and reselect:attrs callbacks
 // Called from session worker - no locking needed.
 func (b *Bot) handleReselectCallback(ctx context.Context, session *UserSession, query *tgbotapi.CallbackQuery) {
-	if session.currentDraft == nil {
+	if session.draft.CurrentDraft == nil {
 		session.reply(MsgNoActiveListing)
 		return
 	}
@@ -586,36 +586,36 @@ func (b *Bot) handleReselectCallback(ctx context.Context, session *UserSession, 
 	if query.Data == "reselect:category" {
 		// Preserve values before resetting for category change
 		preserved := &PreservedValues{
-			Price:            session.currentDraft.Price,
-			TradeType:        session.currentDraft.TradeType,
-			ShippingPossible: session.currentDraft.ShippingPossible,
-			ShippingSet:      session.currentDraft.State >= AdFlowStateReadyToPublish || session.currentDraft.State == AdFlowStateAwaitingPostalCode,
+			Price:            session.draft.CurrentDraft.Price,
+			TradeType:        session.draft.CurrentDraft.TradeType,
+			ShippingPossible: session.draft.CurrentDraft.ShippingPossible,
+			ShippingSet:      session.draft.CurrentDraft.State >= AdFlowStateReadyToPublish || session.draft.CurrentDraft.State == AdFlowStateAwaitingPostalCode,
 			CollectedAttrs:   make(map[string]string),
 		}
 
 		// Copy collected attributes (including condition)
-		for k, v := range session.currentDraft.CollectedAttrs {
+		for k, v := range session.draft.CurrentDraft.CollectedAttrs {
 			preserved.CollectedAttrs[k] = v
 		}
 
 		// Reset to category selection state and clear collected attributes
-		session.currentDraft.State = AdFlowStateAwaitingCategory
-		session.currentDraft.CategoryID = 0
-		session.currentDraft.CollectedAttrs = make(map[string]string)
-		session.currentDraft.RequiredAttrs = nil
-		session.currentDraft.CurrentAttrIndex = 0
-		session.currentDraft.PreservedValues = preserved
+		session.draft.CurrentDraft.State = AdFlowStateAwaitingCategory
+		session.draft.CurrentDraft.CategoryID = 0
+		session.draft.CurrentDraft.CollectedAttrs = make(map[string]string)
+		session.draft.CurrentDraft.RequiredAttrs = nil
+		session.draft.CurrentDraft.CurrentAttrIndex = 0
+		session.draft.CurrentDraft.PreservedValues = preserved
 
 		// Show category selection keyboard
 		msg := tgbotapi.NewMessage(session.userId, MsgSelectCategory)
 		msg.ParseMode = tgbotapi.ModeMarkdown
-		msg.ReplyMarkup = makeCategoryPredictionKeyboard(session.currentDraft.CategoryPredictions)
+		msg.ReplyMarkup = makeCategoryPredictionKeyboard(session.draft.CurrentDraft.CategoryPredictions)
 		session.replyWithMessage(msg)
 	} else if query.Data == "reselect:attrs" {
 		// Clear collected attributes but keep category
-		session.currentDraft.CollectedAttrs = make(map[string]string)
-		session.currentDraft.CurrentAttrIndex = 0
-		categoryID := session.currentDraft.CategoryID
+		session.draft.CurrentDraft.CollectedAttrs = make(map[string]string)
+		session.draft.CurrentDraft.CurrentAttrIndex = 0
+		categoryID := session.draft.CurrentDraft.CategoryID
 
 		// Re-process category selection to fetch and prompt for attributes
 		b.listingHandler.ProcessCategorySelection(ctx, session, categoryID)

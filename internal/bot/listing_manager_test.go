@@ -99,9 +99,9 @@ func TestStartRepublish_Success(t *testing.T) {
 
 	// Create session with mock service
 	session := &UserSession{
-		userId:        userId,
-		adInputClient: mockService,
-		sender:        tg,
+		userId: userId,
+		draft:  DraftState{AdInputClient: mockService},
+		sender: tg,
 	}
 
 	manager := NewListingManager(tg)
@@ -186,9 +186,9 @@ func TestStartRepublish_CopiesExtraAttributes(t *testing.T) {
 	}
 
 	session := &UserSession{
-		userId:        userId,
-		adInputClient: mockService,
-		sender:        tg,
+		userId: userId,
+		draft:  DraftState{AdInputClient: mockService},
+		sender: tg,
 	}
 
 	manager := NewListingManager(tg)
@@ -291,9 +291,9 @@ func TestStartRepublish_WithImages(t *testing.T) {
 	}
 
 	session := &UserSession{
-		userId:        userId,
-		adInputClient: mockService,
-		sender:        tg,
+		userId: userId,
+		draft:  DraftState{AdInputClient: mockService},
+		sender: tg,
 	}
 
 	manager := NewListingManager(tg)
@@ -364,9 +364,9 @@ func TestStartRepublish_ImageDownloadFailure_ContinuesWithRemainingImages(t *tes
 	}
 
 	session := &UserSession{
-		userId:        userId,
-		adInputClient: mockService,
-		sender:        tg,
+		userId: userId,
+		draft:  DraftState{AdInputClient: mockService},
+		sender: tg,
 	}
 
 	manager := NewListingManager(tg)
@@ -392,26 +392,28 @@ func TestShowAdDetail_ShowsRepublishButtonForExpiredAd(t *testing.T) {
 	tg := new(botApiMock)
 
 	session := &UserSession{
-		userId:            userId,
-		listingBrowsePage: 1,
-		listingMenuMsgID:  100, // Set this so editOrSend uses Request (edit) instead of Send
-		cachedListings: []tori.AdSummary{
-			{
-				ID: 12345,
-				State: tori.AdState{
-					Type:  "EXPIRED",
-					Label: "Vanhentunut",
-				},
-				Data: struct {
-					Title    string `json:"title"`
-					Subtitle string `json:"subtitle"`
-					Image    string `json:"image"`
-				}{
-					Title:    "Test Item",
-					Subtitle: "Tori myydään 50 €",
-				},
-				Actions: []tori.AdAction{
-					{Name: "DELETE"},
+		userId: userId,
+		listings: ListingBrowserState{
+			BrowsePage: 1,
+			MenuMsgID:  100, // Set this so editOrSend uses Request (edit) instead of Send
+			CachedListings: []tori.AdSummary{
+				{
+					ID: 12345,
+					State: tori.AdState{
+						Type:  "EXPIRED",
+						Label: "Vanhentunut",
+					},
+					Data: struct {
+						Title    string `json:"title"`
+						Subtitle string `json:"subtitle"`
+						Image    string `json:"image"`
+					}{
+						Title:    "Test Item",
+						Subtitle: "Tori myydään 50 €",
+					},
+					Actions: []tori.AdAction{
+						{Name: "DELETE"},
+					},
 				},
 			},
 		},
@@ -446,28 +448,30 @@ func TestShowAdDetail_NoRepublishButtonForActiveAd(t *testing.T) {
 	tg := new(botApiMock)
 
 	session := &UserSession{
-		userId:            userId,
-		listingBrowsePage: 1,
-		listingMenuMsgID:  100, // Set this so editOrSend uses Request (edit) instead of Send
-		cachedListings: []tori.AdSummary{
-			{
-				ID: 12345,
-				State: tori.AdState{
-					Type:  "ACTIVE",
-					Label: "Aktiivinen",
-				},
-				Data: struct {
-					Title    string `json:"title"`
-					Subtitle string `json:"subtitle"`
-					Image    string `json:"image"`
-				}{
-					Title:    "Test Item",
-					Subtitle: "Tori myydään 50 €",
-				},
-				DaysUntilExpires: 30,
-				Actions: []tori.AdAction{
-					{Name: "DISPOSE"},
-					{Name: "DELETE"},
+		userId: userId,
+		listings: ListingBrowserState{
+			BrowsePage: 1,
+			MenuMsgID:  100, // Set this so editOrSend uses Request (edit) instead of Send
+			CachedListings: []tori.AdSummary{
+				{
+					ID: 12345,
+					State: tori.AdState{
+						Type:  "ACTIVE",
+						Label: "Aktiivinen",
+					},
+					Data: struct {
+						Title    string `json:"title"`
+						Subtitle string `json:"subtitle"`
+						Image    string `json:"image"`
+					}{
+						Title:    "Test Item",
+						Subtitle: "Tori myydään 50 €",
+					},
+					DaysUntilExpires: 30,
+					Actions: []tori.AdAction{
+						{Name: "DISPOSE"},
+						{Name: "DELETE"},
+					},
 				},
 			},
 		},

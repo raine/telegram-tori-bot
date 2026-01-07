@@ -130,13 +130,13 @@ func (h *ListingHandler) HandlePhoto(ctx context.Context, session *UserSession, 
 // Called from session worker - no locking needed for session state.
 func (h *ListingHandler) bufferAlbumPhoto(ctx context.Context, session *UserSession, photo tgbotapi.PhotoSize, mediaGroupID string) {
 	// If there's an existing draft, add photos directly without buffering
-	if session.draftID != "" {
+	if session.draft.DraftID != "" {
 		h.processSinglePhoto(ctx, session, photo)
 		return
 	}
 
 	// If already creating a draft, reject this photo
-	if session.isCreatingDraft {
+	if session.draft.IsCreatingDraft {
 		session.reply("Odota hetki, luodaan ilmoitusta...")
 		return
 	}
@@ -151,8 +151,8 @@ func (h *ListingHandler) bufferAlbumPhoto(ctx context.Context, session *UserSess
 // albumBufferConfig returns the configuration for album buffering in listing mode.
 func (h *ListingHandler) albumBufferConfig(session *UserSession) AlbumBufferConfig {
 	return AlbumBufferConfig{
-		GetBuffer: func() *AlbumBuffer { return session.albumBuffer },
-		SetBuffer: func(buffer *AlbumBuffer) { session.albumBuffer = buffer },
+		GetBuffer: func() *AlbumBuffer { return session.photoCol.AlbumBuffer },
+		SetBuffer: func(buffer *AlbumBuffer) { session.photoCol.AlbumBuffer = buffer },
 		OnFlush: func(ctx context.Context, photos []AlbumPhoto) {
 			// Process the previous album immediately (this may set isCreatingDraft=true,
 			// causing the current photo to be rejected, which is safer than dropping data)
@@ -205,13 +205,13 @@ func (h *ListingHandler) processAlbumPhotos(ctx context.Context, session *UserSe
 // Called from session worker - no locking needed.
 func (h *ListingHandler) HandleDraftExpired(ctx context.Context, session *UserSession, timer *time.Timer) {
 	// Verify there's still an active draft (user may have cancelled or published)
-	if session.draftID == "" || session.currentDraft == nil {
+	if session.draft.DraftID == "" || session.draft.CurrentDraft == nil {
 		return
 	}
 
 	// Ignore stale timer events - if the timer was reset (user activity),
 	// the ExpirationTimer will point to a different timer instance
-	if session.currentDraft.ExpirationTimer != timer {
+	if session.draft.CurrentDraft.ExpirationTimer != timer {
 		log.Debug().
 			Int64("userId", session.userId).
 			Msg("ignoring stale draft expiration message")
@@ -220,7 +220,7 @@ func (h *ListingHandler) HandleDraftExpired(ctx context.Context, session *UserSe
 
 	log.Info().
 		Int64("userId", session.userId).
-		Str("draftID", session.draftID).
+		Str("draftID", session.draft.DraftID).
 		Msg("draft expired due to inactivity")
 
 	// Delete draft from Tori API
@@ -237,13 +237,13 @@ func (h *ListingHandler) HandleDraftExpired(ctx context.Context, session *UserSe
 // When the timer fires, it dispatches a draft_expired message through the session worker.
 // Called from session worker - no locking needed.
 func (h *ListingHandler) startDraftExpirationTimer(session *UserSession) {
-	if session.currentDraft == nil {
+	if session.draft.CurrentDraft == nil {
 		return
 	}
 
 	// Stop existing timer if any
-	if session.currentDraft.ExpirationTimer != nil {
-		session.currentDraft.ExpirationTimer.Stop()
+	if session.draft.CurrentDraft.ExpirationTimer != nil {
+		session.draft.CurrentDraft.ExpirationTimer.Stop()
 	}
 
 	// Start new timer - capture the timer instance to pass in the message
@@ -258,13 +258,13 @@ func (h *ListingHandler) startDraftExpirationTimer(session *UserSession) {
 			ExpiredTimer: timer,
 		})
 	})
-	session.currentDraft.ExpirationTimer = timer
+	session.draft.CurrentDraft.ExpirationTimer = timer
 }
 
 // touchDraftActivity resets the draft expiration timer due to user activity.
 // Called from session worker - no locking needed.
 func (h *ListingHandler) touchDraftActivity(session *UserSession) {
-	if session.currentDraft == nil || session.draftID == "" {
+	if session.draft.CurrentDraft == nil || session.draft.DraftID == "" {
 		return
 	}
 	h.startDraftExpirationTimer(session)
@@ -273,7 +273,7 @@ func (h *ListingHandler) touchDraftActivity(session *UserSession) {
 // processSinglePhoto processes a single photo (non-album).
 // Called from session worker - no locking needed.
 func (h *ListingHandler) processSinglePhoto(ctx context.Context, session *UserSession, photo tgbotapi.PhotoSize) {
-	if session.draftID != "" {
+	if session.draft.DraftID != "" {
 		h.addPhotoToExistingDraft(ctx, session, photo)
 	} else {
 		h.processPhotoBatch(ctx, session, []tgbotapi.PhotoSize{photo})
@@ -288,18 +288,18 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 	}
 
 	// Check if already creating a draft
-	if session.isCreatingDraft {
+	if session.draft.IsCreatingDraft {
 		session.reply("Odota hetki, luodaan ilmoitusta...")
 		return
 	}
 
 	// Check if draft already exists (shouldn't happen but handle gracefully)
-	if session.draftID != "" {
+	if session.draft.DraftID != "" {
 		return
 	}
 
 	// Mark that we're creating a draft
-	session.isCreatingDraft = true
+	session.draft.IsCreatingDraft = true
 	if len(photos) > 1 {
 		session.reply(fmt.Sprintf("Analysoidaan %d kuvaa...", len(photos)))
 	} else {
@@ -313,10 +313,10 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 	go session.startTypingLoop(typingCtx)
 
 	session.initAdInputClient()
-	client := session.adInputClient
+	client := session.draft.AdInputClient
 
 	if client == nil {
-		session.isCreatingDraft = false
+		session.draft.IsCreatingDraft = false
 		session.reply(MsgConnectionInitFailed)
 		return
 	}
@@ -335,14 +335,14 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 	}
 
 	if len(photoDataList) == 0 {
-		session.isCreatingDraft = false
+		session.draft.IsCreatingDraft = false
 		session.reply(MsgImageDownloadFailed)
 		return
 	}
 
 	// Analyze with Gemini vision (network I/O)
 	if h.visionAnalyzer == nil {
-		session.isCreatingDraft = false
+		session.draft.IsCreatingDraft = false
 		session.reply(MsgImageAnalysisNotAvail)
 		return
 	}
@@ -350,7 +350,7 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 	result, err := h.visionAnalyzer.AnalyzeImages(ctx, photoDataList)
 	if err != nil {
 		log.Error().Err(err).Msg("failed to analyze image(s)")
-		session.isCreatingDraft = false
+		session.draft.IsCreatingDraft = false
 		session.replyWithError(err)
 		return
 	}
@@ -364,7 +364,7 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 	// Create draft ad (network I/O)
 	draftID, etag, err := h.startNewAdFlow(ctx, client)
 	if err != nil {
-		session.isCreatingDraft = false
+		session.draft.IsCreatingDraft = false
 		session.replyWithError(err)
 		return
 	}
@@ -381,7 +381,7 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 	}
 
 	if len(allImages) == 0 {
-		session.isCreatingDraft = false
+		session.draft.IsCreatingDraft = false
 		session.reply(MsgImageUploadFailed)
 		return
 	}
@@ -389,7 +389,7 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 	// Set images on draft (network I/O)
 	newEtag, err := h.setImageOnDraft(ctx, client, draftID, etag, allImages)
 	if err != nil {
-		session.isCreatingDraft = false
+		session.draft.IsCreatingDraft = false
 		session.replyWithError(err)
 		return
 	}
@@ -403,13 +403,13 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 	}
 
 	// Update session state
-	session.isCreatingDraft = false
-	session.photos = append(session.photos, validPhotos...)
-	session.draftID = draftID
-	session.etag = etag
+	session.draft.IsCreatingDraft = false
+	session.photoCol.Photos = append(session.photoCol.Photos, validPhotos...)
+	session.draft.DraftID = draftID
+	session.draft.Etag = etag
 
 	// Initialize the draft with vision results
-	session.currentDraft = &AdInputDraft{
+	session.draft.CurrentDraft = &AdInputDraft{
 		State:               AdFlowStateAwaitingCategory,
 		Title:               result.Item.Title,
 		Description:         result.Item.Description,
@@ -426,13 +426,13 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 	titleMsg := tgbotapi.NewMessage(session.userId, fmt.Sprintf("📦 *Otsikko:* %s", escapeMarkdown(result.Item.Title)))
 	titleMsg.ParseMode = tgbotapi.ModeMarkdown
 	sentTitle := session.replyWithMessage(titleMsg)
-	session.currentDraft.TitleMessageID = sentTitle.MessageID
+	session.draft.CurrentDraft.TitleMessageID = sentTitle.MessageID
 
 	// Send description message (user can reply to edit)
 	descMsg := tgbotapi.NewMessage(session.userId, fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(result.Item.Description)))
 	descMsg.ParseMode = tgbotapi.ModeMarkdown
 	sentDesc := session.replyWithMessage(descMsg)
-	session.currentDraft.DescriptionMessageID = sentDesc.MessageID
+	session.draft.CurrentDraft.DescriptionMessageID = sentDesc.MessageID
 
 	// Auto-select category using LLM if possible
 	if len(categories) > 0 {
@@ -441,7 +441,7 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 
 		// Update session's category predictions if fallback found new categories
 		if selectionResult.UsedFallback && len(selectionResult.UpdatedPredictions) > 0 {
-			session.currentDraft.CategoryPredictions = selectionResult.UpdatedPredictions
+			session.draft.CurrentDraft.CategoryPredictions = selectionResult.UpdatedPredictions
 		}
 
 		if selectionResult.SelectedID > 0 {
@@ -457,7 +457,7 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 		session.replyWithMessage(msg)
 	} else {
 		// No categories predicted, use default
-		session.currentDraft.CategoryID = 76 // "Muu" category
+		session.draft.CurrentDraft.CategoryID = 76 // "Muu" category
 		session.reply(MsgNoCategoryPredictions)
 		h.promptForPrice(ctx, session)
 	}
@@ -472,8 +472,8 @@ func (h *ListingHandler) addPhotoToExistingDraft(ctx context.Context, session *U
 	session.reply(MsgAddingPhoto)
 	// Send typing indicator after the reply (replies clear typing status)
 	session.sendTypingAction()
-	client := session.adInputClient
-	draftID := session.draftID
+	client := session.draft.AdInputClient
+	draftID := session.draft.DraftID
 
 	// Check for nil client (session may have been reset)
 	if client == nil || draftID == "" {
@@ -497,15 +497,15 @@ func (h *ListingHandler) addPhotoToExistingDraft(ctx context.Context, session *U
 	}
 
 	// Update session state
-	if session.currentDraft == nil {
+	if session.draft.CurrentDraft == nil {
 		log.Info().Int64("userId", session.userId).Msg("draft cancelled during photo upload")
 		return
 	}
-	session.photos = append(session.photos, photo)
-	session.currentDraft.Images = append(session.currentDraft.Images, *uploaded)
-	images := make([]UploadedImage, len(session.currentDraft.Images))
-	copy(images, session.currentDraft.Images)
-	currentEtag := session.etag
+	session.photoCol.Photos = append(session.photoCol.Photos, photo)
+	session.draft.CurrentDraft.Images = append(session.draft.CurrentDraft.Images, *uploaded)
+	images := make([]UploadedImage, len(session.draft.CurrentDraft.Images))
+	copy(images, session.draft.CurrentDraft.Images)
+	currentEtag := session.draft.Etag
 
 	// Update images on draft (network I/O)
 	newEtag, err := h.setImageOnDraft(ctx, client, draftID, currentEtag, images)
@@ -514,12 +514,12 @@ func (h *ListingHandler) addPhotoToExistingDraft(ctx context.Context, session *U
 		return
 	}
 
-	if session.currentDraft == nil {
+	if session.draft.CurrentDraft == nil {
 		log.Info().Int64("userId", session.userId).Msg("draft cancelled during image update")
 		return
 	}
-	session.etag = newEtag
-	session.reply(MsgPhotoAdded, len(session.photos))
+	session.draft.Etag = newEtag
+	session.reply(MsgPhotoAdded, len(session.photoCol.Photos))
 }
 
 // HandleCategorySelection processes category selection from callback query.
@@ -532,7 +532,7 @@ func (h *ListingHandler) HandleCategorySelection(ctx context.Context, session *U
 		return
 	}
 
-	if session.currentDraft == nil || session.currentDraft.State != AdFlowStateAwaitingCategory {
+	if session.draft.CurrentDraft == nil || session.draft.CurrentDraft.State != AdFlowStateAwaitingCategory {
 		session.reply(MsgNoActiveListing)
 		return
 	}
@@ -557,14 +557,14 @@ func (h *ListingHandler) HandleCategorySelection(ctx context.Context, session *U
 // It sets category, fetches attributes, and prompts for next step.
 // Called from session worker - no locking needed.
 func (h *ListingHandler) ProcessCategorySelection(ctx context.Context, session *UserSession, categoryID int) {
-	if session.currentDraft == nil {
+	if session.draft.CurrentDraft == nil {
 		return
 	}
 
 	// Find category for logging and display
 	var categoryLabel string
 	var categoryPath string
-	for _, cat := range session.currentDraft.CategoryPredictions {
+	for _, cat := range session.draft.CurrentDraft.CategoryPredictions {
 		if cat.ID == categoryID {
 			categoryLabel = cat.Label
 			categoryPath = tori.GetCategoryPath(cat)
@@ -572,15 +572,15 @@ func (h *ListingHandler) ProcessCategorySelection(ctx context.Context, session *
 		}
 	}
 
-	session.currentDraft.CategoryID = categoryID
+	session.draft.CurrentDraft.CategoryID = categoryID
 	log.Info().Int("categoryId", categoryID).Str("label", categoryLabel).Msg("category selected")
 
 	session.reply(fmt.Sprintf("Osasto: *%s*", categoryPath))
 
 	// Get client and draft info for network calls
-	client := session.adInputClient
-	draftID := session.draftID
-	etag := session.etag
+	client := session.draft.AdInputClient
+	draftID := session.draft.DraftID
+	etag := session.draft.Etag
 
 	// Set category on draft (network I/O)
 	newEtag, err := h.setCategoryOnDraft(ctx, client, draftID, etag, categoryID)
@@ -593,25 +593,25 @@ func (h *ListingHandler) ProcessCategorySelection(ctx context.Context, session *
 	attrs, err := client.GetAttributes(ctx, draftID)
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to get attributes, skipping to price")
-		if session.currentDraft == nil {
+		if session.draft.CurrentDraft == nil {
 			// Draft was cancelled during attribute fetch
 			log.Info().Int64("userId", session.userId).Msg("draft cancelled during attribute fetch (error path)")
 			return
 		}
-		session.etag = newEtag
-		session.currentDraft.State = AdFlowStateAwaitingPrice
+		session.draft.Etag = newEtag
+		session.draft.CurrentDraft.State = AdFlowStateAwaitingPrice
 		session.reply(MsgEnterPrice)
 		return
 	}
 
-	if session.currentDraft == nil {
+	if session.draft.CurrentDraft == nil {
 		// Draft was cancelled during attribute fetch
 		log.Info().Int64("userId", session.userId).Msg("draft cancelled during attribute fetch")
 		return
 	}
 
-	session.etag = newEtag
-	session.adAttributes = attrs
+	session.draft.Etag = newEtag
+	session.draft.AdAttributes = attrs
 
 	// Get required SELECT attributes
 	requiredAttrs := tori.GetRequiredSelectAttributes(attrs)
@@ -622,14 +622,14 @@ func (h *ListingHandler) ProcessCategorySelection(ctx context.Context, session *
 	}
 
 	// Try to restore preserved attribute values (e.g., condition) if compatible
-	if preserved := session.currentDraft.PreservedValues; preserved != nil && len(requiredAttrs) > 0 {
+	if preserved := session.draft.CurrentDraft.PreservedValues; preserved != nil && len(requiredAttrs) > 0 {
 		requiredAttrs = h.tryRestorePreservedAttributes(session, requiredAttrs, preserved)
 	}
 
 	if len(requiredAttrs) > 0 {
-		session.currentDraft.RequiredAttrs = requiredAttrs
-		session.currentDraft.CurrentAttrIndex = 0
-		session.currentDraft.State = AdFlowStateAwaitingAttribute
+		session.draft.CurrentDraft.RequiredAttrs = requiredAttrs
+		session.draft.CurrentDraft.CurrentAttrIndex = 0
+		session.draft.CurrentDraft.State = AdFlowStateAwaitingAttribute
 		h.promptForAttribute(session, requiredAttrs[0])
 	} else {
 		h.proceedAfterAttributes(ctx, session)
@@ -639,12 +639,12 @@ func (h *ListingHandler) ProcessCategorySelection(ctx context.Context, session *
 // HandleAttributeInput handles user selection of an attribute value.
 // Called from session worker - no locking needed.
 func (h *ListingHandler) HandleAttributeInput(ctx context.Context, session *UserSession, text string) {
-	if session.currentDraft == nil || session.currentDraft.State != AdFlowStateAwaitingAttribute {
+	if session.draft.CurrentDraft == nil || session.draft.CurrentDraft.State != AdFlowStateAwaitingAttribute {
 		return
 	}
 
-	attrs := session.currentDraft.RequiredAttrs
-	idx := session.currentDraft.CurrentAttrIndex
+	attrs := session.draft.CurrentDraft.RequiredAttrs
+	idx := session.draft.CurrentDraft.CurrentAttrIndex
 
 	if idx >= len(attrs) {
 		// Shouldn't happen, but handle gracefully
@@ -659,9 +659,9 @@ func (h *ListingHandler) HandleAttributeInput(ctx context.Context, session *User
 		log.Info().Str("attr", currentAttr.Name).Msg("attribute skipped")
 
 		// Move to next attribute or price input
-		session.currentDraft.CurrentAttrIndex++
-		if session.currentDraft.CurrentAttrIndex < len(attrs) {
-			nextAttr := attrs[session.currentDraft.CurrentAttrIndex]
+		session.draft.CurrentDraft.CurrentAttrIndex++
+		if session.draft.CurrentDraft.CurrentAttrIndex < len(attrs) {
+			nextAttr := attrs[session.draft.CurrentDraft.CurrentAttrIndex]
 			h.promptForAttribute(session, nextAttr)
 		} else {
 			h.proceedAfterAttributes(ctx, session)
@@ -679,13 +679,13 @@ func (h *ListingHandler) HandleAttributeInput(ctx context.Context, session *User
 	}
 
 	// Store the selected value
-	session.currentDraft.CollectedAttrs[currentAttr.Name] = strconv.Itoa(opt.ID)
+	session.draft.CurrentDraft.CollectedAttrs[currentAttr.Name] = strconv.Itoa(opt.ID)
 	log.Info().Str("attr", currentAttr.Name).Str("label", text).Int("optionId", opt.ID).Msg("attribute selected")
 
 	// Move to next attribute or price input
-	session.currentDraft.CurrentAttrIndex++
-	if session.currentDraft.CurrentAttrIndex < len(attrs) {
-		nextAttr := attrs[session.currentDraft.CurrentAttrIndex]
+	session.draft.CurrentDraft.CurrentAttrIndex++
+	if session.draft.CurrentDraft.CurrentAttrIndex < len(attrs) {
+		nextAttr := attrs[session.draft.CurrentDraft.CurrentAttrIndex]
 		h.promptForAttribute(session, nextAttr)
 	} else {
 		h.proceedAfterAttributes(ctx, session)
@@ -708,9 +708,9 @@ func (h *ListingHandler) HandlePriceInput(ctx context.Context, session *UserSess
 		return
 	}
 
-	session.currentDraft.Price = price
-	session.currentDraft.TradeType = TradeTypeSell
-	session.currentDraft.State = AdFlowStateAwaitingShipping
+	session.draft.CurrentDraft.Price = price
+	session.draft.CurrentDraft.TradeType = TradeTypeSell
+	session.draft.CurrentDraft.State = AdFlowStateAwaitingShipping
 
 	// Remove reply keyboard and confirm price
 	session.replyAndRemoveCustomKeyboard(MsgPriceConfirmed, price)
@@ -729,7 +729,7 @@ func (h *ListingHandler) HandlePriceInput(ctx context.Context, session *UserSess
 // HandlePostalCodeInput handles postal code input when awaiting postal code.
 // Called from session worker - no locking needed.
 func (h *ListingHandler) HandlePostalCodeInput(session *UserSession, text string) {
-	if session.currentDraft == nil || session.currentDraft.State != AdFlowStateAwaitingPostalCode {
+	if session.draft.CurrentDraft == nil || session.draft.CurrentDraft.State != AdFlowStateAwaitingPostalCode {
 		return
 	}
 
@@ -755,12 +755,12 @@ func (h *ListingHandler) HandlePostalCodeInput(session *UserSession, text string
 // handleGiveawaySelection handles the user selecting "Annetaan" (give away) mode.
 // Called from session worker - no locking needed.
 func (h *ListingHandler) handleGiveawaySelection(ctx context.Context, session *UserSession) {
-	session.currentDraft.Price = 0
-	session.currentDraft.TradeType = TradeTypeGive
+	session.draft.CurrentDraft.Price = 0
+	session.draft.CurrentDraft.TradeType = TradeTypeGive
 
 	// Get current description for LLM rewrite
-	originalDescription := session.currentDraft.Description
-	descMsgID := session.currentDraft.DescriptionMessageID
+	originalDescription := session.draft.CurrentDraft.Description
+	descMsgID := session.draft.CurrentDraft.DescriptionMessageID
 	userId := session.userId
 
 	// Rewrite description to use "Annetaan" phrasing (network I/O)
@@ -778,13 +778,13 @@ func (h *ListingHandler) handleGiveawaySelection(ctx context.Context, session *U
 	}
 
 	// Check if session state is still valid after network I/O
-	if session.currentDraft == nil || session.currentDraft.State != AdFlowStateAwaitingPrice {
+	if session.draft.CurrentDraft == nil || session.draft.CurrentDraft.State != AdFlowStateAwaitingPrice {
 		return
 	}
 
 	// Update description if it was rewritten
 	if newDescription != originalDescription {
-		session.currentDraft.Description = newDescription
+		session.draft.CurrentDraft.Description = newDescription
 
 		// Update the description message in chat
 		if descMsgID != 0 {
@@ -798,7 +798,7 @@ func (h *ListingHandler) handleGiveawaySelection(ctx context.Context, session *U
 		}
 	}
 
-	session.currentDraft.State = AdFlowStateAwaitingShipping
+	session.draft.CurrentDraft.State = AdFlowStateAwaitingShipping
 
 	// Remove reply keyboard and confirm giveaway
 	session.replyAndRemoveCustomKeyboard(MsgPriceGiveaway)
@@ -819,14 +819,14 @@ func (h *ListingHandler) handleGiveawaySelection(ctx context.Context, session *U
 func (h *ListingHandler) HandleShippingSelection(ctx context.Context, session *UserSession, query *tgbotapi.CallbackQuery) {
 	isYes := strings.HasSuffix(query.Data, ":yes")
 
-	if session.currentDraft == nil || session.currentDraft.State != AdFlowStateAwaitingShipping {
+	if session.draft.CurrentDraft == nil || session.draft.CurrentDraft.State != AdFlowStateAwaitingShipping {
 		return
 	}
 
 	// Touch draft activity on shipping selection
 	h.touchDraftActivity(session)
 
-	session.currentDraft.ShippingPossible = isYes
+	session.draft.CurrentDraft.ShippingPossible = isYes
 
 	// Remove the inline keyboard
 	if query.Message != nil {
@@ -844,14 +844,14 @@ func (h *ListingHandler) HandleShippingSelection(ctx context.Context, session *U
 		if err == nil && tmpl != nil {
 			expanded := expandTemplate(tmpl.Content, isYes)
 			// Always update template state (may be empty if no content for this shipping option)
-			session.currentDraft.TemplateContent = strings.TrimSpace(expanded)
+			session.draft.CurrentDraft.TemplateContent = strings.TrimSpace(expanded)
 
 			// Update the description message in chat with combined content
-			if session.currentDraft.DescriptionMessageID != 0 {
+			if session.draft.CurrentDraft.DescriptionMessageID != 0 {
 				editMsg := tgbotapi.NewEditMessageText(
 					session.userId,
-					session.currentDraft.DescriptionMessageID,
-					fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(session.currentDraft.GetFullDescription())),
+					session.draft.CurrentDraft.DescriptionMessageID,
+					fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(session.draft.CurrentDraft.GetFullDescription())),
 				)
 				editMsg.ParseMode = tgbotapi.ModeMarkdown
 				h.tg.Request(editMsg)
@@ -867,7 +867,7 @@ func (h *ListingHandler) HandleShippingSelection(ctx context.Context, session *U
 		}
 		if postalCode == "" {
 			// Prompt for postal code
-			session.currentDraft.State = AdFlowStateAwaitingPostalCode
+			session.draft.CurrentDraft.State = AdFlowStateAwaitingPostalCode
 			session.reply(MsgPostalCodePrompt)
 			return
 		}
@@ -882,7 +882,7 @@ func (h *ListingHandler) HandlePublishCallback(ctx context.Context, session *Use
 	action := strings.TrimPrefix(query.Data, "publish:")
 
 	// Guard against stale buttons from old drafts
-	if session.currentDraft == nil || query.Message == nil || query.Message.MessageID != session.currentDraft.SummaryMessageID {
+	if session.draft.CurrentDraft == nil || query.Message == nil || query.Message.MessageID != session.draft.CurrentDraft.SummaryMessageID {
 		// Remove stale buttons
 		if query.Message != nil {
 			edit := tgbotapi.NewEditMessageReplyMarkup(
@@ -918,13 +918,13 @@ func (h *ListingHandler) HandlePublishCallback(ctx context.Context, session *Use
 // HandleSendListing sends the listing using the adinput API.
 // Called from session worker - no locking needed.
 func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSession) {
-	if session.currentDraft == nil || len(session.photos) == 0 {
+	if session.draft.CurrentDraft == nil || len(session.photoCol.Photos) == 0 {
 		session.reply(MsgNoListingToSend)
 		return
 	}
 
-	if session.currentDraft.State != AdFlowStateReadyToPublish {
-		switch session.currentDraft.State {
+	if session.draft.CurrentDraft.State != AdFlowStateReadyToPublish {
+		switch session.draft.CurrentDraft.State {
 		case AdFlowStateAwaitingCategory:
 			session.reply(MsgSelectCategoryFirst)
 		case AdFlowStateAwaitingAttribute:
@@ -942,12 +942,12 @@ func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSes
 	}
 
 	// Copy data needed for network ops
-	draftID := session.draftID
-	etag := session.etag
-	draftCopy := *session.currentDraft
-	images := make([]UploadedImage, len(session.currentDraft.Images))
-	copy(images, session.currentDraft.Images)
-	client := session.adInputClient
+	draftID := session.draft.DraftID
+	etag := session.draft.Etag
+	draftCopy := *session.draft.CurrentDraft
+	images := make([]UploadedImage, len(session.draft.CurrentDraft.Images))
+	copy(images, session.draft.CurrentDraft.Images)
+	client := session.draft.AdInputClient
 	userId := session.userId
 
 	session.reply(MsgSendingListing)
@@ -963,7 +963,7 @@ func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSes
 	}
 	if postalCode == "" {
 		// This shouldn't happen as we prompt for postal code before ReadyToPublish
-		session.currentDraft.State = AdFlowStateAwaitingPostalCode
+		session.draft.CurrentDraft.State = AdFlowStateAwaitingPostalCode
 		session.reply(MsgPostalCodePrompt)
 		return
 	}
@@ -984,7 +984,7 @@ func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSes
 
 	// Check if draft was cancelled during publish - if so, the listing was still published
 	// successfully on Tori's side, so just log it and clean up
-	if session.currentDraft == nil {
+	if session.draft.CurrentDraft == nil {
 		log.Info().
 			Int64("userId", session.userId).
 			Str("title", draftCopy.Title).
@@ -1000,7 +1000,7 @@ func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSes
 // HandleTitleDescriptionReply handles replies to title/description messages for editing.
 // Called from session worker - no locking needed.
 func (h *ListingHandler) HandleTitleDescriptionReply(session *UserSession, message *tgbotapi.Message) bool {
-	draft := session.currentDraft
+	draft := session.draft.CurrentDraft
 	if draft == nil {
 		return false
 	}
@@ -1217,8 +1217,8 @@ func (h *ListingHandler) tryAutoSelectAttributes(ctx context.Context, session *U
 		return attrs
 	}
 
-	title := session.currentDraft.Title
-	description := session.currentDraft.Description
+	title := session.draft.CurrentDraft.Title
+	description := session.draft.CurrentDraft.Description
 
 	selectedMap, err := gemini.SelectAttributes(ctx, title, description, autoSelectableAttrs)
 	if err != nil {
@@ -1251,7 +1251,7 @@ func (h *ListingHandler) tryAutoSelectAttributes(ctx context.Context, session *U
 
 		if validOption {
 			// Auto-select this attribute
-			session.currentDraft.CollectedAttrs[attr.Name] = strconv.Itoa(selectedID)
+			session.draft.CurrentDraft.CollectedAttrs[attr.Name] = strconv.Itoa(selectedID)
 			autoSelectedInfo = append(autoSelectedInfo, fmt.Sprintf("%s: *%s*", attr.Label, selectedLabel))
 			log.Info().Str("attr", attr.Name).Str("label", selectedLabel).Int("optionId", selectedID).Msg("attribute auto-selected")
 		} else {
@@ -1300,7 +1300,7 @@ func (h *ListingHandler) tryRestorePreservedAttributes(session *UserSession, att
 
 		if foundOption != nil {
 			// Restore the preserved value
-			session.currentDraft.CollectedAttrs[attr.Name] = preservedValue
+			session.draft.CurrentDraft.CollectedAttrs[attr.Name] = preservedValue
 			log.Info().Str("attr", attr.Name).Str("label", foundOption.Label).Int("optionId", preservedID).Msg("attribute restored from previous selection")
 		} else {
 			// Value not compatible, need manual selection
@@ -1314,7 +1314,7 @@ func (h *ListingHandler) tryRestorePreservedAttributes(session *UserSession, att
 // proceedAfterAttributes handles the flow after all attributes are collected.
 // If preserved values exist for price/shipping, it skips those prompts.
 func (h *ListingHandler) proceedAfterAttributes(ctx context.Context, session *UserSession) {
-	preserved := session.currentDraft.PreservedValues
+	preserved := session.draft.CurrentDraft.PreservedValues
 
 	// Only restore if we have a set price (>0) or it is a giveaway.
 	// Default state (Price=0, TradeType="1") should trigger a prompt.
@@ -1326,21 +1326,21 @@ func (h *ListingHandler) proceedAfterAttributes(ctx context.Context, session *Us
 	}
 
 	// Restore price and trade type
-	session.currentDraft.Price = preserved.Price
-	session.currentDraft.TradeType = preserved.TradeType
+	session.draft.CurrentDraft.Price = preserved.Price
+	session.draft.CurrentDraft.TradeType = preserved.TradeType
 
 	// If shipping was also set, restore it and go to summary
 	if preserved.ShippingSet {
-		session.currentDraft.ShippingPossible = preserved.ShippingPossible
+		session.draft.CurrentDraft.ShippingPossible = preserved.ShippingPossible
 
 		// Clear preserved values as we're done with them
-		session.currentDraft.PreservedValues = nil
+		session.draft.CurrentDraft.PreservedValues = nil
 
 		// Check postal code before showing summary (matching HandleShippingSelection logic)
 		if h.sessionStore != nil {
 			postalCode, _ := h.sessionStore.GetPostalCode(session.userId)
 			if postalCode == "" {
-				session.currentDraft.State = AdFlowStateAwaitingPostalCode
+				session.draft.CurrentDraft.State = AdFlowStateAwaitingPostalCode
 				session.reply(MsgPostalCodePrompt)
 				return
 			}
@@ -1352,10 +1352,10 @@ func (h *ListingHandler) proceedAfterAttributes(ctx context.Context, session *Us
 	}
 
 	// Clear preserved values as price is restored, but shipping still needs to be set
-	session.currentDraft.PreservedValues = nil
+	session.draft.CurrentDraft.PreservedValues = nil
 
 	// Need to ask for shipping
-	session.currentDraft.State = AdFlowStateAwaitingShipping
+	session.draft.CurrentDraft.State = AdFlowStateAwaitingShipping
 	msg := tgbotapi.NewMessage(session.userId, MsgShippingQuestion)
 	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
 		tgbotapi.NewInlineKeyboardRow(
@@ -1377,9 +1377,9 @@ func (h *ListingHandler) promptForAttribute(session *UserSession, attr tori.Attr
 // promptForPrice fetches price recommendations and prompts the user.
 // Called from session worker - no locking needed.
 func (h *ListingHandler) promptForPrice(ctx context.Context, session *UserSession) {
-	session.currentDraft.State = AdFlowStateAwaitingPrice
-	title := session.currentDraft.Title
-	description := session.currentDraft.Description
+	session.draft.CurrentDraft.State = AdFlowStateAwaitingPrice
+	title := session.draft.CurrentDraft.Title
+	description := session.draft.CurrentDraft.Description
 
 	// Generate optimized search query using LLM
 	searchQuery := title // fallback to title
@@ -1394,7 +1394,7 @@ func (h *ListingHandler) promptForPrice(ctx context.Context, session *UserSessio
 
 	// Build category taxonomy for filtering
 	var categoryTaxonomy tori.CategoryTaxonomy
-	if cat := tori.FindCategoryByID(session.currentDraft.CategoryPredictions, session.currentDraft.CategoryID); cat != nil {
+	if cat := tori.FindCategoryByID(session.draft.CurrentDraft.CategoryPredictions, session.draft.CurrentDraft.CategoryID); cat != nil {
 		categoryTaxonomy = tori.GetCategoryTaxonomy(*cat)
 	}
 
@@ -1475,7 +1475,7 @@ func (h *ListingHandler) promptForPrice(ctx context.Context, session *UserSessio
 	}
 
 	// Check if state is still valid (user may have cancelled during search)
-	if session.currentDraft == nil || session.currentDraft.State != AdFlowStateAwaitingPrice {
+	if session.draft.CurrentDraft == nil || session.draft.CurrentDraft.State != AdFlowStateAwaitingPrice {
 		return
 	}
 
@@ -1507,19 +1507,19 @@ func (h *ListingHandler) promptForPrice(ctx context.Context, session *UserSessio
 // showAdSummary displays the final ad summary before publishing.
 // If a summary message already exists, it edits that message instead of sending a new one.
 func (h *ListingHandler) showAdSummary(session *UserSession) {
-	session.currentDraft.State = AdFlowStateReadyToPublish
+	session.draft.CurrentDraft.State = AdFlowStateReadyToPublish
 
 	shippingText := BtnNo
-	if session.currentDraft.ShippingPossible {
+	if session.draft.CurrentDraft.ShippingPossible {
 		shippingText = BtnYes
 	}
 
 	// Show "Annetaan" for giveaways, price for sales
 	var priceText string
-	if session.currentDraft.TradeType == TradeTypeGive {
+	if session.draft.CurrentDraft.TradeType == TradeTypeGive {
 		priceText = "🎁 " + BtnBulkGiveaway
 	} else {
-		priceText = fmt.Sprintf("%d€", session.currentDraft.Price)
+		priceText = fmt.Sprintf("%d€", session.draft.CurrentDraft.Price)
 	}
 
 	summaryText := fmt.Sprintf(`*Ilmoitus valmis:*
@@ -1528,11 +1528,11 @@ func (h *ListingHandler) showAdSummary(session *UserSession) {
 💰 *Hinta:* %s
 🚚 *Postitus:* %s
 📷 *Kuvia:* %d`,
-		escapeMarkdown(session.currentDraft.Title),
-		escapeMarkdown(session.currentDraft.GetFullDescription()),
+		escapeMarkdown(session.draft.CurrentDraft.Title),
+		escapeMarkdown(session.draft.CurrentDraft.GetFullDescription()),
 		priceText,
 		shippingText,
-		len(session.photos),
+		len(session.photoCol.Photos),
 	)
 
 	keyboard := tgbotapi.NewInlineKeyboardMarkup(
@@ -1543,10 +1543,10 @@ func (h *ListingHandler) showAdSummary(session *UserSession) {
 	)
 
 	// If a summary message already exists, edit it instead of sending a new one
-	if session.currentDraft.SummaryMessageID != 0 {
+	if session.draft.CurrentDraft.SummaryMessageID != 0 {
 		editMsg := tgbotapi.NewEditMessageTextAndMarkup(
 			session.userId,
-			session.currentDraft.SummaryMessageID,
+			session.draft.CurrentDraft.SummaryMessageID,
 			summaryText,
 			keyboard,
 		)
@@ -1560,20 +1560,20 @@ func (h *ListingHandler) showAdSummary(session *UserSession) {
 			}
 
 			// For other errors (e.g., "message to edit not found"), fall back to sending a new message
-			log.Warn().Err(err).Int("msgID", session.currentDraft.SummaryMessageID).Msg("failed to edit summary, sending new one")
+			log.Warn().Err(err).Int("msgID", session.draft.CurrentDraft.SummaryMessageID).Msg("failed to edit summary, sending new one")
 
 			newMsg := tgbotapi.NewMessage(session.userId, summaryText)
 			newMsg.ParseMode = tgbotapi.ModeMarkdown
 			newMsg.ReplyMarkup = keyboard
 			sentMsg, _ := h.tg.Send(newMsg)
-			session.currentDraft.SummaryMessageID = sentMsg.MessageID
+			session.draft.CurrentDraft.SummaryMessageID = sentMsg.MessageID
 		}
 	} else {
 		newMsg := tgbotapi.NewMessage(session.userId, summaryText)
 		newMsg.ParseMode = tgbotapi.ModeMarkdown
 		newMsg.ReplyMarkup = keyboard
 		sentMsg, _ := h.tg.Send(newMsg)
-		session.currentDraft.SummaryMessageID = sentMsg.MessageID
+		session.draft.CurrentDraft.SummaryMessageID = sentMsg.MessageID
 	}
 }
 
@@ -1711,15 +1711,15 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 		return false
 	}
 
-	if session.currentDraft == nil {
+	if session.draft.CurrentDraft == nil {
 		log.Debug().Msg("no current draft for edit command")
 		return false
 	}
 
 	draftInfo := &llm.CurrentDraftInfo{
-		Title:       session.currentDraft.Title,
-		Description: session.currentDraft.Description,
-		Price:       session.currentDraft.Price,
+		Title:       session.draft.CurrentDraft.Title,
+		Description: session.draft.CurrentDraft.Description,
+		Price:       session.draft.CurrentDraft.Price,
 	}
 
 	log.Debug().
@@ -1742,7 +1742,7 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 	}
 
 	// Check draft still exists after network I/O
-	if session.currentDraft == nil {
+	if session.draft.CurrentDraft == nil {
 		return false
 	}
 
@@ -1750,23 +1750,23 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 
 	// Apply price change
 	if intent.NewPrice != nil {
-		oldPrice := session.currentDraft.Price
-		session.currentDraft.Price = *intent.NewPrice
+		oldPrice := session.draft.CurrentDraft.Price
+		session.draft.CurrentDraft.Price = *intent.NewPrice
 		changes = append(changes, fmt.Sprintf("Hinta: %d€ → %d€", oldPrice, *intent.NewPrice))
 		log.Info().Int("oldPrice", oldPrice).Int("newPrice", *intent.NewPrice).Msg("price updated via edit command")
 	}
 
 	// Apply title change
 	if intent.NewTitle != nil {
-		oldTitle := session.currentDraft.Title
-		session.currentDraft.Title = *intent.NewTitle
+		oldTitle := session.draft.CurrentDraft.Title
+		session.draft.CurrentDraft.Title = *intent.NewTitle
 		changes = append(changes, fmt.Sprintf("Otsikko: %s", *intent.NewTitle))
 
 		// Update title message in chat
-		if session.currentDraft.TitleMessageID != 0 {
+		if session.draft.CurrentDraft.TitleMessageID != 0 {
 			editMsg := tgbotapi.NewEditMessageText(
 				session.userId,
-				session.currentDraft.TitleMessageID,
+				session.draft.CurrentDraft.TitleMessageID,
 				fmt.Sprintf("📦 *Otsikko:* %s", escapeMarkdown(*intent.NewTitle)),
 			)
 			editMsg.ParseMode = tgbotapi.ModeMarkdown
@@ -1777,15 +1777,15 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 
 	// Apply description change
 	if intent.NewDescription != nil {
-		session.currentDraft.Description = *intent.NewDescription
+		session.draft.CurrentDraft.Description = *intent.NewDescription
 		changes = append(changes, MsgDescriptionChange)
 
 		// Update description message in chat (include template if present)
-		if session.currentDraft.DescriptionMessageID != 0 {
+		if session.draft.CurrentDraft.DescriptionMessageID != 0 {
 			editMsg := tgbotapi.NewEditMessageText(
 				session.userId,
-				session.currentDraft.DescriptionMessageID,
-				fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(session.currentDraft.GetFullDescription())),
+				session.draft.CurrentDraft.DescriptionMessageID,
+				fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(session.draft.CurrentDraft.GetFullDescription())),
 			)
 			editMsg.ParseMode = tgbotapi.ModeMarkdown
 			h.tg.Request(editMsg)
@@ -1801,7 +1801,7 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 	}
 
 	// Show updated summary if listing is ready to publish
-	if len(changes) > 0 && session.currentDraft.State == AdFlowStateReadyToPublish {
+	if len(changes) > 0 && session.draft.CurrentDraft.State == AdFlowStateReadyToPublish {
 		h.showAdSummary(session)
 	}
 

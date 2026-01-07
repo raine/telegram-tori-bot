@@ -50,7 +50,7 @@ func (h *BulkHandler) HandleEräCommand(ctx context.Context, session *UserSessio
 	}
 
 	// Check if there's an active single listing
-	if session.draftID != "" {
+	if session.draft.DraftID != "" {
 		session.reply(MsgBulkHasActiveListing)
 		return
 	}
@@ -165,7 +165,7 @@ func (h *BulkHandler) createDraftFromPhoto(ctx context.Context, session *UserSes
 
 	// Capture the client before spawning goroutine to avoid race
 	session.initAdInputClient()
-	client := session.adInputClient
+	client := session.draft.AdInputClient
 
 	// Start analysis in background with copied data
 	analysisCtx, cancel := context.WithCancel(context.Background())
@@ -1039,7 +1039,7 @@ func (h *BulkHandler) handleCategorySelection(ctx context.Context, session *User
 
 	// Set category on Tori draft
 	if draft.DraftID != "" {
-		client := session.adInputClient
+		client := session.draft.AdInputClient
 		if client != nil {
 			newEtag, err := h.setCategoryOnDraft(ctx, client, draft.DraftID, draft.ETag, categoryID)
 			if err != nil {
@@ -1340,7 +1340,7 @@ func (h *BulkHandler) publishAllDrafts(ctx context.Context, session *UserSession
 
 // doPublishDraft performs the actual publishing of a draft.
 func (h *BulkHandler) doPublishDraft(ctx context.Context, session *UserSession, draft *BulkDraft) error {
-	client := session.adInputClient
+	client := session.draft.AdInputClient
 	if client == nil {
 		return fmt.Errorf("no Tori client")
 	}
@@ -1419,7 +1419,7 @@ func (h *BulkHandler) HandlePeruCommand(ctx context.Context, session *UserSessio
 	}
 
 	// Delete all Tori drafts that were created
-	client := session.adInputClient
+	client := session.draft.AdInputClient
 	if client != nil {
 		for _, draft := range bulk.Drafts {
 			if draft.DraftID != "" {

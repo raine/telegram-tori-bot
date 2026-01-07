@@ -173,10 +173,10 @@ func (h *AuthHandler) finalizeAuth(ctx context.Context, session *UserSession) {
 	}
 
 	// Update session with tokens
-	session.toriAccountId = tokens.UserID
-	session.refreshToken = tokens.RefreshToken
-	session.deviceID = tokens.DeviceID
-	session.bearerToken = tokens.BearerToken
+	session.auth.ToriAccountID = tokens.UserID
+	session.auth.RefreshToken = tokens.RefreshToken
+	session.auth.DeviceID = tokens.DeviceID
+	session.auth.BearerToken = tokens.BearerToken
 
 	session.authFlow.Reset()
 	session.reply(MsgLoginSuccess)
@@ -190,24 +190,24 @@ func (h *AuthHandler) TryRefreshTokens(session *UserSession) error {
 	session.mu.Lock()
 	defer session.mu.Unlock()
 
-	if session.refreshToken == "" {
+	if session.auth.RefreshToken == "" {
 		return ErrNoRefreshToken
 	}
-	if session.deviceID == "" {
+	if session.auth.DeviceID == "" {
 		return ErrNoDeviceID
 	}
 
 	log.Info().Int64("userId", session.userId).Msg("attempting token refresh")
 
-	newTokens, err := auth.RefreshTokens(session.refreshToken, session.deviceID)
+	newTokens, err := auth.RefreshTokens(session.auth.RefreshToken, session.auth.DeviceID)
 	if err != nil {
 		return err
 	}
 
 	// Update session with new tokens
-	session.refreshToken = newTokens.RefreshToken
-	session.bearerToken = newTokens.BearerToken
-	session.adInputClient = nil // Reset so it gets recreated with new token
+	session.auth.RefreshToken = newTokens.RefreshToken
+	session.auth.BearerToken = newTokens.BearerToken
+	session.draft.AdInputClient = nil // Reset so it gets recreated with new token
 
 	// Persist new tokens to storage
 	if h.sessionStore != nil {

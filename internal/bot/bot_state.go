@@ -30,10 +30,10 @@ func (bs *BotState) newUserSession(userId int64) (*UserSession, error) {
 		if err != nil {
 			log.Warn().Err(err).Int64("userId", userId).Msg("failed to get stored session")
 		} else if storedSession != nil {
-			session.toriAccountId = storedSession.ToriUserID
-			session.refreshToken = storedSession.Tokens.RefreshToken
-			session.deviceID = storedSession.Tokens.DeviceID
-			session.bearerToken = storedSession.Tokens.BearerToken
+			session.auth.ToriAccountID = storedSession.ToriUserID
+			session.auth.RefreshToken = storedSession.Tokens.RefreshToken
+			session.auth.DeviceID = storedSession.Tokens.DeviceID
+			session.auth.BearerToken = storedSession.Tokens.BearerToken
 			log.Info().Int64("userId", userId).Msg("loaded session from database")
 			// Set handler and start worker (handler is set by caller after return)
 			return &session, nil

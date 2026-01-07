@@ -36,7 +36,7 @@ type SessionMessage struct {
 
 // isLoggedIn returns true if the user has a valid bearer token (internal, no lock)
 func (s *UserSession) isLoggedIn() bool {
-	return s.bearerToken != ""
+	return s.auth.BearerToken != ""
 }
 
 // escapeMarkdown escapes special characters for Telegram Markdown V1
@@ -90,6 +90,46 @@ type AlbumBufferConfig struct {
 	Timeout time.Duration
 	// MaxPhotos is the maximum number of photos to buffer.
 	MaxPhotos int
+}
+
+// AuthContext holds authentication-related state for a user session.
+type AuthContext struct {
+	BearerToken   string
+	RefreshToken  string
+	ToriAccountID string
+	DeviceID      string
+}
+
+// DraftState holds ad draft creation state.
+type DraftState struct {
+	AdInputClient   tori.AdService
+	DraftID         string
+	Etag            string
+	AdAttributes    *tori.AttributesResponse
+	CurrentDraft    *AdInputDraft
+	IsCreatingDraft bool // Prevents concurrent draft creation from album photos
+}
+
+// ListingBrowserState holds state for browsing user's existing listings.
+type ListingBrowserState struct {
+	MenuMsgID        int              // Message ID to edit for navigation
+	BrowsePage       int              // Current pagination page (1-based)
+	CachedListings   []tori.AdSummary // Cache of the current page's listings
+	ActiveListingID  int64            // ID of listing being viewed (for detail view)
+	ShowOldListings  bool             // Show expired/sold listings
+	DeletedListingID string           // ID of listing just deleted (to filter from stale API)
+}
+
+// PhotoCollectionState holds state for collecting photos for a listing.
+type PhotoCollectionState struct {
+	PendingPhotos *[]PendingPhoto
+	Photos        []tgbotapi.PhotoSize
+	AlbumBuffer   *AlbumBuffer // Buffer for collecting album photos
+}
+
+// SearchWatchState holds state for search watch feature.
+type SearchWatchState struct {
+	PendingQuery string // Stores the query from the last /haku command for callback
 }
 
 // BufferAlbumPhoto adds a photo to the album buffer and schedules processing.
@@ -172,13 +212,9 @@ type MessageHandler interface {
 // bearerToken and the worker (without lock) reading it. In practice, token refresh
 // happens infrequently and the race is benign (stale read of old valid token).
 type UserSession struct {
-	userId        int64
-	bearerToken   string
-	toriAccountId string
-	refreshToken  string
-	deviceID      string
-	sender        MessageSender
-	mu            sync.Mutex // For thread-safe accessors and TryRefreshTokens
+	userId int64
+	sender MessageSender
+	mu     sync.Mutex // For thread-safe accessors and TryRefreshTokens
 
 	// Worker channel for sequential message processing
 	inbox   chan SessionMessage
@@ -187,38 +223,21 @@ type UserSession struct {
 	wg      sync.WaitGroup
 	handler MessageHandler // Set after construction to avoid circular deps
 
-	// Photo collection
-	pendingPhotos *[]PendingPhoto
-	photos        []tgbotapi.PhotoSize
-	albumBuffer   *AlbumBuffer // Buffer for collecting album photos
+	// Domain state - grouped into sub-structs for cleaner separation
+	auth     AuthContext          // Authentication state
+	draft    DraftState           // Ad draft creation state
+	listings ListingBrowserState  // Listing browser state
+	photoCol PhotoCollectionState // Photo collection state
+	search   SearchWatchState     // Search watch state
 
 	// Auth flow state for login
 	authFlow *AuthFlow
-
-	// Adinput API state for ad creation
-	adInputClient   tori.AdService
-	draftID         string
-	etag            string
-	adAttributes    *tori.AttributesResponse
-	currentDraft    *AdInputDraft
-	isCreatingDraft bool // Prevents concurrent draft creation from album photos
 
 	// Postal code command state
 	awaitingPostalCodeInput bool
 
 	// Bulk listing mode
 	bulkSession *BulkSession
-
-	// Listing Management State
-	listingMenuMsgID  int              // Message ID to edit for navigation
-	listingBrowsePage int              // Current pagination page (1-based)
-	cachedListings    []tori.AdSummary // Cache of the current page's listings
-	activeListingID   int64            // ID of listing being viewed (for detail view)
-	showOldListings   bool             // Show expired/sold listings
-	deletedListingID  string           // ID of listing just deleted (to filter from stale API)
-
-	// Search Watch State
-	pendingSearchQuery string // Stores the query from the last /haku command for callback
 }
 
 // --- Thread-safe accessors ---
@@ -227,7 +246,7 @@ type UserSession struct {
 func (s *UserSession) IsLoggedIn() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.bearerToken != ""
+	return s.auth.BearerToken != ""
 }
 
 // GetAdInputClient returns the adinput client (creates if needed).
@@ -235,59 +254,59 @@ func (s *UserSession) GetAdInputClient() tori.AdService {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.initAdInputClient()
-	return s.adInputClient
+	return s.draft.AdInputClient
 }
 
 // HasActiveDraft returns true if there's an active draft being created.
 func (s *UserSession) HasActiveDraft() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.draftID != ""
+	return s.draft.DraftID != ""
 }
 
 // GetDraftState returns the current draft's state, or AdFlowStateNone if no draft.
 func (s *UserSession) GetDraftState() AdFlowState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.currentDraft == nil {
+	if s.draft.CurrentDraft == nil {
 		return AdFlowStateNone
 	}
-	return s.currentDraft.State
+	return s.draft.CurrentDraft.State
 }
 
 // GetDraftInfo returns draft ID and etag for API calls.
 func (s *UserSession) GetDraftInfo() (draftID, etag string, client tori.AdService) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.draftID, s.etag, s.adInputClient
+	return s.draft.DraftID, s.draft.Etag, s.draft.AdInputClient
 }
 
 // UpdateETag updates the etag after API operations.
 func (s *UserSession) UpdateETag(newETag string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.etag = newETag
+	s.draft.Etag = newETag
 }
 
 // SetAdAttributes stores the category attributes.
 func (s *UserSession) SetAdAttributes(attrs *tori.AttributesResponse) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.adAttributes = attrs
+	s.draft.AdAttributes = attrs
 }
 
 // PhotoCount returns the number of photos in the current listing.
 func (s *UserSession) PhotoCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return len(s.photos)
+	return len(s.photoCol.Photos)
 }
 
 // AddPhoto adds a photo to the current listing.
 func (s *UserSession) AddPhoto(photo tgbotapi.PhotoSize) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.photos = append(s.photos, photo)
+	s.photoCol.Photos = append(s.photoCol.Photos, photo)
 }
 
 // --- Auth flow accessors ---
@@ -318,54 +337,55 @@ func (s *UserSession) GetAuthFlowState() AuthState {
 
 func (s *UserSession) reset() {
 	log.Info().Int64("userId", s.userId).Msg("reset user session")
-	s.pendingPhotos = nil
-	s.photos = nil
+	// Reset photo collection state
+	s.photoCol.PendingPhotos = nil
+	s.photoCol.Photos = nil
 	// Stop album timer if running
-	if s.albumBuffer != nil && s.albumBuffer.Timer != nil {
-		s.albumBuffer.Timer.Stop()
+	if s.photoCol.AlbumBuffer != nil && s.photoCol.AlbumBuffer.Timer != nil {
+		s.photoCol.AlbumBuffer.Timer.Stop()
 	}
-	s.albumBuffer = nil
+	s.photoCol.AlbumBuffer = nil
 	if s.authFlow != nil {
 		s.authFlow.Reset()
 	}
 	// Stop draft expiration timer if running
 	s.stopDraftExpirationTimer()
-	// Reset adinput API state
-	s.adInputClient = nil
-	s.draftID = ""
-	s.etag = ""
-	s.adAttributes = nil
-	s.currentDraft = nil
-	s.isCreatingDraft = false
+	// Reset draft state
+	s.draft.AdInputClient = nil
+	s.draft.DraftID = ""
+	s.draft.Etag = ""
+	s.draft.AdAttributes = nil
+	s.draft.CurrentDraft = nil
+	s.draft.IsCreatingDraft = false
 	s.awaitingPostalCodeInput = false
 	// Note: bulk session is NOT reset here - use EndBulkSession() explicitly
 
-	// Reset listing management state
-	s.listingMenuMsgID = 0
-	s.listingBrowsePage = 0
-	s.cachedListings = nil
-	s.activeListingID = 0
-	s.showOldListings = false
-	s.deletedListingID = ""
+	// Reset listing browser state
+	s.listings.MenuMsgID = 0
+	s.listings.BrowsePage = 0
+	s.listings.CachedListings = nil
+	s.listings.ActiveListingID = 0
+	s.listings.ShowOldListings = false
+	s.listings.DeletedListingID = ""
 }
 
 // stopDraftExpirationTimer stops the draft expiration timer if running.
 // Called from session worker - no locking needed.
 func (s *UserSession) stopDraftExpirationTimer() {
-	if s.currentDraft != nil && s.currentDraft.ExpirationTimer != nil {
-		s.currentDraft.ExpirationTimer.Stop()
-		s.currentDraft.ExpirationTimer = nil
+	if s.draft.CurrentDraft != nil && s.draft.CurrentDraft.ExpirationTimer != nil {
+		s.draft.CurrentDraft.ExpirationTimer.Stop()
+		s.draft.CurrentDraft.ExpirationTimer = nil
 	}
 }
 
 // deleteCurrentDraft deletes the current draft ad from Tori API.
 // Called from session worker - no locking needed.
 func (s *UserSession) deleteCurrentDraft(ctx context.Context) {
-	if s.draftID != "" && s.adInputClient != nil {
-		if err := s.adInputClient.DeleteAd(ctx, s.draftID); err != nil {
-			log.Warn().Err(err).Str("draftID", s.draftID).Msg("failed to delete draft ad on cancel")
+	if s.draft.DraftID != "" && s.draft.AdInputClient != nil {
+		if err := s.draft.AdInputClient.DeleteAd(ctx, s.draft.DraftID); err != nil {
+			log.Warn().Err(err).Str("draftID", s.draft.DraftID).Msg("failed to delete draft ad on cancel")
 		} else {
-			log.Info().Str("draftID", s.draftID).Msg("deleted draft ad on cancel")
+			log.Info().Str("draftID", s.draft.DraftID).Msg("deleted draft ad on cancel")
 		}
 	}
 }

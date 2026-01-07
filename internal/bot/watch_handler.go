@@ -41,7 +41,7 @@ func (h *WatchHandler) HandleHakuCommand(ctx context.Context, session *UserSessi
 	}
 
 	// Store query in session for callback
-	session.pendingSearchQuery = query
+	session.search.PendingQuery = query
 
 	// Perform search
 	results, err := h.searchClient.Search(ctx, tori.SearchKeyBapCommon, tori.SearchParams{
@@ -181,7 +181,7 @@ func (h *WatchHandler) HandleWatchCallback(ctx context.Context, session *UserSes
 // handleCreateWatchCallback handles the "create watch" button callback.
 func (h *WatchHandler) handleCreateWatchCallback(session *UserSession, query *tgbotapi.CallbackQuery) {
 	// Get query from session
-	searchQuery := session.pendingSearchQuery
+	searchQuery := session.search.PendingQuery
 	if searchQuery == "" {
 		// Edit the message to show error
 		if query.Message != nil {
@@ -196,7 +196,7 @@ func (h *WatchHandler) handleCreateWatchCallback(session *UserSession, query *tg
 	}
 
 	// Clear the pending query
-	session.pendingSearchQuery = ""
+	session.search.PendingQuery = ""
 
 	// Remove the button from the message
 	if query.Message != nil {

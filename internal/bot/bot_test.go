@@ -228,7 +228,7 @@ func TestHandleUpdate_RemovePhotosCommand(t *testing.T) {
 
 	update := makeUpdateWithMessageText(userId, "/poistakuvat")
 
-	session.photos = []tgbotapi.PhotoSize{
+	session.photoCol.Photos = []tgbotapi.PhotoSize{
 		{FileID: "1", FileUniqueID: "1", Width: 371, Height: 495, FileSize: 28548},
 		{FileID: "2", FileUniqueID: "2", Width: 371, Height: 495, FileSize: 28548},
 	}
@@ -312,9 +312,9 @@ func setupAdInputSession(t *testing.T, ts *httptest.Server) (*httptest.Server, i
 	}
 
 	// Initialize adinput client with test server URL
-	session.adInputClient = tori.NewAdinputClientWithBaseURL("test-token", ts.URL)
-	session.draftID = "draft-123"
-	session.etag = "test-etag"
+	session.draft.AdInputClient = tori.NewAdinputClientWithBaseURL("test-token", ts.URL)
+	session.draft.DraftID = "draft-123"
+	session.draft.Etag = "test-etag"
 
 	return ts, userId, tg, bot, session
 }
@@ -328,7 +328,7 @@ func TestHandleCategorySelection_FetchesAttributes(t *testing.T) {
 	bot.listingHandler = NewListingHandler(tg, nil, nil, nil)
 
 	// Set up session with draft awaiting category (with parent to test full path)
-	session.currentDraft = &AdInputDraft{
+	session.draft.CurrentDraft = &AdInputDraft{
 		State:          AdFlowStateAwaitingCategory,
 		CollectedAttrs: make(map[string]string),
 		CategoryPredictions: []tori.CategoryPrediction{
@@ -361,11 +361,11 @@ func TestHandleCategorySelection_FetchesAttributes(t *testing.T) {
 	tg.AssertExpectations(t)
 
 	// Verify state was updated
-	if session.currentDraft.State != AdFlowStateAwaitingAttribute {
-		t.Errorf("expected state AwaitingAttribute, got %v", session.currentDraft.State)
+	if session.draft.CurrentDraft.State != AdFlowStateAwaitingAttribute {
+		t.Errorf("expected state AwaitingAttribute, got %v", session.draft.CurrentDraft.State)
 	}
-	if len(session.currentDraft.RequiredAttrs) != 2 {
-		t.Errorf("expected 2 required attrs, got %d", len(session.currentDraft.RequiredAttrs))
+	if len(session.draft.CurrentDraft.RequiredAttrs) != 2 {
+		t.Errorf("expected 2 required attrs, got %d", len(session.draft.CurrentDraft.RequiredAttrs))
 	}
 }
 
@@ -378,7 +378,7 @@ func TestHandleAttributeInput_SelectsOption(t *testing.T) {
 	listingHandler := NewListingHandler(tg, nil, nil, nil)
 
 	// Set up session with draft awaiting attribute
-	session.currentDraft = &AdInputDraft{
+	session.draft.CurrentDraft = &AdInputDraft{
 		State:          AdFlowStateAwaitingAttribute,
 		CollectedAttrs: make(map[string]string),
 		RequiredAttrs: []tori.Attribute{
@@ -415,11 +415,11 @@ func TestHandleAttributeInput_SelectsOption(t *testing.T) {
 	tg.AssertExpectations(t)
 
 	// Verify attribute was stored
-	if session.currentDraft.CollectedAttrs["condition"] != "2" {
-		t.Errorf("expected condition=2, got %s", session.currentDraft.CollectedAttrs["condition"])
+	if session.draft.CurrentDraft.CollectedAttrs["condition"] != "2" {
+		t.Errorf("expected condition=2, got %s", session.draft.CurrentDraft.CollectedAttrs["condition"])
 	}
-	if session.currentDraft.CurrentAttrIndex != 1 {
-		t.Errorf("expected CurrentAttrIndex=1, got %d", session.currentDraft.CurrentAttrIndex)
+	if session.draft.CurrentDraft.CurrentAttrIndex != 1 {
+		t.Errorf("expected CurrentAttrIndex=1, got %d", session.draft.CurrentDraft.CurrentAttrIndex)
 	}
 }
 
@@ -431,7 +431,7 @@ func TestHandleAttributeInput_LastAttribute_MovesToPrice(t *testing.T) {
 	listingHandler := NewListingHandler(tg, nil, nil, nil)
 
 	// Set up session with only one attribute left (the last one)
-	session.currentDraft = &AdInputDraft{
+	session.draft.CurrentDraft = &AdInputDraft{
 		State:          AdFlowStateAwaitingAttribute,
 		Title:          "Test Item",
 		CollectedAttrs: map[string]string{"condition": "2"},
@@ -467,11 +467,11 @@ func TestHandleAttributeInput_LastAttribute_MovesToPrice(t *testing.T) {
 	tg.AssertExpectations(t)
 
 	// Verify state moved to price
-	if session.currentDraft.State != AdFlowStateAwaitingPrice {
-		t.Errorf("expected state AwaitingPrice, got %v", session.currentDraft.State)
+	if session.draft.CurrentDraft.State != AdFlowStateAwaitingPrice {
+		t.Errorf("expected state AwaitingPrice, got %v", session.draft.CurrentDraft.State)
 	}
-	if session.currentDraft.CollectedAttrs["computeracc_type"] != "10" {
-		t.Errorf("expected computeracc_type=10, got %s", session.currentDraft.CollectedAttrs["computeracc_type"])
+	if session.draft.CurrentDraft.CollectedAttrs["computeracc_type"] != "10" {
+		t.Errorf("expected computeracc_type=10, got %s", session.draft.CurrentDraft.CollectedAttrs["computeracc_type"])
 	}
 }
 
@@ -482,12 +482,12 @@ func TestHandlePriceInput_ValidPrice(t *testing.T) {
 
 	listingHandler := NewListingHandler(tg, nil, nil, nil)
 
-	session.currentDraft = &AdInputDraft{
+	session.draft.CurrentDraft = &AdInputDraft{
 		State:       AdFlowStateAwaitingPrice,
 		Title:       "Logitech hiiri",
 		Description: "Langaton pelihiiri",
 	}
-	session.photos = []tgbotapi.PhotoSize{{FileID: "1"}}
+	session.photoCol.Photos = []tgbotapi.PhotoSize{{FileID: "1"}}
 
 	// Expect price confirmation message with keyboard removal
 	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
@@ -504,14 +504,14 @@ func TestHandlePriceInput_ValidPrice(t *testing.T) {
 
 	tg.AssertExpectations(t)
 
-	if session.currentDraft.Price != 50 {
-		t.Errorf("expected price=50, got %d", session.currentDraft.Price)
+	if session.draft.CurrentDraft.Price != 50 {
+		t.Errorf("expected price=50, got %d", session.draft.CurrentDraft.Price)
 	}
-	if session.currentDraft.TradeType != TradeTypeSell {
-		t.Errorf("expected trade_type=TradeTypeSell, got %s", session.currentDraft.TradeType)
+	if session.draft.CurrentDraft.TradeType != TradeTypeSell {
+		t.Errorf("expected trade_type=TradeTypeSell, got %s", session.draft.CurrentDraft.TradeType)
 	}
-	if session.currentDraft.State != AdFlowStateAwaitingShipping {
-		t.Errorf("expected state AwaitingShipping, got %v", session.currentDraft.State)
+	if session.draft.CurrentDraft.State != AdFlowStateAwaitingShipping {
+		t.Errorf("expected state AwaitingShipping, got %v", session.draft.CurrentDraft.State)
 	}
 }
 
@@ -522,7 +522,7 @@ func TestHandlePriceInput_InvalidPrice(t *testing.T) {
 
 	listingHandler := NewListingHandler(tg, nil, nil, nil)
 
-	session.currentDraft = &AdInputDraft{
+	session.draft.CurrentDraft = &AdInputDraft{
 		State: AdFlowStateAwaitingPrice,
 	}
 
@@ -535,8 +535,8 @@ func TestHandlePriceInput_InvalidPrice(t *testing.T) {
 	tg.AssertExpectations(t)
 
 	// State should remain awaiting price
-	if session.currentDraft.State != AdFlowStateAwaitingPrice {
-		t.Errorf("expected state to remain AwaitingPrice, got %v", session.currentDraft.State)
+	if session.draft.CurrentDraft.State != AdFlowStateAwaitingPrice {
+		t.Errorf("expected state to remain AwaitingPrice, got %v", session.draft.CurrentDraft.State)
 	}
 }
 
@@ -547,12 +547,12 @@ func TestHandlePriceInput_Giveaway(t *testing.T) {
 
 	listingHandler := NewListingHandler(tg, nil, nil, nil)
 
-	session.currentDraft = &AdInputDraft{
+	session.draft.CurrentDraft = &AdInputDraft{
 		State:       AdFlowStateAwaitingPrice,
 		Title:       "Logitech hiiri",
 		Description: "Myydään langaton pelihiiri",
 	}
-	session.photos = []tgbotapi.PhotoSize{{FileID: "1"}}
+	session.photoCol.Photos = []tgbotapi.PhotoSize{{FileID: "1"}}
 
 	// Expect giveaway confirmation message with keyboard removal
 	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
@@ -569,14 +569,14 @@ func TestHandlePriceInput_Giveaway(t *testing.T) {
 
 	tg.AssertExpectations(t)
 
-	if session.currentDraft.Price != 0 {
-		t.Errorf("expected price=0, got %d", session.currentDraft.Price)
+	if session.draft.CurrentDraft.Price != 0 {
+		t.Errorf("expected price=0, got %d", session.draft.CurrentDraft.Price)
 	}
-	if session.currentDraft.TradeType != TradeTypeGive {
-		t.Errorf("expected trade_type=TradeTypeGive, got %s", session.currentDraft.TradeType)
+	if session.draft.CurrentDraft.TradeType != TradeTypeGive {
+		t.Errorf("expected trade_type=TradeTypeGive, got %s", session.draft.CurrentDraft.TradeType)
 	}
-	if session.currentDraft.State != AdFlowStateAwaitingShipping {
-		t.Errorf("expected state AwaitingShipping, got %v", session.currentDraft.State)
+	if session.draft.CurrentDraft.State != AdFlowStateAwaitingShipping {
+		t.Errorf("expected state AwaitingShipping, got %v", session.draft.CurrentDraft.State)
 	}
 }
 
@@ -642,7 +642,7 @@ func TestHandleUpdate_ReplyToTitleEdits(t *testing.T) {
 	bot.listingHandler = NewListingHandler(tg, nil, nil, nil)
 
 	// Set up session with draft that has message IDs
-	session.currentDraft = &AdInputDraft{
+	session.draft.CurrentDraft = &AdInputDraft{
 		State:                AdFlowStateAwaitingCategory,
 		Title:                "Original title",
 		Description:          "Original description",
@@ -674,8 +674,8 @@ func TestHandleUpdate_ReplyToTitleEdits(t *testing.T) {
 	tg.AssertExpectations(t)
 
 	// Verify title was updated
-	if session.currentDraft.Title != "New title" {
-		t.Errorf("expected title='New title', got '%s'", session.currentDraft.Title)
+	if session.draft.CurrentDraft.Title != "New title" {
+		t.Errorf("expected title='New title', got '%s'", session.draft.CurrentDraft.Title)
 	}
 }
 
@@ -688,7 +688,7 @@ func TestHandleUpdate_ReplyToDescriptionEdits(t *testing.T) {
 	bot.listingHandler = NewListingHandler(tg, nil, nil, nil)
 
 	// Set up session with draft that has message IDs
-	session.currentDraft = &AdInputDraft{
+	session.draft.CurrentDraft = &AdInputDraft{
 		State:                AdFlowStateAwaitingCategory,
 		Title:                "Original title",
 		Description:          "Original description",
@@ -719,8 +719,8 @@ func TestHandleUpdate_ReplyToDescriptionEdits(t *testing.T) {
 	tg.AssertExpectations(t)
 
 	// Verify description was updated
-	if session.currentDraft.Description != "New description" {
-		t.Errorf("expected description='New description', got '%s'", session.currentDraft.Description)
+	if session.draft.CurrentDraft.Description != "New description" {
+		t.Errorf("expected description='New description', got '%s'", session.draft.CurrentDraft.Description)
 	}
 }
 
@@ -733,7 +733,7 @@ func TestHandleUpdate_PeruDuringAttributeInput(t *testing.T) {
 	bot.listingHandler = NewListingHandler(tg, nil, nil, nil)
 
 	// Set up session with draft awaiting attribute
-	session.currentDraft = &AdInputDraft{
+	session.draft.CurrentDraft = &AdInputDraft{
 		State:          AdFlowStateAwaitingAttribute,
 		CollectedAttrs: make(map[string]string),
 		RequiredAttrs: []tori.Attribute{
@@ -761,7 +761,7 @@ func TestHandleUpdate_PeruDuringAttributeInput(t *testing.T) {
 	tg.AssertExpectations(t)
 
 	// Verify session was reset
-	if session.currentDraft != nil {
+	if session.draft.CurrentDraft != nil {
 		t.Errorf("expected currentDraft to be nil after /peru")
 	}
 }
@@ -775,7 +775,7 @@ func TestHandleUpdate_PeruDuringPriceInput(t *testing.T) {
 	bot.listingHandler = NewListingHandler(tg, nil, nil, nil)
 
 	// Set up session with draft awaiting price
-	session.currentDraft = &AdInputDraft{
+	session.draft.CurrentDraft = &AdInputDraft{
 		State:       AdFlowStateAwaitingPrice,
 		Title:       "Test item",
 		Description: "Test description",
@@ -793,7 +793,7 @@ func TestHandleUpdate_PeruDuringPriceInput(t *testing.T) {
 	tg.AssertExpectations(t)
 
 	// Verify session was reset
-	if session.currentDraft != nil {
+	if session.draft.CurrentDraft != nil {
 		t.Errorf("expected currentDraft to be nil after /peru")
 	}
 }
@@ -802,7 +802,7 @@ func TestHandleOsastoCommand_NoDraft(t *testing.T) {
 	_, userId, tg, bot, session := setupAdInputSession(t, makeAdInputTestServer(t))
 
 	// No current draft
-	session.currentDraft = nil
+	session.draft.CurrentDraft = nil
 
 	tg.On("Send", makeMessage(userId, "Ei aktiivista ilmoitusta. Lähetä ensin kuva.")).
 		Return(tgbotapi.Message{}, nil).Once()
@@ -816,7 +816,7 @@ func TestHandleOsastoCommand_NoPredictions(t *testing.T) {
 	_, userId, tg, bot, session := setupAdInputSession(t, makeAdInputTestServer(t))
 
 	// Draft exists but no category predictions
-	session.currentDraft = &AdInputDraft{
+	session.draft.CurrentDraft = &AdInputDraft{
 		State:               AdFlowStateAwaitingPrice,
 		CategoryPredictions: []tori.CategoryPrediction{},
 	}
@@ -833,7 +833,7 @@ func TestHandleOsastoCommand_ShowsMenuWhenPastCategorySelection(t *testing.T) {
 	_, _, tg, bot, session := setupAdInputSession(t, makeAdInputTestServer(t))
 
 	// Draft exists with predictions and we're past category selection
-	session.currentDraft = &AdInputDraft{
+	session.draft.CurrentDraft = &AdInputDraft{
 		State:      AdFlowStateAwaitingPrice,
 		CategoryID: 5012,
 		CategoryPredictions: []tori.CategoryPrediction{
@@ -855,8 +855,8 @@ func TestHandleOsastoCommand_ShowsMenuWhenPastCategorySelection(t *testing.T) {
 	tg.AssertExpectations(t)
 
 	// State should NOT be reset yet (menu was shown, user hasn't selected)
-	if session.currentDraft.State != AdFlowStateAwaitingPrice {
-		t.Errorf("expected state to remain AwaitingPrice, got %v", session.currentDraft.State)
+	if session.draft.CurrentDraft.State != AdFlowStateAwaitingPrice {
+		t.Errorf("expected state to remain AwaitingPrice, got %v", session.draft.CurrentDraft.State)
 	}
 }
 
@@ -864,7 +864,7 @@ func TestHandleOsastoCommand_ShowsCategoryKeyboardWhenAwaitingCategory(t *testin
 	_, _, tg, bot, session := setupAdInputSession(t, makeAdInputTestServer(t))
 
 	// Draft exists with predictions and we're still awaiting category
-	session.currentDraft = &AdInputDraft{
+	session.draft.CurrentDraft = &AdInputDraft{
 		State: AdFlowStateAwaitingCategory,
 		CategoryPredictions: []tori.CategoryPrediction{
 			{ID: 5012, Label: "Tietokoneen oheislaitteet"},
@@ -888,7 +888,7 @@ func TestHandleUpdate_OsastoDuringPriceInput(t *testing.T) {
 	_, userId, tg, bot, session := setupAdInputSession(t, ts)
 
 	// Set up session with draft awaiting price
-	session.currentDraft = &AdInputDraft{
+	session.draft.CurrentDraft = &AdInputDraft{
 		State:      AdFlowStateAwaitingPrice,
 		CategoryID: 5012,
 		CategoryPredictions: []tori.CategoryPrediction{
@@ -907,8 +907,8 @@ func TestHandleUpdate_OsastoDuringPriceInput(t *testing.T) {
 	tg.AssertExpectations(t)
 
 	// State should remain (menu was shown, user hasn't selected yet)
-	if session.currentDraft.State != AdFlowStateAwaitingPrice {
-		t.Errorf("expected state to remain AwaitingPrice, got %v", session.currentDraft.State)
+	if session.draft.CurrentDraft.State != AdFlowStateAwaitingPrice {
+		t.Errorf("expected state to remain AwaitingPrice, got %v", session.draft.CurrentDraft.State)
 	}
 }
 
@@ -916,7 +916,7 @@ func TestHandleReselectCallback_PreservesValues(t *testing.T) {
 	_, _, tg, bot, session := setupAdInputSession(t, makeAdInputTestServer(t))
 
 	// Set up session with draft that has price, shipping, and condition set
-	session.currentDraft = &AdInputDraft{
+	session.draft.CurrentDraft = &AdInputDraft{
 		State:            AdFlowStateReadyToPublish,
 		CategoryID:       5012,
 		Price:            100,
@@ -949,31 +949,31 @@ func TestHandleReselectCallback_PreservesValues(t *testing.T) {
 	tg.AssertExpectations(t)
 
 	// Verify state was reset
-	if session.currentDraft.State != AdFlowStateAwaitingCategory {
-		t.Errorf("expected state AwaitingCategory, got %v", session.currentDraft.State)
+	if session.draft.CurrentDraft.State != AdFlowStateAwaitingCategory {
+		t.Errorf("expected state AwaitingCategory, got %v", session.draft.CurrentDraft.State)
 	}
-	if session.currentDraft.CategoryID != 0 {
-		t.Errorf("expected CategoryID to be 0, got %d", session.currentDraft.CategoryID)
+	if session.draft.CurrentDraft.CategoryID != 0 {
+		t.Errorf("expected CategoryID to be 0, got %d", session.draft.CurrentDraft.CategoryID)
 	}
 
 	// Verify preserved values were saved
-	if session.currentDraft.PreservedValues == nil {
+	if session.draft.CurrentDraft.PreservedValues == nil {
 		t.Fatal("expected PreservedValues to be set")
 	}
-	if session.currentDraft.PreservedValues.Price != 100 {
-		t.Errorf("expected preserved Price 100, got %d", session.currentDraft.PreservedValues.Price)
+	if session.draft.CurrentDraft.PreservedValues.Price != 100 {
+		t.Errorf("expected preserved Price 100, got %d", session.draft.CurrentDraft.PreservedValues.Price)
 	}
-	if session.currentDraft.PreservedValues.TradeType != TradeTypeSell {
-		t.Errorf("expected preserved TradeType %s, got %s", TradeTypeSell, session.currentDraft.PreservedValues.TradeType)
+	if session.draft.CurrentDraft.PreservedValues.TradeType != TradeTypeSell {
+		t.Errorf("expected preserved TradeType %s, got %s", TradeTypeSell, session.draft.CurrentDraft.PreservedValues.TradeType)
 	}
-	if !session.currentDraft.PreservedValues.ShippingSet {
+	if !session.draft.CurrentDraft.PreservedValues.ShippingSet {
 		t.Error("expected ShippingSet to be true")
 	}
-	if !session.currentDraft.PreservedValues.ShippingPossible {
+	if !session.draft.CurrentDraft.PreservedValues.ShippingPossible {
 		t.Error("expected ShippingPossible to be true")
 	}
-	if session.currentDraft.PreservedValues.CollectedAttrs["condition"] != "2" {
-		t.Errorf("expected preserved condition '2', got %s", session.currentDraft.PreservedValues.CollectedAttrs["condition"])
+	if session.draft.CurrentDraft.PreservedValues.CollectedAttrs["condition"] != "2" {
+		t.Errorf("expected preserved condition '2', got %s", session.draft.CurrentDraft.PreservedValues.CollectedAttrs["condition"])
 	}
 }
 
@@ -981,7 +981,7 @@ func TestTryRestorePreservedAttributes_RestoresCompatibleCondition(t *testing.T)
 	_, _, tg, bot, session := setupAdInputSession(t, makeAdInputTestServer(t))
 	bot.listingHandler = NewListingHandler(tg, nil, nil, nil)
 
-	session.currentDraft = &AdInputDraft{
+	session.draft.CurrentDraft = &AdInputDraft{
 		State:          AdFlowStateAwaitingAttribute,
 		CollectedAttrs: make(map[string]string),
 		PreservedValues: &PreservedValues{
@@ -1002,14 +1002,14 @@ func TestTryRestorePreservedAttributes_RestoresCompatibleCondition(t *testing.T)
 		},
 	}
 
-	remaining := bot.listingHandler.tryRestorePreservedAttributes(session, attrs, session.currentDraft.PreservedValues)
+	remaining := bot.listingHandler.tryRestorePreservedAttributes(session, attrs, session.draft.CurrentDraft.PreservedValues)
 
 	// Condition should be restored, no remaining attributes
 	if len(remaining) != 0 {
 		t.Errorf("expected 0 remaining attributes, got %d", len(remaining))
 	}
-	if session.currentDraft.CollectedAttrs["condition"] != "2" {
-		t.Errorf("expected condition '2' to be restored, got %s", session.currentDraft.CollectedAttrs["condition"])
+	if session.draft.CurrentDraft.CollectedAttrs["condition"] != "2" {
+		t.Errorf("expected condition '2' to be restored, got %s", session.draft.CurrentDraft.CollectedAttrs["condition"])
 	}
 }
 
@@ -1017,7 +1017,7 @@ func TestTryRestorePreservedAttributes_SkipsIncompatibleCondition(t *testing.T) 
 	_, _, tg, bot, session := setupAdInputSession(t, makeAdInputTestServer(t))
 	bot.listingHandler = NewListingHandler(tg, nil, nil, nil)
 
-	session.currentDraft = &AdInputDraft{
+	session.draft.CurrentDraft = &AdInputDraft{
 		State:          AdFlowStateAwaitingAttribute,
 		CollectedAttrs: make(map[string]string),
 		PreservedValues: &PreservedValues{
@@ -1038,14 +1038,14 @@ func TestTryRestorePreservedAttributes_SkipsIncompatibleCondition(t *testing.T) 
 	}
 
 	// No message expected since nothing was restored
-	remaining := bot.listingHandler.tryRestorePreservedAttributes(session, attrs, session.currentDraft.PreservedValues)
+	remaining := bot.listingHandler.tryRestorePreservedAttributes(session, attrs, session.draft.CurrentDraft.PreservedValues)
 	tg.AssertExpectations(t)
 
 	// Condition should NOT be restored, attribute remains
 	if len(remaining) != 1 {
 		t.Errorf("expected 1 remaining attribute, got %d", len(remaining))
 	}
-	if _, ok := session.currentDraft.CollectedAttrs["condition"]; ok {
+	if _, ok := session.draft.CurrentDraft.CollectedAttrs["condition"]; ok {
 		t.Error("expected condition to NOT be restored")
 	}
 }
@@ -1064,7 +1064,7 @@ func TestProceedAfterAttributes_SkipsPriceAndShipping(t *testing.T) {
 		sessionStore: &mockSessionStoreWithPostalCode{mockSessionStore: mockStore, postalCode: "00100"},
 	}
 
-	session.currentDraft = &AdInputDraft{
+	session.draft.CurrentDraft = &AdInputDraft{
 		State:          AdFlowStateAwaitingAttribute,
 		Title:          "Test Item",
 		Description:    "Test description",
@@ -1086,11 +1086,11 @@ func TestProceedAfterAttributes_SkipsPriceAndShipping(t *testing.T) {
 	tg.AssertExpectations(t)
 
 	// Should be at ready to publish state
-	if session.currentDraft.State != AdFlowStateReadyToPublish {
-		t.Errorf("expected state ReadyToPublish, got %v", session.currentDraft.State)
+	if session.draft.CurrentDraft.State != AdFlowStateReadyToPublish {
+		t.Errorf("expected state ReadyToPublish, got %v", session.draft.CurrentDraft.State)
 	}
 	// PreservedValues should be cleared
-	if session.currentDraft.PreservedValues != nil {
+	if session.draft.CurrentDraft.PreservedValues != nil {
 		t.Error("expected PreservedValues to be nil after restoration")
 	}
 }
@@ -1101,7 +1101,7 @@ func TestProceedAfterAttributes_PromptsForPriceWhenNotSet(t *testing.T) {
 	_, _, tg, bot, session := setupAdInputSession(t, ts)
 	bot.listingHandler = NewListingHandler(tg, nil, nil, nil)
 
-	session.currentDraft = &AdInputDraft{
+	session.draft.CurrentDraft = &AdInputDraft{
 		State:          AdFlowStateAwaitingAttribute,
 		Title:          "Test Item",
 		CollectedAttrs: map[string]string{},
@@ -1120,8 +1120,8 @@ func TestProceedAfterAttributes_PromptsForPriceWhenNotSet(t *testing.T) {
 	tg.AssertExpectations(t)
 
 	// Should be at awaiting price state
-	if session.currentDraft.State != AdFlowStateAwaitingPrice {
-		t.Errorf("expected state AwaitingPrice, got %v", session.currentDraft.State)
+	if session.draft.CurrentDraft.State != AdFlowStateAwaitingPrice {
+		t.Errorf("expected state AwaitingPrice, got %v", session.draft.CurrentDraft.State)
 	}
 }
 
@@ -1136,7 +1136,7 @@ func TestProceedAfterAttributes_RestoresGiveaway(t *testing.T) {
 		sessionStore: &mockSessionStoreWithPostalCode{mockSessionStore: mockStore, postalCode: "00100"},
 	}
 
-	session.currentDraft = &AdInputDraft{
+	session.draft.CurrentDraft = &AdInputDraft{
 		State:          AdFlowStateAwaitingAttribute,
 		Title:          "Free Item",
 		Description:    "Giving away",
@@ -1157,8 +1157,8 @@ func TestProceedAfterAttributes_RestoresGiveaway(t *testing.T) {
 	bot.listingHandler.proceedAfterAttributes(context.Background(), session)
 	tg.AssertExpectations(t)
 
-	if session.currentDraft.TradeType != TradeTypeGive {
-		t.Errorf("expected TradeType %s, got %s", TradeTypeGive, session.currentDraft.TradeType)
+	if session.draft.CurrentDraft.TradeType != TradeTypeGive {
+		t.Errorf("expected TradeType %s, got %s", TradeTypeGive, session.draft.CurrentDraft.TradeType)
 	}
 }
 

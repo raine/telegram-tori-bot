@@ -27,9 +27,9 @@ func NewListingManager(tg BotAPI) *ListingManager {
 
 // HandleIlmoituksetCommand handles the /ilmoitukset command
 func (m *ListingManager) HandleIlmoituksetCommand(ctx context.Context, session *UserSession) {
-	session.listingBrowsePage = 1
-	session.activeListingID = 0
-	session.showOldListings = false
+	session.listings.BrowsePage = 1
+	session.listings.ActiveListingID = 0
+	session.listings.ShowOldListings = false
 	m.refreshListingView(ctx, session, true) // true = send new message
 }
 
@@ -41,8 +41,8 @@ func (m *ListingManager) HandleListingCallback(ctx context.Context, session *Use
 	if strings.HasPrefix(data, "listings:page:") {
 		pageStr := strings.TrimPrefix(data, "listings:page:")
 		page, _ := strconv.Atoi(pageStr)
-		session.listingBrowsePage = page
-		session.activeListingID = 0
+		session.listings.BrowsePage = page
+		session.listings.ActiveListingID = 0
 		m.refreshListingView(ctx, session, false)
 		return
 	}
@@ -53,8 +53,8 @@ func (m *ListingManager) HandleListingCallback(ctx context.Context, session *Use
 	}
 
 	if data == "listings:toggle_old" {
-		session.showOldListings = !session.showOldListings
-		session.listingBrowsePage = 1 // Reset to page 1 when toggling
+		session.listings.ShowOldListings = !session.listings.ShowOldListings
+		session.listings.BrowsePage = 1 // Reset to page 1 when toggling
 		m.refreshListingView(ctx, session, false)
 		return
 	}
@@ -94,11 +94,11 @@ func (m *ListingManager) refreshListingView(ctx context.Context, session *UserSe
 	var filtered []tori.AdSummary
 	for _, ad := range result.Summaries {
 		// Skip recently deleted ad (API may return stale data)
-		if session.deletedListingID != "" && strconv.FormatInt(ad.ID, 10) == session.deletedListingID {
+		if session.listings.DeletedListingID != "" && strconv.FormatInt(ad.ID, 10) == session.listings.DeletedListingID {
 			continue
 		}
 
-		if session.showOldListings {
+		if session.listings.ShowOldListings {
 			// Show all
 			filtered = append(filtered, ad)
 		} else {
@@ -117,13 +117,13 @@ func (m *ListingManager) refreshListingView(ctx context.Context, session *UserSe
 	// Paginate client-side
 	total := len(filtered)
 	limit := listingsPerPage
-	offset := (session.listingBrowsePage - 1) * limit
+	offset := (session.listings.BrowsePage - 1) * limit
 	end := offset + limit
 	if end > total {
 		end = total
 	}
 
-	session.cachedListings = filtered[offset:end]
+	session.listings.CachedListings = filtered[offset:end]
 	totalPages := (total + limit - 1) / limit
 
 	// Build message text
@@ -132,12 +132,12 @@ func (m *ListingManager) refreshListingView(ctx context.Context, session *UserSe
 	if total == 1 {
 		countLabel = MsgListingsCountSingle
 	}
-	sb.WriteString(fmt.Sprintf(MsgListingsHeader, session.listingBrowsePage, totalPages, total, countLabel))
+	sb.WriteString(fmt.Sprintf(MsgListingsHeader, session.listings.BrowsePage, totalPages, total, countLabel))
 
 	// Build inline keyboard
 	var rows [][]tgbotapi.InlineKeyboardButton
 
-	for _, ad := range session.cachedListings {
+	for _, ad := range session.listings.CachedListings {
 		// Status icon
 		statusIcon := ""
 		switch ad.State.Type {
@@ -171,7 +171,7 @@ func (m *ListingManager) refreshListingView(ctx context.Context, session *UserSe
 
 	// Toggle row
 	toggleLabel := BtnShowOld
-	if session.showOldListings {
+	if session.listings.ShowOldListings {
 		toggleLabel = BtnHideOld
 	}
 	rows = append(rows, []tgbotapi.InlineKeyboardButton{
@@ -180,12 +180,12 @@ func (m *ListingManager) refreshListingView(ctx context.Context, session *UserSe
 
 	// Navigation row
 	var navRow []tgbotapi.InlineKeyboardButton
-	if session.listingBrowsePage > 1 {
-		navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData(BtnPrev, fmt.Sprintf("listings:page:%d", session.listingBrowsePage-1)))
+	if session.listings.BrowsePage > 1 {
+		navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData(BtnPrev, fmt.Sprintf("listings:page:%d", session.listings.BrowsePage-1)))
 	}
 	navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData(BtnClose, "listings:close"))
 	if end < total {
-		navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData(BtnNext, fmt.Sprintf("listings:page:%d", session.listingBrowsePage+1)))
+		navRow = append(navRow, tgbotapi.NewInlineKeyboardButtonData(BtnNext, fmt.Sprintf("listings:page:%d", session.listings.BrowsePage+1)))
 	}
 	rows = append(rows, navRow)
 
@@ -197,9 +197,9 @@ func (m *ListingManager) refreshListingView(ctx context.Context, session *UserSe
 func (m *ListingManager) showAdDetail(ctx context.Context, session *UserSession, adID int64) {
 	// Find ad in cache
 	var ad *tori.AdSummary
-	for i := range session.cachedListings {
-		if session.cachedListings[i].ID == adID {
-			ad = &session.cachedListings[i]
+	for i := range session.listings.CachedListings {
+		if session.listings.CachedListings[i].ID == adID {
+			ad = &session.listings.CachedListings[i]
 			break
 		}
 	}
@@ -210,7 +210,7 @@ func (m *ListingManager) showAdDetail(ctx context.Context, session *UserSession,
 		return
 	}
 
-	session.activeListingID = adID
+	session.listings.ActiveListingID = adID
 
 	// Build text
 	var sb strings.Builder
@@ -277,7 +277,7 @@ func (m *ListingManager) showAdDetail(ctx context.Context, session *UserSession,
 
 	// Back button
 	rows = append(rows, []tgbotapi.InlineKeyboardButton{
-		tgbotapi.NewInlineKeyboardButtonData(BtnBack, fmt.Sprintf("listings:page:%d", session.listingBrowsePage)),
+		tgbotapi.NewInlineKeyboardButtonData(BtnBack, fmt.Sprintf("listings:page:%d", session.listings.BrowsePage)),
 	})
 
 	markup := tgbotapi.NewInlineKeyboardMarkup(rows...)
@@ -317,7 +317,7 @@ func (m *ListingManager) showDeleteConfirmation(ctx context.Context, session *Us
 	// Find ad title for confirmation message
 	adID, _ := strconv.ParseInt(adIDStr, 10, 64)
 	var adTitle string
-	for _, ad := range session.cachedListings {
+	for _, ad := range session.listings.CachedListings {
 		if ad.ID == adID {
 			adTitle = ad.Data.Title
 			break
@@ -374,13 +374,13 @@ func (m *ListingManager) executeAction(ctx context.Context, session *UserSession
 	// After successful action, refresh the view
 	if actionName == "DELETE" {
 		// Go back to list after deletion
-		session.activeListingID = 0
-		session.deletedListingID = adIDStr // Track deleted ID to filter from stale API data
+		session.listings.ActiveListingID = 0
+		session.listings.DeletedListingID = adIDStr // Track deleted ID to filter from stale API data
 		m.refreshListingView(ctx, session, false)
-		session.deletedListingID = "" // Clear after refresh
+		session.listings.DeletedListingID = "" // Clear after refresh
 	} else if actionName == "UNDISPOSE" {
 		// Go back to list after reactivation
-		session.activeListingID = 0
+		session.listings.ActiveListingID = 0
 		m.refreshListingView(ctx, session, false)
 	} else {
 		// Refresh list to get updated state, then show detail again
@@ -393,13 +393,13 @@ func (m *ListingManager) executeAction(ctx context.Context, session *UserSession
 		}
 
 		limit := listingsPerPage
-		offset := (session.listingBrowsePage - 1) * limit
+		offset := (session.listings.BrowsePage - 1) * limit
 		result, err := client.GetAdSummaries(ctx, limit, offset, "ALL")
 		if err != nil {
 			session.replyWithError(err)
 			return
 		}
-		session.cachedListings = result.Summaries
+		session.listings.CachedListings = result.Summaries
 
 		// Show detail view again with fresh data
 		m.showAdDetail(ctx, session, adID)
@@ -408,10 +408,10 @@ func (m *ListingManager) executeAction(ctx context.Context, session *UserSession
 
 // editOrSend edits the existing menu message or sends a new one
 func (m *ListingManager) editOrSend(session *UserSession, text string, markup tgbotapi.InlineKeyboardMarkup, forceNew bool) {
-	if !forceNew && session.listingMenuMsgID != 0 {
+	if !forceNew && session.listings.MenuMsgID != 0 {
 		edit := tgbotapi.NewEditMessageTextAndMarkup(
 			session.userId,
-			session.listingMenuMsgID,
+			session.listings.MenuMsgID,
 			text,
 			markup,
 		)
@@ -428,7 +428,7 @@ func (m *ListingManager) editOrSend(session *UserSession, text string, markup tg
 		}
 
 		// For other errors (message too old, deleted), fall through to send new
-		log.Warn().Err(err).Int("msgID", session.listingMenuMsgID).Msg("failed to edit listing menu")
+		log.Warn().Err(err).Int("msgID", session.listings.MenuMsgID).Msg("failed to edit listing menu")
 	}
 
 	// Send new message
@@ -443,21 +443,21 @@ func (m *ListingManager) editOrSend(session *UserSession, text string, markup tg
 	}
 
 	// Delete old message if exists (to keep chat clean)
-	if session.listingMenuMsgID != 0 {
-		m.tg.Request(tgbotapi.NewDeleteMessage(session.userId, session.listingMenuMsgID))
+	if session.listings.MenuMsgID != 0 {
+		m.tg.Request(tgbotapi.NewDeleteMessage(session.userId, session.listings.MenuMsgID))
 	}
 
-	session.listingMenuMsgID = sent.MessageID
+	session.listings.MenuMsgID = sent.MessageID
 }
 
 // deleteMenuMessage deletes the listing menu message
 func (m *ListingManager) deleteMenuMessage(session *UserSession) {
-	if session.listingMenuMsgID != 0 {
-		m.tg.Request(tgbotapi.NewDeleteMessage(session.userId, session.listingMenuMsgID))
-		session.listingMenuMsgID = 0
+	if session.listings.MenuMsgID != 0 {
+		m.tg.Request(tgbotapi.NewDeleteMessage(session.userId, session.listings.MenuMsgID))
+		session.listings.MenuMsgID = 0
 	}
-	session.activeListingID = 0
-	session.cachedListings = nil
+	session.listings.ActiveListingID = 0
+	session.listings.CachedListings = nil
 }
 
 // formatSubtitle converts API subtitle to display format
@@ -684,7 +684,7 @@ func (m *ListingManager) startRepublish(ctx context.Context, session *UserSessio
 
 	// Show success message and refresh the list
 	session.reply(MsgRepublishSuccess)
-	session.activeListingID = 0
+	session.listings.ActiveListingID = 0
 	m.refreshListingView(ctx, session, true)
 }
 

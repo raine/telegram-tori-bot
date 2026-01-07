@@ -82,8 +82,8 @@ func TestHandleHakuCommand_ShowsSearchResults(t *testing.T) {
 	tg.AssertExpectations(t)
 
 	// Verify query was stored in session
-	if session.pendingSearchQuery != "iphone 14" {
-		t.Errorf("expected pendingSearchQuery='iphone 14', got '%s'", session.pendingSearchQuery)
+	if session.search.PendingQuery != "iphone 14" {
+		t.Errorf("expected pendingSearchQuery='iphone 14', got '%s'", session.search.PendingQuery)
 	}
 }
 
@@ -302,7 +302,7 @@ func TestHandleWatchCallback_CreateWatch(t *testing.T) {
 	}
 
 	// Set pending query (as if user just searched)
-	session.pendingSearchQuery = "iphone 14"
+	session.search.PendingQuery = "iphone 14"
 
 	query := &tgbotapi.CallbackQuery{
 		ID:   "callback-1",
@@ -335,8 +335,8 @@ func TestHandleWatchCallback_CreateWatch(t *testing.T) {
 	}
 
 	// Verify pending query was cleared
-	if session.pendingSearchQuery != "" {
-		t.Errorf("expected pendingSearchQuery to be cleared, got '%s'", session.pendingSearchQuery)
+	if session.search.PendingQuery != "" {
+		t.Errorf("expected pendingSearchQuery to be cleared, got '%s'", session.search.PendingQuery)
 	}
 }
 
@@ -350,7 +350,7 @@ func TestHandleWatchCallback_CreateWatchExpired(t *testing.T) {
 	}
 
 	// No pending query (expired)
-	session.pendingSearchQuery = ""
+	session.search.PendingQuery = ""
 
 	query := &tgbotapi.CallbackQuery{
 		ID:   "callback-1",
