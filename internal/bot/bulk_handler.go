@@ -96,61 +96,48 @@ func (h *BulkHandler) bufferAlbumPhoto(ctx context.Context, session *UserSession
 		return
 	}
 
-	// Initialize or update album buffer
-	if bulk.AlbumBuffer == nil || bulk.AlbumBuffer.MediaGroupID != mediaGroupID {
-		// If there's an existing buffer, flush it first
-		if bulk.AlbumBuffer != nil && len(bulk.AlbumBuffer.Photos) > 0 {
-			if bulk.AlbumBuffer.Timer != nil {
-				bulk.AlbumBuffer.Timer.Stop()
+	BufferAlbumPhoto(ctx, AlbumPhoto{
+		FileID: photo.FileID,
+		Width:  photo.Width,
+		Height: photo.Height,
+	}, mediaGroupID, h.albumBufferConfig(session))
+}
+
+// albumBufferConfig returns the configuration for album buffering in bulk mode.
+func (h *BulkHandler) albumBufferConfig(session *UserSession) AlbumBufferConfig {
+	return AlbumBufferConfig{
+		GetBuffer: func() *AlbumBuffer {
+			if session.bulkSession == nil {
+				return nil
 			}
-			// Create draft from the buffered photos
-			h.createDraftFromPhoto(ctx, session, bulk.AlbumBuffer.Photos)
-		}
-		bulk.AlbumBuffer = &AlbumBuffer{
-			MediaGroupID:  mediaGroupID,
-			Photos:        []AlbumPhoto{},
-			FirstReceived: time.Now(),
-		}
+			return session.bulkSession.AlbumBuffer
+		},
+		SetBuffer: func(buffer *AlbumBuffer) {
+			if session.bulkSession != nil {
+				session.bulkSession.AlbumBuffer = buffer
+			}
+		},
+		OnFlush: func(ctx context.Context, photos []AlbumPhoto) {
+			h.createDraftFromPhoto(ctx, session, photos)
+		},
+		OnTimeout: func(buffer *AlbumBuffer) {
+			session.Send(SessionMessage{
+				Type:        "bulk_album_timeout",
+				Ctx:         context.Background(),
+				AlbumBuffer: buffer,
+			})
+		},
+		Timeout:   bulkAlbumBufferTimeout,
+		MaxPhotos: maxAlbumPhotos,
 	}
-
-	// Add photo to buffer (respect max limit)
-	if len(bulk.AlbumBuffer.Photos) < maxAlbumPhotos {
-		bulk.AlbumBuffer.Photos = append(bulk.AlbumBuffer.Photos, AlbumPhoto{
-			FileID: photo.FileID,
-			Width:  photo.Width,
-			Height: photo.Height,
-		})
-	}
-
-	// Reset or start timer
-	if bulk.AlbumBuffer.Timer != nil {
-		bulk.AlbumBuffer.Timer.Stop()
-	}
-
-	albumBuffer := bulk.AlbumBuffer
-	bulk.AlbumBuffer.Timer = time.AfterFunc(bulkAlbumBufferTimeout, func() {
-		session.Send(SessionMessage{
-			Type:        "bulk_album_timeout",
-			Ctx:         context.Background(),
-			AlbumBuffer: albumBuffer,
-		})
-	})
 }
 
 // ProcessBulkAlbumTimeout handles album timeout in bulk mode.
 func (h *BulkHandler) ProcessBulkAlbumTimeout(ctx context.Context, session *UserSession, albumBuffer *AlbumBuffer) {
-	bulk := session.bulkSession
-	if bulk == nil || bulk.AlbumBuffer != albumBuffer {
+	photos := ProcessAlbumBufferTimeout(albumBuffer, h.albumBufferConfig(session))
+	if photos == nil {
 		return
 	}
-
-	photos := albumBuffer.Photos
-	bulk.AlbumBuffer = nil
-
-	if len(photos) == 0 {
-		return
-	}
-
 	h.createDraftFromPhoto(ctx, session, photos)
 }
 

@@ -141,67 +141,49 @@ func (h *ListingHandler) bufferAlbumPhoto(ctx context.Context, session *UserSess
 		return
 	}
 
-	// Initialize or update album buffer
-	if session.albumBuffer == nil || session.albumBuffer.MediaGroupID != mediaGroupID {
-		// If there's an existing buffer with photos from a different album, flush it first
-		if session.albumBuffer != nil && len(session.albumBuffer.Photos) > 0 {
-			if session.albumBuffer.Timer != nil {
-				session.albumBuffer.Timer.Stop()
-			}
+	BufferAlbumPhoto(ctx, AlbumPhoto{
+		FileID: photo.FileID,
+		Width:  photo.Width,
+		Height: photo.Height,
+	}, mediaGroupID, h.albumBufferConfig(session))
+}
+
+// albumBufferConfig returns the configuration for album buffering in listing mode.
+func (h *ListingHandler) albumBufferConfig(session *UserSession) AlbumBufferConfig {
+	return AlbumBufferConfig{
+		GetBuffer: func() *AlbumBuffer { return session.albumBuffer },
+		SetBuffer: func(buffer *AlbumBuffer) { session.albumBuffer = buffer },
+		OnFlush: func(ctx context.Context, photos []AlbumPhoto) {
 			// Process the previous album immediately (this may set isCreatingDraft=true,
 			// causing the current photo to be rejected, which is safer than dropping data)
-			h.ProcessAlbumTimeout(ctx, session, session.albumBuffer)
-		}
-		session.albumBuffer = &AlbumBuffer{
-			MediaGroupID:  mediaGroupID,
-			Photos:        []AlbumPhoto{},
-			FirstReceived: time.Now(),
-		}
+			h.processAlbumPhotos(ctx, session, photos)
+		},
+		OnTimeout: func(buffer *AlbumBuffer) {
+			// Dispatch album processing through the worker channel
+			// Use context.Background() since the original request context may be cancelled by now
+			session.Send(SessionMessage{
+				Type:        "album_timeout",
+				Ctx:         context.Background(),
+				AlbumBuffer: buffer,
+			})
+		},
+		Timeout:   albumBufferTimeout,
+		MaxPhotos: maxAlbumPhotos,
 	}
-
-	// Add photo to buffer (respect max limit)
-	if len(session.albumBuffer.Photos) < maxAlbumPhotos {
-		session.albumBuffer.Photos = append(session.albumBuffer.Photos, AlbumPhoto{
-			FileID: photo.FileID,
-			Width:  photo.Width,
-			Height: photo.Height,
-		})
-	}
-
-	// Reset or start timer - dispatch through worker channel when done
-	if session.albumBuffer.Timer != nil {
-		session.albumBuffer.Timer.Stop()
-	}
-
-	// Capture buffer reference for timer closure
-	albumBuffer := session.albumBuffer
-	session.albumBuffer.Timer = time.AfterFunc(albumBufferTimeout, func() {
-		// Dispatch album processing through the worker channel
-		// Use context.Background() since the original request context may be cancelled by now
-		session.Send(SessionMessage{
-			Type:        "album_timeout",
-			Ctx:         context.Background(),
-			AlbumBuffer: albumBuffer,
-		})
-	})
 }
 
 // ProcessAlbumTimeout handles the album timeout message from the worker channel.
 // Called from session worker - no locking needed.
 func (h *ListingHandler) ProcessAlbumTimeout(ctx context.Context, session *UserSession, albumBuffer *AlbumBuffer) {
-	// Verify this is still the active album buffer (wasn't replaced or cleared)
-	if session.albumBuffer != albumBuffer {
+	photos := ProcessAlbumBufferTimeout(albumBuffer, h.albumBufferConfig(session))
+	if photos == nil {
 		return
 	}
+	h.processAlbumPhotos(ctx, session, photos)
+}
 
-	// Clear the album buffer
-	photos := albumBuffer.Photos
-	session.albumBuffer = nil
-
-	if len(photos) == 0 {
-		return
-	}
-
+// processAlbumPhotos converts AlbumPhoto slice to PhotoSize and processes the batch.
+func (h *ListingHandler) processAlbumPhotos(ctx context.Context, session *UserSession, photos []AlbumPhoto) {
 	// Convert AlbumPhoto to tgbotapi.PhotoSize
 	photoSizes := make([]tgbotapi.PhotoSize, len(photos))
 	for i, p := range photos {

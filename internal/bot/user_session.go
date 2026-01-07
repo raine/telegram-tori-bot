@@ -76,6 +76,83 @@ type AlbumBuffer struct {
 	FirstReceived time.Time
 }
 
+// AlbumBufferConfig holds configuration for album buffering behavior.
+type AlbumBufferConfig struct {
+	// GetBuffer returns the current album buffer (may be nil).
+	GetBuffer func() *AlbumBuffer
+	// SetBuffer sets the album buffer.
+	SetBuffer func(buffer *AlbumBuffer)
+	// OnFlush is called when a buffer needs to be processed (different album arrived).
+	OnFlush func(ctx context.Context, photos []AlbumPhoto)
+	// OnTimeout is called when the timer fires.
+	OnTimeout func(buffer *AlbumBuffer)
+	// Timeout duration for waiting for more photos.
+	Timeout time.Duration
+	// MaxPhotos is the maximum number of photos to buffer.
+	MaxPhotos int
+}
+
+// BufferAlbumPhoto adds a photo to the album buffer and schedules processing.
+// This is a shared implementation used by both ListingHandler and BulkHandler.
+func BufferAlbumPhoto(ctx context.Context, photo AlbumPhoto, mediaGroupID string, config AlbumBufferConfig) {
+	buffer := config.GetBuffer()
+
+	// Initialize or update album buffer
+	if buffer == nil || buffer.MediaGroupID != mediaGroupID {
+		// If there's an existing buffer with photos from a different album, flush it first
+		if buffer != nil && len(buffer.Photos) > 0 {
+			if buffer.Timer != nil {
+				buffer.Timer.Stop()
+			}
+			config.OnFlush(ctx, buffer.Photos)
+		}
+		buffer = &AlbumBuffer{
+			MediaGroupID:  mediaGroupID,
+			Photos:        []AlbumPhoto{},
+			FirstReceived: time.Now(),
+		}
+		config.SetBuffer(buffer)
+	}
+
+	// Add photo to buffer (respect max limit)
+	if len(buffer.Photos) < config.MaxPhotos {
+		buffer.Photos = append(buffer.Photos, photo)
+	}
+
+	// Reset or start timer - dispatch through worker channel when done
+	if buffer.Timer != nil {
+		buffer.Timer.Stop()
+	}
+
+	// Capture buffer reference for timer closure
+	capturedBuffer := buffer
+	buffer.Timer = time.AfterFunc(config.Timeout, func() {
+		config.OnTimeout(capturedBuffer)
+	})
+}
+
+// ProcessAlbumBufferTimeout is a shared helper for handling album timeout.
+// It validates the buffer is still current, clears it, and returns the photos.
+// Returns nil if the buffer is stale or empty.
+func ProcessAlbumBufferTimeout(albumBuffer *AlbumBuffer, config AlbumBufferConfig) []AlbumPhoto {
+	currentBuffer := config.GetBuffer()
+
+	// Verify this is still the active album buffer (wasn't replaced or cleared)
+	if currentBuffer != albumBuffer {
+		return nil
+	}
+
+	// Clear the album buffer
+	photos := albumBuffer.Photos
+	config.SetBuffer(nil)
+
+	if len(photos) == 0 {
+		return nil
+	}
+
+	return photos
+}
+
 // MessageHandler is the interface for processing session messages.
 // This allows the session to dispatch to external handlers without circular dependencies.
 type MessageHandler interface {
