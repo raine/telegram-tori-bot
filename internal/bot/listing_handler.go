@@ -730,6 +730,9 @@ func (h *ListingHandler) handleGiveawaySelection(ctx context.Context, session *U
 	// Giveaways are always no-shipping (meetup only)
 	session.draft.CurrentDraft.ShippingPossible = false
 
+	// Apply template now that shipping/giveaway state is known
+	h.applyUserTemplate(session)
+
 	// Remove reply keyboard and confirm giveaway
 	session.replyAndRemoveCustomKeyboard(MsgPriceGiveaway)
 
@@ -760,31 +763,6 @@ func (h *ListingHandler) HandleShippingSelection(ctx context.Context, session *U
 		h.tg.Request(edit)
 	}
 
-	// Apply template if user has one
-	if h.sessionStore != nil {
-		tmpl, err := h.sessionStore.GetTemplate(session.userId)
-		if err == nil && tmpl != nil {
-			expanded := expandTemplate(tmpl.Content, TemplateData{
-				Shipping: isYes,
-				Giveaway: session.draft.CurrentDraft.TradeType == TradeTypeGive,
-				Price:    session.draft.CurrentDraft.Price,
-			})
-			// Always update template state (may be empty if no content for this shipping option)
-			session.draft.CurrentDraft.TemplateContent = strings.TrimSpace(expanded)
-
-			// Update the description message in chat with combined content
-			if session.draft.CurrentDraft.DescriptionMessageID != 0 {
-				editMsg := tgbotapi.NewEditMessageText(
-					session.userId,
-					session.draft.CurrentDraft.DescriptionMessageID,
-					fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(session.draft.CurrentDraft.GetFullDescription())),
-				)
-				editMsg.ParseMode = tgbotapi.ModeMarkdown
-				h.tg.Request(editMsg)
-			}
-		}
-	}
-
 	// If shipping is enabled, fetch delivery page and check for saved address
 	if isYes {
 		if err := h.setupToriDiiliShipping(ctx, session); err != nil {
@@ -792,11 +770,15 @@ func (h *ListingHandler) HandleShippingSelection(ctx context.Context, session *U
 			// Continue without shipping
 			session.draft.CurrentDraft.ShippingPossible = false
 		} else {
+			// Apply template with confirmed shipping before prompting package size
+			h.applyUserTemplate(session)
 			// Successfully got address, prompt for package size
 			return
 		}
 	}
 
+	// Apply template after shipping choice is finalized
+	h.applyUserTemplate(session)
 	h.continueToPostalCodeOrSummary(session)
 }
 
@@ -1372,6 +1354,9 @@ func (h *ListingHandler) proceedAfterAttributes(ctx context.Context, session *Us
 		// Clear preserved values as we're done with them
 		session.draft.CurrentDraft.PreservedValues = nil
 
+		// Apply template now that shipping is known
+		h.applyUserTemplate(session)
+
 		// Check postal code before showing summary (matching HandleShippingSelection logic)
 		if h.sessionStore != nil {
 			postalCode, _ := h.sessionStore.GetPostalCode(session.userId)
@@ -1400,6 +1385,43 @@ func (h *ListingHandler) proceedAfterAttributes(ctx context.Context, session *Us
 		),
 	)
 	session.replyWithMessage(msg)
+}
+
+// applyUserTemplate expands and stores the user's template, updating the description message.
+// No-op if there is no active draft or template storage.
+func (h *ListingHandler) applyUserTemplate(session *UserSession) {
+	if h.sessionStore == nil || session.draft.CurrentDraft == nil {
+		return
+	}
+
+	tmpl, err := h.sessionStore.GetTemplate(session.userId)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to load template")
+		return
+	}
+
+	var expanded string
+	if tmpl != nil {
+		expanded = expandTemplate(tmpl.Content, TemplateData{
+			Shipping: session.draft.CurrentDraft.ShippingPossible,
+			Giveaway: session.draft.CurrentDraft.TradeType == TradeTypeGive,
+			Price:    session.draft.CurrentDraft.Price,
+		})
+	}
+
+	// Always update template state (may be empty if no content for this shipping option)
+	session.draft.CurrentDraft.TemplateContent = strings.TrimSpace(expanded)
+
+	// Update the description message in chat with combined content
+	if session.draft.CurrentDraft.DescriptionMessageID != 0 {
+		editMsg := tgbotapi.NewEditMessageText(
+			session.userId,
+			session.draft.CurrentDraft.DescriptionMessageID,
+			fmt.Sprintf("📝 *Kuvaus:* %s", escapeMarkdown(session.draft.CurrentDraft.GetFullDescription())),
+		)
+		editMsg.ParseMode = tgbotapi.ModeMarkdown
+		h.tg.Request(editMsg)
+	}
 }
 
 // promptForAttribute shows a keyboard to select an attribute value.
