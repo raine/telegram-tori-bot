@@ -201,6 +201,7 @@ const (
 	MsgPriceChange        = "Hinta: %d€ → %d€"
 	MsgTitleChange        = "Otsikko: %s"
 	MsgDescriptionChange  = "Kuvaus päivitetty"
+	MsgEditTempError      = "Muokkauskomennon käsittely epäonnistui väliaikaisesti. Yritä uudelleen."
 )
 
 // =============================================================================

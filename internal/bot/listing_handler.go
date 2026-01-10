@@ -1751,7 +1751,9 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 	intent, err := h.editIntentParser.ParseEditIntent(ctx, message, draftInfo)
 	if err != nil {
 		log.Warn().Err(err).Str("message", message).Msg("failed to parse edit intent")
-		return false
+		// Show error to user and return true to prevent falling through to "send image" prompt
+		session.reply(MsgEditTempError)
+		return true
 	}
 
 	// Check if any changes were requested
