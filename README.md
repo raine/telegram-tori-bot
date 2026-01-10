@@ -1,212 +1,210 @@
 # telegram-tori-bot
 
-Telegram bot created with the intent of making selling stuff on tori.fi as
-streamlined as possible. Putting stuff for sale with this thing is actually a
-joy. Takes advantage of Telegram's photo sending and bot features like Custom
-Reply Keyboards and Inline Keyboards.
+Telegram-botti, joka tekee tavaroiden myymisestä Torissa mahdollisimman
+vaivatonta. Tavaroiden laittaminen myyntiin tällä on oikeasti mukavaa. Hyödyntää
+Telegramin kuvanlähetystä ja botti-ominaisuuksia kuten mukautettuja
+näppäimistöjä.
 
-## Features
+## Ominaisuudet
 
-### Vision-based listing creation
+### Tekoälypohjainen ilmoituksen luonti
 
-Send a photo and the bot uses Gemini Vision API to automatically generate a
-title and description for your listing. Multiple photos (albums) are analyzed
-together for better context.
+Lähetä kuva ja botti käyttää Gemini Vision API:a luodakseen automaattisesti
+otsikon ja kuvauksen ilmoituksellesi. Useammat kuvat (albumit) analysoidaan
+yhdessä paremman kontekstin saamiseksi.
 
-### AI-powered automation
+### Tekoälyautomaatio
 
-- **Auto-category selection**: LLM automatically selects the most appropriate
-  category based on the item
-- **Auto-attribute selection**: Category-specific attributes (size, color,
-  condition, etc.) are automatically filled in
-- **Price recommendations**: Shows prices of similar listings to help you price
-  your item competitively
+- **Automaattinen osastovalinta**: Tekoäly valitsee automaattisesti sopivimman
+  osaston tuotteen perusteella
+- **Automaattinen ominaisuuksien täyttö**: Osastokohtaiset ominaisuudet (koko,
+  väri, kunto jne.) täytetään automaattisesti
+- **Hintasuositukset**: Näyttää vastaavien ilmoitusten hintoja, jotta voit
+  hinnoitella tuotteesi kilpailukykyisesti
 
-### Natural language editing
+### Luonnollinen kieli muokkauksessa
 
-Edit your listing draft by typing in Finnish, e.g., "vaihda hinnaksi 40e" or
-"lisää että koirataloudesta". The bot understands and applies the changes.
+Muokkaa ilmoitusluonnosta kirjoittamalla suomeksi, esim. "vaihda hinnaksi 40e"
+tai "lisää että koirataloudesta". Botti ymmärtää ja tekee muutokset.
 
-### Giveaway mode
+### Lahjoitustila
 
-List items for free by selecting the "Annetaan" button when prompted for price.
-The description is automatically rewritten to use "Annetaan" language.
+Listaa tavaroita ilmaiseksi valitsemalla "Annetaan"-painike hintakyselyssä.
+Kuvaus muokataan automaattisesti "Annetaan"-muotoon.
 
-### Tori Diili shipping
+### Tori Diili -postitus
 
-Enable Tori Diili shipping to offer buyers secure shipping with integrated
-payment. When you select "Kyllä" for shipping, the bot fetches your saved
-shipping address from Tori and prompts you to select a package size:
+Ota Tori Diili -postitus käyttöön tarjotaksesi ostajille turvallisen postituksen
+integroidulla maksulla. Kun valitset "Kyllä" postitukselle, botti hakee
+tallennetun toimitusosoitteesi Torista ja pyytää valitsemaan paketin koon:
 
-- **S** (max 4kg, 40×32×15cm) - 2.99€
-- **M** (max 25kg, 40×32×26cm) - 4.99€
-- **L** (max 25kg, 100×60×60cm) - 12.99€
+- **S** (max 4kg, 40×32×15cm) - 2,99€
+- **M** (max 25kg, 40×32×26cm) - 4,99€
+- **L** (max 25kg, 100×60×60cm) - 12,99€
 
-Prices shown are examples and may change.
+Näytetyt hinnat ovat esimerkkejä ja voivat muuttua.
 
-**Note**: You must have a saved shipping profile in Tori. Set this up by
-creating a Tori Diili listing in the official Tori app first.
+**Huom**: Sinulla täytyy olla tallennettu toimitusprofiili Torissa. Luo
+sellainen tekemällä ensin Tori Diili -ilmoitus virallisessa Tori-sovelluksessa.
 
-### Description templates
+### Kuvausmallit
 
-Save a description template with `/malli` that gets appended to all your
-listings. Supports conditional text for shipping:
+Tallenna kuvausmalli komennolla `/malli`, joka lisätään kaikkiin ilmoituksiisi.
+Tukee ehdollista tekstiä postitukselle:
 
 ```
 /malli Nouto Kannelmäestä{{#if shipping}} tai postitus{{/end}}. Mobilepay/käteinen.
 ```
 
-### Listing management
+### Ilmoitusten hallinta
 
-Use `/ilmoitukset` to browse and manage your existing Tori listings directly in
-Telegram:
+Käytä `/ilmoitukset`-komentoa selataksesi ja hallitaksesi olemassa olevia
+Tori-ilmoituksiasi suoraan Telegramissa:
 
-- View all your active and pending listings with click/favorite stats
-- Mark items as sold or reactivate sold listings
-- Delete listings with confirmation
-- Toggle between active listings and older/expired ones
-- Republish expired listings with a single button click (copies all data
-  including images)
+- Näe kaikki aktiiviset ja odottavat ilmoituksesi klikkaus- ja
+  suosikkitilastoilla
+- Merkitse tuotteet myydyiksi tai aktivoi myydyt ilmoitukset uudelleen
+- Poista ilmoituksia vahvistuksella
+- Vaihda aktiivisten ja vanhempien/vanhentuneiden ilmoitusten välillä
+- Julkaise vanhentuneet ilmoitukset uudelleen yhdellä napinpainalluksella
+  (kopioi kaikki tiedot kuvat mukaan lukien)
 
-### Other features
+### Muut ominaisuudet
 
-- **Built-in login flow**: Login directly through the bot with `/login` (email
-  verification code)
+- **Sisäänrakennettu kirjautuminen**: Kirjaudu suoraan botin kautta komennolla
+  `/login` (sähköpostin vahvistuskoodi)
 
-## Quick start
+## Pikaopas
 
-1. **Download** the
-   [latest release](https://github.com/raine/telegram-tori-bot/releases/latest)
-   for your platform:
+1. **Lataa**
+   [uusin versio](https://github.com/raine/telegram-tori-bot/releases/latest)
+   alustallesi:
 
-   | Platform              | Download                                                                                                                                       |
+   | Alusta                | Lataus                                                                                                                                         |
    | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
    | Linux (x64)           | [telegram-tori-bot-linux-amd64](https://github.com/raine/telegram-tori-bot/releases/latest/download/telegram-tori-bot-linux-amd64)             |
    | Linux (ARM64)         | [telegram-tori-bot-linux-arm64](https://github.com/raine/telegram-tori-bot/releases/latest/download/telegram-tori-bot-linux-arm64)             |
    | macOS (Apple Silicon) | [telegram-tori-bot-darwin-arm64](https://github.com/raine/telegram-tori-bot/releases/latest/download/telegram-tori-bot-darwin-arm64)           |
    | Windows (x64)         | [telegram-tori-bot-windows-amd64.exe](https://github.com/raine/telegram-tori-bot/releases/latest/download/telegram-tori-bot-windows-amd64.exe) |
 
-2. **Run** the downloaded file (double-click or run from terminal)
+2. **Suorita** ladattu tiedosto (tuplaklikkaa tai aja terminaalista)
 
-3. **Follow the setup wizard** - it will guide you through:
-   - Creating a Telegram bot via @BotFather
-   - Getting a Gemini API key
-   - Finding your Telegram user ID
+3. **Seuraa asennusvelhoa** - se opastaa sinut läpi:
+   - Telegram-botin luominen @BotFatherin kautta
+   - Gemini API -avaimen hankkiminen
+   - Telegram-käyttäjätunnuksesi löytäminen
 
-4. **Start using the bot**
-   - Find your bot on Telegram by its username
-   - Send `/start`, then `/login` to connect your Tori account
-   - Send a photo of something you want to sell
+4. **Aloita botin käyttö**
+   - Etsi bottisi Telegramista sen käyttäjänimellä
+   - Lähetä `/start`, sitten `/login` yhdistääksesi Tori-tilisi
+   - Lähetä kuva jostain mitä haluat myydä
 
-### Windows users
+### Windows-käyttäjille
 
-Windows may show a "Windows protected your PC" warning for unsigned executables.
-Click "More info" then "Run anyway" to proceed.
+Windows saattaa näyttää "Windows suojasi tietokonettasi" -varoituksen
+allekirjoittamattomille ohjelmille. Klikkaa "Lisätietoja" ja sitten "Suorita
+silti" jatkaaksesi.
 
-### Alternative: Install with Go
+### Vaihtoehto: Asenna Go:lla
 
-If you have Go installed, you can also install via:
+Jos sinulla on Go asennettuna, voit asentaa myös näin:
 
 ```sh
 go install github.com/raine/telegram-tori-bot@latest
 ```
 
-## LLM costs
+## Tekoälyn kustannukset
 
-The bot uses Google's Gemini API for vision and text processing. The free tier
-may work fine (10 RPM, 250 requests/day). Costs on paid tier are minimal - a
-typical listing creation costs well under $0.01 USD:
+Botti käyttää Googlen Gemini API:a kuva- ja tekstinkäsittelyyn. Ilmaistaso
+saattaa riittää hyvin (10 pyyntöä/min, 250 pyyntöä/päivä). Maksullisen tason
+kustannukset ovat minimaaliset - tyypillinen ilmoituksen luonti maksaa reilusti
+alle 0,01 USD:
 
 ```
 INF image(s) analyzed cost=0.0008925 imageCount=1 title="LUMI Recovery Pod kylmäallas"
 INF category selection llm call costUSD=0.000019725 inputTokens=223 model=gemini-2.5-flash-lite outputTokens=10
 ```
 
-## Configuration
+## Asetukset
 
-The setup wizard automatically creates a `.env` file with your configuration.
-You can also set these as environment variables:
+Asennusvelho luo automaattisesti `.env`-tiedoston asetuksillasi. Voit myös
+asettaa nämä ympäristömuuttujina:
 
-| Variable            | Required | Description                                       |
-| ------------------- | -------- | ------------------------------------------------- |
-| `BOT_TOKEN`         | Yes      | Telegram bot token from @BotFather                |
-| `GEMINI_API_KEY`    | Yes      | Google Gemini API key for vision/LLM features     |
-| `TORI_TOKEN_KEY`    | Yes      | Secret passphrase for encrypting Tori auth tokens |
-| `ADMIN_TELEGRAM_ID` | Yes      | Your Telegram user ID (becomes admin)             |
-| `TORI_DB_PATH`      | No       | SQLite database path (default: `sessions.db`)     |
+| Muuttuja            | Pakollinen | Kuvaus                                                |
+| ------------------- | ---------- | ----------------------------------------------------- |
+| `BOT_TOKEN`         | Kyllä      | Telegram-botin token @BotFatherilta                   |
+| `GEMINI_API_KEY`    | Kyllä      | Google Gemini API -avain tekoälyominaisuuksille       |
+| `TORI_TOKEN_KEY`    | Kyllä      | Salainen avain Tori-tunnistautumistokenien salaukseen |
+| `ADMIN_TELEGRAM_ID` | Kyllä      | Telegram-käyttäjätunnuksesi (tulee ylläpitäjäksi)     |
+| `TORI_DB_PATH`      | Ei         | SQLite-tietokannan polku (oletus: `sessions.db`)      |
 
-## Deployment
+## Käyttöönotto
 
-Tori's login uses reCAPTCHA validation based on IP reputation. The bot must run
-from an IP address where you have previously logged into Tori via browser or the
-official app. Untrusted IPs will fail with "reCaptcha was invalid" errors during
-login. A Raspberry Pi on your home network is an easy option since you likely
-already use Tori from that IP.
+Torin kirjautuminen käyttää reCAPTCHA-validointia IP-maineen perusteella. Botin
+täytyy toimia IP-osoitteesta, josta olet aiemmin kirjautunut Toriin selaimella
+tai virallisella sovelluksella. Epäluotettavat IP:t epäonnistuvat "reCaptcha was
+invalid" -virheellä kirjautumisen yhteydessä. Raspberry Pi kotiverkossasi on
+helppo vaihtoehto, koska käytät todennäköisesti jo Toria samasta IP-osoitteesta.
 
-### Raspberry Pi deployment
+### Raspberry Pi -käyttöönotto
 
-The [`deployment/`](deployment/) directory contains an example setup for
-deploying to a Raspberry Pi as a systemd service.
+[`deployment/`](deployment/)-hakemisto sisältää esimerkkiasetukset Raspberry
+Pi:lle systemd-palveluna.
 
-## User access control
+## Käyttöoikeuksien hallinta
 
-The bot uses a whitelist system. Only the admin (specified by
-`ADMIN_TELEGRAM_ID`) and explicitly allowed users can interact with the bot.
-Unauthorized users receive no response.
+Botti käyttää sallittujen käyttäjien listaa. Vain ylläpitäjä (määritetty
+`ADMIN_TELEGRAM_ID`:llä) ja erikseen sallitut käyttäjät voivat käyttää bottia.
+Luvattomat käyttäjät eivät saa vastausta.
 
-### Admin commands
+### Ylläpitäjäkomennot
 
-The admin can manage allowed users with these commands (not shown in bot menu):
+Ylläpitäjä voi hallita sallittuja käyttäjiä näillä komennoilla (eivät näy botin
+valikossa):
 
-- `/admin users add <user_id>` - Add a user to the whitelist
-- `/admin users remove <user_id>` - Remove a user from the whitelist
-- `/admin users list` - List all allowed users
+- `/admin users add <käyttäjä_id>` - Lisää käyttäjä sallittujen listalle
+- `/admin users remove <käyttäjä_id>` - Poista käyttäjä sallittujen listalta
+- `/admin users list` - Listaa kaikki sallitut käyttäjät
 
-## Commands
+## Komennot
 
-| Command        | Description                         |
-| -------------- | ----------------------------------- |
-| `/login`       | Login to your Tori account          |
-| `/peru`        | Cancel current listing creation     |
-| `/laheta`      | Publish the listing                 |
-| `/era`         | Enter bulk mode (multiple listings) |
-| `/valmis`      | Finish adding photos in bulk mode   |
-| `/poistakuvat` | Remove listing photos               |
-| `/osasto`      | Change category                     |
-| `/malli`       | View or set description template    |
-| `/poistamalli` | Remove description template         |
-| `/postinumero` | View or change postal code          |
-| `/ilmoitukset` | Manage your Tori listings           |
+| Komento        | Kuvaus                                |
+| -------------- | ------------------------------------- |
+| `/login`       | Kirjaudu Tori-tilillesi               |
+| `/peru`        | Peruuta nykyinen ilmoituksen luonti   |
+| `/laheta`      | Julkaise ilmoitus                     |
+| `/era`         | Siirry erätilaan (useita ilmoituksia) |
+| `/valmis`      | Lopeta kuvien lisääminen erätilassa   |
+| `/poistakuvat` | Poista ilmoituksen kuvat              |
+| `/osasto`      | Vaihda osastoa                        |
+| `/malli`       | Näytä tai aseta kuvausmalli           |
+| `/poistamalli` | Poista kuvausmalli                    |
+| `/postinumero` | Näytä tai vaihda postinumero          |
+| `/ilmoitukset` | Hallitse Tori-ilmoituksiasi           |
 
-## FAQ
+## UKK
 
-### How do I start over when making some kind of mistake that cannot be reversed?
+### Miten aloitan alusta jos teen virheen jota ei voi perua?
 
-Use the command `/peru`. It will forget everything from the current listing
-creation and delete any draft created on Tori.
+Käytä komentoa `/peru`. Se unohtaa kaiken nykyisestä ilmoituksen luonnista ja
+poistaa mahdollisen luodun luonnoksen Torista.
 
-### Which of the uploaded photos will be used as primary picture in listing?
+### Mikä ladatuista kuvista tulee ilmoituksen pääkuvaksi?
 
-The first uploaded picture. When uploading multiple photos in Telegram client,
-photos can be reorded both on desktop and mobile. Or you can just upload them
-separately -- that way works also.
+Ensimmäinen ladattu kuva. Kun lataat useita kuvia Telegram-sovelluksessa, kuvien
+järjestystä voi muuttaa.
 
-### Does it add a phone number to listing?
+## Kehitys
 
-No. Adding phone number to listing is an invitation for annoying Whatsapp scam
-messages.
-
-## Development
-
-The project uses [`just`](https://github.com/casey/just) as a command runner.
+Projekti käyttää [`just`](https://github.com/casey/just)-komentorivityökalua.
 
 ```sh
 git clone https://github.com/raine/telegram-tori-bot.git
 cd telegram-tori-bot
-just build    # Build the project
-just check    # Run format, vet, build, and tests
-just test     # Run tests only
-just run      # Run the bot
+just build    # Käännä projekti
+just check    # Aja formatointi, vet, käännös ja testit
+just test     # Aja vain testit
+just run      # Käynnistä botti
 ```
 
-Run `just -l` to see all available commands.
+Aja `just -l` nähdäksesi kaikki käytettävissä olevat komennot.
