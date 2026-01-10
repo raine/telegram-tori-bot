@@ -153,28 +153,11 @@ func TestImageDownloader_DownloadFromURL_ContentLengthExceedsLimit(t *testing.T)
 	}
 }
 
-func TestImageDownloader_DownloadFromURL_InvalidContentType(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("<html>not an image</html>"))
-	}))
-	defer ts.Close()
-
-	downloader := NewImageDownloader()
-	_, err := downloader.DownloadFromURL(context.Background(), ts.URL)
-	if err == nil {
-		t.Fatal("expected error for non-image content type")
-	}
-	if !strings.Contains(err.Error(), "invalid content type") {
-		t.Errorf("expected error message to contain 'invalid content type', got: %v", err)
-	}
-}
-
-func TestImageDownloader_DownloadFromURL_AcceptsImageContentType(t *testing.T) {
+func TestImageDownloader_DownloadFromURL_AcceptsOctetStream(t *testing.T) {
+	// Telegram's file API sometimes returns application/octet-stream for images
 	imageData := []byte{0x89, 0x50, 0x4E, 0x47} // PNG magic bytes
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Content-Type", "application/octet-stream")
 		w.WriteHeader(http.StatusOK)
 		w.Write(imageData)
 	}))
@@ -183,7 +166,7 @@ func TestImageDownloader_DownloadFromURL_AcceptsImageContentType(t *testing.T) {
 	downloader := NewImageDownloader()
 	data, err := downloader.DownloadFromURL(context.Background(), ts.URL)
 	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+		t.Fatalf("expected no error for application/octet-stream, got %v", err)
 	}
 	if len(data) != len(imageData) {
 		t.Errorf("expected %d bytes, got %d", len(imageData), len(data))

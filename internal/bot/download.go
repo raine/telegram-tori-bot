@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -69,12 +68,6 @@ func (d *ImageDownloader) DownloadFromURL(ctx context.Context, imageURL string) 
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("download failed: status %d", resp.StatusCode)
-	}
-
-	// Validate Content-Type is an image
-	contentType := resp.Header.Get("Content-Type")
-	if contentType != "" && !strings.HasPrefix(contentType, "image/") {
-		return nil, fmt.Errorf("invalid content type: expected image/*, got %s", contentType)
 	}
 
 	// Check Content-Length if available
