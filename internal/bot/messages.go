@@ -151,6 +151,11 @@ const (
 	MsgShippingQuestion     = "Onko postitus mahdollinen?"
 	MsgSelectShippingFirst  = "Valitse ensin postitusvaihtoehto."
 	MsgEnterPostalCodeFirst = "Syötä ensin postinumero."
+
+	// Tori Diili shipping messages
+	MsgPackageSizePrompt  = "📦 *Valitse paketin koko:*\n\nOstaja maksaa toimituskulut."
+	MsgShippingSetupError = "Virhe haettaessa lähetystietoja. Jatketaan ilman lähetystä."
+	MsgShippingNoProfile  = "📦 Lähetystietoja ei löytynyt.\n\nAseta lähetystiedot Tori-sovelluksessa ensin (luo ilmoitus ToriDiilillä). Jatketaan ilman lähetystä."
 )
 
 // Button labels for shipping

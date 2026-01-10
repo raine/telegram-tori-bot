@@ -1171,3 +1171,349 @@ type mockSessionStoreWithPostalCode struct {
 func (m *mockSessionStoreWithPostalCode) GetPostalCode(telegramID int64) (string, error) {
 	return m.postalCode, nil
 }
+
+// =============================================================================
+// Tori Diili Shipping Tests
+// =============================================================================
+
+func TestHandleShippingSelection_ToriDiili_WithSavedAddress(t *testing.T) {
+	userId := int64(1)
+	tg := new(botApiMock)
+
+	// Create mock ad service with saved shipping address
+	mockService := &tori.MockAdService{
+		GetDeliveryPageFunc: func(ctx context.Context, adID string) (*tori.DeliveryPageResponse, error) {
+			return &tori.DeliveryPageResponse{
+				Context: tori.DeliveryContext{
+					AdID:            12345,
+					DefaultShipping: true,
+				},
+				Sections: tori.DeliverySections{
+					Shipping: tori.ShippingSection{
+						Address: tori.SavedAddress{
+							Name:        "Test User",
+							Address:     "Testikatu 1 A 5",
+							PostalCode:  "00100",
+							City:        "Helsinki",
+							PhoneNumber: "0401234567",
+							MobilePhone: "0401234567",
+						},
+					},
+				},
+			}, nil
+		},
+	}
+
+	session := &UserSession{
+		userId: userId,
+		draft: DraftState{
+			AdInputClient: mockService,
+			DraftID:       "draft-123",
+			CurrentDraft: &AdInputDraft{
+				State:       AdFlowStateAwaitingShipping,
+				Title:       "Test Item",
+				Description: "Test description",
+			},
+		},
+		sender: tg,
+	}
+
+	listingHandler := NewListingHandler(tg, nil, nil, nil)
+
+	// Expect keyboard removal
+	tg.On("Request", mock.AnythingOfType("tgbotapi.EditMessageReplyMarkupConfig")).
+		Return(&tgbotapi.APIResponse{Ok: true}, nil).Maybe()
+
+	// Expect package size selection prompt
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		return strings.Contains(msg.Text, "Valitse paketin koko")
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	query := &tgbotapi.CallbackQuery{
+		ID:   "callback-1",
+		From: &tgbotapi.User{ID: userId},
+		Data: "shipping:yes",
+		Message: &tgbotapi.Message{
+			MessageID: 100,
+			Chat:      &tgbotapi.Chat{ID: userId},
+		},
+	}
+
+	listingHandler.HandleShippingSelection(context.Background(), session, query)
+
+	tg.AssertExpectations(t)
+
+	// Verify state and saved address
+	if session.draft.CurrentDraft.State != AdFlowStateAwaitingPackageSize {
+		t.Errorf("expected state AwaitingPackageSize, got %v", session.draft.CurrentDraft.State)
+	}
+	if session.draft.CurrentDraft.SavedShippingAddress == nil {
+		t.Error("expected SavedShippingAddress to be set")
+	}
+	if session.draft.CurrentDraft.SavedShippingAddress.Name != "Test User" {
+		t.Errorf("expected name 'Test User', got %s", session.draft.CurrentDraft.SavedShippingAddress.Name)
+	}
+	if !mockService.WasCalled("GetDeliveryPage") {
+		t.Error("expected GetDeliveryPage to be called")
+	}
+}
+
+func TestHandleShippingSelection_ToriDiili_NoSavedAddress(t *testing.T) {
+	userId := int64(1)
+	tg := new(botApiMock)
+
+	store := &mockSessionStoreWithPostalCode{
+		mockSessionStore: newMockSessionStore(),
+		postalCode:       "00100",
+	}
+
+	// Create mock ad service with NO saved shipping address
+	mockService := &tori.MockAdService{
+		GetDeliveryPageFunc: func(ctx context.Context, adID string) (*tori.DeliveryPageResponse, error) {
+			return &tori.DeliveryPageResponse{
+				Context: tori.DeliveryContext{
+					AdID: 12345,
+				},
+				Sections: tori.DeliverySections{
+					Shipping: tori.ShippingSection{
+						Address: tori.SavedAddress{
+							// Empty - no saved address
+						},
+					},
+				},
+			}, nil
+		},
+	}
+
+	session := &UserSession{
+		userId: userId,
+		draft: DraftState{
+			AdInputClient: mockService,
+			DraftID:       "draft-123",
+			CurrentDraft: &AdInputDraft{
+				State:       AdFlowStateAwaitingShipping,
+				Title:       "Test Item",
+				Description: "Test description",
+			},
+		},
+		sender: tg,
+	}
+
+	listingHandler := NewListingHandler(tg, nil, nil, store)
+
+	// Expect keyboard removal
+	tg.On("Request", mock.AnythingOfType("tgbotapi.EditMessageReplyMarkupConfig")).
+		Return(&tgbotapi.APIResponse{Ok: true}, nil).Maybe()
+
+	// Expect error message about no shipping profile
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		return strings.Contains(msg.Text, "Lähetystietoja ei löytynyt")
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	// Expect summary (since we have postal code and shipping continues without ToriDiili)
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		return strings.Contains(msg.Text, "Ilmoitus valmis")
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	query := &tgbotapi.CallbackQuery{
+		ID:   "callback-1",
+		From: &tgbotapi.User{ID: userId},
+		Data: "shipping:yes",
+		Message: &tgbotapi.Message{
+			MessageID: 100,
+			Chat:      &tgbotapi.Chat{ID: userId},
+		},
+	}
+
+	listingHandler.HandleShippingSelection(context.Background(), session, query)
+
+	tg.AssertExpectations(t)
+
+	// Verify shipping was disabled due to no saved address
+	if session.draft.CurrentDraft.ShippingPossible {
+		t.Error("expected ShippingPossible to be false when no saved address")
+	}
+	if session.draft.CurrentDraft.SavedShippingAddress != nil {
+		t.Error("expected SavedShippingAddress to be nil")
+	}
+}
+
+func TestHandlePackageSizeSelection(t *testing.T) {
+	userId := int64(1)
+	tg := new(botApiMock)
+
+	store := &mockSessionStoreWithPostalCode{
+		mockSessionStore: newMockSessionStore(),
+		postalCode:       "00100",
+	}
+
+	session := &UserSession{
+		userId: userId,
+		draft: DraftState{
+			CurrentDraft: &AdInputDraft{
+				State:            AdFlowStateAwaitingPackageSize,
+				Title:            "Test Item",
+				Description:      "Test description",
+				ShippingPossible: true,
+				SavedShippingAddress: &tori.SavedAddress{
+					Name:        "Test User",
+					Address:     "Testikatu 1",
+					City:        "Helsinki",
+					PostalCode:  "00100",
+					PhoneNumber: "0401234567",
+				},
+			},
+		},
+		sender: tg,
+	}
+
+	listingHandler := NewListingHandler(tg, nil, nil, store)
+
+	// Expect keyboard removal
+	tg.On("Request", mock.AnythingOfType("tgbotapi.EditMessageReplyMarkupConfig")).
+		Return(&tgbotapi.APIResponse{Ok: true}, nil).Maybe()
+
+	// Expect summary with ToriDiili shipping info
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		return strings.Contains(msg.Text, "Ilmoitus valmis") &&
+			strings.Contains(msg.Text, "ToriDiili (M)")
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	query := &tgbotapi.CallbackQuery{
+		ID:   "callback-1",
+		From: &tgbotapi.User{ID: userId},
+		Data: "pkgsize:MEDIUM",
+		Message: &tgbotapi.Message{
+			MessageID: 100,
+			Chat:      &tgbotapi.Chat{ID: userId},
+		},
+	}
+
+	listingHandler.HandlePackageSizeSelection(context.Background(), session, query)
+
+	tg.AssertExpectations(t)
+
+	// Verify package size was set
+	if session.draft.CurrentDraft.PackageSize != PackageSizeMedium {
+		t.Errorf("expected package size MEDIUM, got %s", session.draft.CurrentDraft.PackageSize)
+	}
+	if session.draft.CurrentDraft.State != AdFlowStateReadyToPublish {
+		t.Errorf("expected state ReadyToPublish, got %v", session.draft.CurrentDraft.State)
+	}
+}
+
+func TestPublishWithToriDiiliShipping_SetsCorrectDeliveryOptions(t *testing.T) {
+	userId := int64(1)
+	tg := new(botApiMock)
+
+	var capturedDeliveryOpts tori.DeliveryOptions
+
+	// Create mock ad service that captures delivery options
+	mockService := &tori.MockAdService{
+		UpdateAdFunc: func(ctx context.Context, adID, etag string, payload tori.AdUpdatePayload) (*tori.UpdateAdResponse, error) {
+			return &tori.UpdateAdResponse{ID: adID, ETag: "new-etag"}, nil
+		},
+		SetDeliveryOptionsFunc: func(ctx context.Context, adID string, opts tori.DeliveryOptions) error {
+			capturedDeliveryOpts = opts
+			return nil
+		},
+		PublishAdFunc: func(ctx context.Context, adID string) (*tori.OrderResponse, error) {
+			return &tori.OrderResponse{OrderID: 123, IsCompleted: true}, nil
+		},
+	}
+
+	// Use different postal codes for ad location vs sender address to verify correct one is used
+	store := &mockSessionStoreWithPostalCode{
+		mockSessionStore: newMockSessionStore(),
+		postalCode:       "33100", // Ad location in Tampere
+	}
+
+	session := &UserSession{
+		userId: userId,
+		draft: DraftState{
+			AdInputClient: mockService,
+			DraftID:       "draft-123",
+			Etag:          "test-etag",
+			CurrentDraft: &AdInputDraft{
+				State:            AdFlowStateReadyToPublish,
+				CategoryID:       5012,
+				Title:            "Test Item",
+				Description:      "Test description",
+				TradeType:        TradeTypeSell,
+				Price:            50,
+				ShippingPossible: true,
+				PackageSize:      PackageSizeSmall,
+				SavedShippingAddress: &tori.SavedAddress{
+					Name:        "Test User",
+					Address:     "Testikatu 1 A 5",
+					City:        "Helsinki",
+					PostalCode:  "00100", // Sender address in Helsinki
+					MobilePhone: "0401234567",
+				},
+				Images: []UploadedImage{
+					{ImagePath: "/path/to/image.jpg", Location: "https://example.com/image.jpg", Width: 800, Height: 600},
+				},
+			},
+		},
+		photoCol: PhotoCollectionState{
+			Photos: []tgbotapi.PhotoSize{{FileID: "photo1"}},
+		},
+		sender: tg,
+	}
+
+	listingHandler := NewListingHandler(tg, nil, nil, store)
+
+	// Expect sending message and success message
+	tg.On("Send", mock.AnythingOfType("tgbotapi.MessageConfig")).
+		Return(tgbotapi.Message{}, nil).Maybe()
+	tg.On("Request", mock.AnythingOfType("tgbotapi.EditMessageTextConfig")).
+		Return(&tgbotapi.APIResponse{Ok: true}, nil).Maybe()
+
+	listingHandler.HandleSendListing(context.Background(), session)
+
+	// Verify SetDeliveryOptions was called with correct shipping info
+	if !mockService.WasCalled("SetDeliveryOptions") {
+		t.Fatal("expected SetDeliveryOptions to be called")
+	}
+
+	if !capturedDeliveryOpts.Shipping {
+		t.Error("expected Shipping to be true")
+	}
+	if !capturedDeliveryOpts.BuyNow {
+		t.Error("expected BuyNow to be true for ToriDiili")
+	}
+	if capturedDeliveryOpts.ShippingInfo == nil {
+		t.Fatal("expected ShippingInfo to be set")
+	}
+	if capturedDeliveryOpts.ShippingInfo.Size != PackageSizeSmall {
+		t.Errorf("expected size SMALL, got %s", capturedDeliveryOpts.ShippingInfo.Size)
+	}
+	if capturedDeliveryOpts.ShippingInfo.Name != "Test User" {
+		t.Errorf("expected name 'Test User', got %s", capturedDeliveryOpts.ShippingInfo.Name)
+	}
+	if capturedDeliveryOpts.ShippingInfo.PhoneNumber != "0401234567" {
+		t.Errorf("expected phone '0401234567', got %s", capturedDeliveryOpts.ShippingInfo.PhoneNumber)
+	}
+	// Verify sender's postal code (00100) is used, not ad location (33100)
+	if capturedDeliveryOpts.ShippingInfo.PostalCode != "00100" {
+		t.Errorf("expected sender postal code '00100', got %s (should not use ad location '33100')", capturedDeliveryOpts.ShippingInfo.PostalCode)
+	}
+
+	// For SMALL size, should include KOTIPAKETTI (not POSTIPAKETTI)
+	hasKotipaketti := false
+	hasMatkahuolto := false
+	for _, p := range capturedDeliveryOpts.ShippingInfo.Products {
+		if p == ProductKotipaketti {
+			hasKotipaketti = true
+		}
+		if p == ProductMatkahuoltoShop {
+			hasMatkahuolto = true
+		}
+	}
+	if !hasKotipaketti {
+		t.Error("expected KOTIPAKETTI in products for SMALL size")
+	}
+	if !hasMatkahuolto {
+		t.Error("expected MATKAHUOLTO_SHOP in products")
+	}
+}

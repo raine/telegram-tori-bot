@@ -788,6 +788,116 @@ func (h *ListingHandler) HandleShippingSelection(ctx context.Context, session *U
 		}
 	}
 
+	// If shipping is enabled, fetch delivery page and check for saved address
+	if isYes {
+		if err := h.setupToriDiiliShipping(ctx, session); err != nil {
+			log.Error().Err(err).Msg("failed to setup Tori Diili shipping")
+			// Continue without shipping
+			session.draft.CurrentDraft.ShippingPossible = false
+		} else {
+			// Successfully got address, prompt for package size
+			return
+		}
+	}
+
+	h.continueToPostalCodeOrSummary(session)
+}
+
+// setupToriDiiliShipping fetches the user's saved shipping address from Tori and prompts for package size.
+// Returns an error if shipping cannot be set up (no saved address, API error, etc.)
+func (h *ListingHandler) setupToriDiiliShipping(ctx context.Context, session *UserSession) error {
+	if session.draft.AdInputClient == nil || session.draft.DraftID == "" {
+		return fmt.Errorf("no draft client or ID")
+	}
+
+	// Fetch delivery page to get saved address
+	deliveryPage, err := session.draft.AdInputClient.GetDeliveryPage(ctx, session.draft.DraftID)
+	if err != nil {
+		session.reply(MsgShippingSetupError)
+		return fmt.Errorf("get delivery page: %w", err)
+	}
+
+	// Check if user has complete saved shipping address
+	addr := deliveryPage.Sections.Shipping.Address
+	if addr.Name == "" || addr.Address == "" || addr.PostalCode == "" || addr.City == "" {
+		session.reply(MsgShippingNoProfile)
+		return fmt.Errorf("incomplete saved shipping address")
+	}
+
+	// Get phone number (prefer mobilePhone, fall back to phoneNumber)
+	phone := addr.MobilePhone
+	if phone == "" {
+		phone = addr.PhoneNumber
+	}
+	if phone == "" {
+		session.reply(MsgShippingNoProfile)
+		return fmt.Errorf("no phone number in shipping address")
+	}
+
+	// Save the address to the draft
+	session.draft.CurrentDraft.SavedShippingAddress = &addr
+
+	log.Info().
+		Str("name", addr.Name).
+		Str("address", addr.Address).
+		Str("city", addr.City).
+		Str("postalCode", addr.PostalCode).
+		Msg("loaded Tori Diili shipping address")
+
+	// Prompt for package size
+	h.promptForPackageSize(session)
+	return nil
+}
+
+// promptForPackageSize displays the package size selection buttons.
+func (h *ListingHandler) promptForPackageSize(session *UserSession) {
+	session.draft.CurrentDraft.State = AdFlowStateAwaitingPackageSize
+
+	msg := tgbotapi.NewMessage(session.userId, MsgPackageSizePrompt)
+	msg.ParseMode = tgbotapi.ModeMarkdown
+	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("S · max 4kg · 2,99€", "pkgsize:SMALL"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("M · max 25kg · 4,99€", "pkgsize:MEDIUM"),
+		),
+		tgbotapi.NewInlineKeyboardRow(
+			tgbotapi.NewInlineKeyboardButtonData("L · max 25kg · 12,99€", "pkgsize:LARGE"),
+		),
+	)
+	session.replyWithMessage(msg)
+}
+
+// HandlePackageSizeSelection handles the package size callback for Tori Diili shipping.
+// Called from session worker - no locking needed.
+func (h *ListingHandler) HandlePackageSizeSelection(ctx context.Context, session *UserSession, query *tgbotapi.CallbackQuery) {
+	if session.draft.CurrentDraft == nil || session.draft.CurrentDraft.State != AdFlowStateAwaitingPackageSize {
+		return
+	}
+
+	h.touchDraftActivity(session)
+
+	size := strings.TrimPrefix(query.Data, "pkgsize:")
+	session.draft.CurrentDraft.PackageSize = size
+
+	log.Info().Str("size", size).Msg("package size selected")
+
+	// Remove the inline keyboard
+	if query.Message != nil {
+		edit := tgbotapi.NewEditMessageReplyMarkup(
+			query.Message.Chat.ID,
+			query.Message.MessageID,
+			tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}},
+		)
+		h.tg.Request(edit)
+	}
+
+	h.continueToPostalCodeOrSummary(session)
+}
+
+// continueToPostalCodeOrSummary checks if postal code is needed, otherwise shows summary.
+func (h *ListingHandler) continueToPostalCodeOrSummary(session *UserSession) {
 	// Check if postal code is set
 	if h.sessionStore != nil {
 		postalCode, err := h.sessionStore.GetPostalCode(session.userId)
@@ -1440,7 +1550,17 @@ func (h *ListingHandler) showAdSummary(session *UserSession) {
 
 	shippingText := BtnNo
 	if session.draft.CurrentDraft.ShippingPossible {
-		shippingText = BtnYes
+		if session.draft.CurrentDraft.SavedShippingAddress != nil && session.draft.CurrentDraft.PackageSize != "" {
+			// Show ToriDiili with package size
+			sizeLabel := map[string]string{
+				PackageSizeSmall:  "S",
+				PackageSizeMedium: "M",
+				PackageSizeLarge:  "L",
+			}[session.draft.CurrentDraft.PackageSize]
+			shippingText = fmt.Sprintf("ToriDiili (%s)", sizeLabel)
+		} else {
+			shippingText = BtnYes
+		}
 	}
 
 	// Show "Annetaan" for giveaways, price for sales
@@ -1536,15 +1656,58 @@ func (h *ListingHandler) updateAndPublishAd(
 		return fmt.Errorf("failed to update ad: %w", err)
 	}
 
-	// Set delivery options - always use meetup mode since ToriDiili shipping
-	// requires full address/phone/package info that we don't collect
-	err = client.SetDeliveryOptions(ctx, draftID, tori.DeliveryOptions{
-		BuyNow:             false,
+	// Build delivery options
+	deliveryOpts := tori.DeliveryOptions{
 		Client:             "ANDROID",
-		Meetup:             true,
+		Meetup:             true, // Always allow meetup as fallback
 		SellerPaysShipping: false,
-		Shipping:           false,
-	})
+		Shipping:           draft.ShippingPossible && draft.SavedShippingAddress != nil,
+		BuyNow:             draft.ShippingPossible && draft.SavedShippingAddress != nil, // BuyNow required for ToriDiili
+	}
+
+	// Add shipping info if Tori Diili shipping is enabled
+	if draft.ShippingPossible && draft.SavedShippingAddress != nil {
+		// Determine products based on package size
+		products := []string{ProductMatkahuoltoShop}
+		if draft.PackageSize == PackageSizeSmall {
+			products = append(products, ProductKotipaketti)
+		} else {
+			products = append(products, ProductPostipaketti)
+		}
+
+		// Get phone number (prefer mobilePhone, fall back to phoneNumber)
+		phone := draft.SavedShippingAddress.MobilePhone
+		if phone == "" {
+			phone = draft.SavedShippingAddress.PhoneNumber
+		}
+
+		deliveryOpts.ShippingInfo = &tori.ShippingInfo{
+			Name:        draft.SavedShippingAddress.Name,
+			Address:     draft.SavedShippingAddress.Address,
+			City:        draft.SavedShippingAddress.City,
+			PostalCode:  draft.SavedShippingAddress.PostalCode, // Use sender's address postal code, not ad location
+			PhoneNumber: phone,
+			Products:    products,
+			Size:        draft.PackageSize,
+			SaveAddress: true,
+			// Zero defaults for optional fields
+			DeliveryPointID: 0,
+			FlatNo:          0,
+			FloorNo:         0,
+			FloorType:       "",
+			HouseType:       "",
+			StreetName:      "",
+			StreetNo:        "",
+		}
+
+		log.Info().
+			Str("size", draft.PackageSize).
+			Strs("products", products).
+			Str("name", draft.SavedShippingAddress.Name).
+			Msg("publishing with Tori Diili shipping")
+	}
+
+	err = client.SetDeliveryOptions(ctx, draftID, deliveryOpts)
 	if err != nil {
 		return fmt.Errorf("failed to set delivery options: %w", err)
 	}

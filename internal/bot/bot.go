@@ -334,6 +334,8 @@ func (b *Bot) handleCallbackQuery(ctx context.Context, session *UserSession, que
 		b.listingHandler.HandleCategorySelection(ctx, session, query)
 	} else if strings.HasPrefix(query.Data, "shipping:") {
 		b.listingHandler.HandleShippingSelection(ctx, session, query)
+	} else if strings.HasPrefix(query.Data, "pkgsize:") {
+		b.listingHandler.HandlePackageSizeSelection(ctx, session, query)
 	} else if strings.HasPrefix(query.Data, "reselect:") {
 		b.handleReselectCallback(ctx, session, query)
 	} else if strings.HasPrefix(query.Data, "publish:") {

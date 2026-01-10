@@ -17,6 +17,7 @@ type MockAdService struct {
 	GetAttributesFunc          func(ctx context.Context, adID string) (*AttributesResponse, error)
 	UpdateAdFunc               func(ctx context.Context, adID, etag string, payload AdUpdatePayload) (*UpdateAdResponse, error)
 	SetDeliveryOptionsFunc     func(ctx context.Context, adID string, opts DeliveryOptions) error
+	GetDeliveryPageFunc        func(ctx context.Context, adID string) (*DeliveryPageResponse, error)
 	PublishAdFunc              func(ctx context.Context, adID string) (*OrderResponse, error)
 	DeleteAdFunc               func(ctx context.Context, adID string) error
 	GetAdSummariesFunc         func(ctx context.Context, limit, offset int, facet string) (*AdSummariesResult, error)
@@ -144,6 +145,35 @@ func (m *MockAdService) SetDeliveryOptions(ctx context.Context, adID string, opt
 		return fn(ctx, adID, opts)
 	}
 	return nil
+}
+
+func (m *MockAdService) GetDeliveryPage(ctx context.Context, adID string) (*DeliveryPageResponse, error) {
+	m.mu.Lock()
+	m.Calls = append(m.Calls, MockCall{Method: "GetDeliveryPage", Args: []any{adID}})
+	fn := m.GetDeliveryPageFunc
+	m.mu.Unlock()
+
+	if fn != nil {
+		return fn(ctx, adID)
+	}
+	return &DeliveryPageResponse{
+		Context: DeliveryContext{
+			AdID:            12345,
+			DefaultShipping: true,
+			DefaultMeetup:   true,
+		},
+		Sections: DeliverySections{
+			Shipping: ShippingSection{
+				Address: SavedAddress{
+					Name:        "Test User",
+					Address:     "Testikatu 1",
+					PostalCode:  "00100",
+					City:        "Helsinki",
+					PhoneNumber: "0401234567",
+				},
+			},
+		},
+	}, nil
 }
 
 func (m *MockAdService) PublishAd(ctx context.Context, adID string) (*OrderResponse, error) {

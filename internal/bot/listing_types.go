@@ -18,6 +18,7 @@ const (
 	AdFlowStateAwaitingAttribute
 	AdFlowStateAwaitingPrice
 	AdFlowStateAwaitingShipping
+	AdFlowStateAwaitingPackageSize
 	AdFlowStateAwaitingPostalCode
 	AdFlowStateReadyToPublish
 )
@@ -35,6 +36,8 @@ func (s AdFlowState) String() string {
 		return "AwaitingPrice"
 	case AdFlowStateAwaitingShipping:
 		return "AwaitingShipping"
+	case AdFlowStateAwaitingPackageSize:
+		return "AwaitingPackageSize"
 	case AdFlowStateAwaitingPostalCode:
 		return "AwaitingPostalCode"
 	case AdFlowStateReadyToPublish:
@@ -53,6 +56,20 @@ const (
 	SkipButtonLabel = "Ohita"
 )
 
+// Package size constants for Tori Diili shipping
+const (
+	PackageSizeSmall  = "SMALL"  // Max 4kg, 40x32x15cm
+	PackageSizeMedium = "MEDIUM" // Max 25kg, 40x32x26cm
+	PackageSizeLarge  = "LARGE"  // Max 25kg, 100x60x60cm
+)
+
+// Shipping product codes for Tori Diili carriers
+const (
+	ProductMatkahuoltoShop = "MATKAHUOLTO_SHOP" // Matkahuolto for all sizes
+	ProductKotipaketti     = "KOTIPAKETTI"      // Posti small package
+	ProductPostipaketti    = "POSTIPAKETTI"     // Posti medium/large package
+)
+
 // AdInputDraft tracks the state of a new-API ad creation
 type AdInputDraft struct {
 	State            AdFlowState
@@ -63,6 +80,10 @@ type AdInputDraft struct {
 	TradeType        string // "1" = sell, "2" = give away
 	Price            int
 	ShippingPossible bool
+
+	// Tori Diili shipping details (fetched from Tori API)
+	SavedShippingAddress *tori.SavedAddress
+	PackageSize          string // SMALL, MEDIUM, or LARGE
 
 	// Message IDs for editing via reply
 	TitleMessageID       int

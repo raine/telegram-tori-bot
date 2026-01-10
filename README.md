@@ -32,6 +32,19 @@ Edit your listing draft by typing in Finnish, e.g., "vaihda hinnaksi 40e" or
 List items for free by selecting the "Annetaan" button when prompted for price.
 The description is automatically rewritten to use "Annetaan" language.
 
+### Tori Diili shipping
+
+Enable Tori Diili shipping to offer buyers secure shipping with integrated
+payment. When you select "Kyllä" for shipping, the bot fetches your saved
+shipping address from Tori and prompts you to select a package size:
+
+- **S** (max 4kg, 40×32×15cm) - 2.99€
+- **M** (max 25kg, 40×32×26cm) - 4.99€
+- **L** (max 25kg, 100×60×60cm) - 12.99€
+
+**Note**: You must have a saved shipping profile in Tori. Set this up by
+creating a Tori Diili listing in the official Tori app first.
+
 ### Description templates
 
 Save a description template with `/malli` that gets appended to all your

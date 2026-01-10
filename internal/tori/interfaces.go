@@ -26,6 +26,9 @@ type AdService interface {
 	// SetDeliveryOptions sets delivery options for the ad.
 	SetDeliveryOptions(ctx context.Context, adID string, opts DeliveryOptions) error
 
+	// GetDeliveryPage fetches the delivery configuration page including the user's saved address.
+	GetDeliveryPage(ctx context.Context, adID string) (*DeliveryPageResponse, error)
+
 	// PublishAd publishes the ad with the free package.
 	PublishAd(ctx context.Context, adID string) (*OrderResponse, error)
 

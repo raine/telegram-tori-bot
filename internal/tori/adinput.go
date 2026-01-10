@@ -418,13 +418,70 @@ func (c *AdinputClient) UpdateAd(ctx context.Context, adID, etag string, payload
 	return &result, nil
 }
 
+// DeliveryPageResponse is the response from GET /ui/addelivery
+type DeliveryPageResponse struct {
+	Context  DeliveryContext  `json:"context"`
+	Sections DeliverySections `json:"sections"`
+}
+
+// DeliveryContext contains delivery configuration flags
+type DeliveryContext struct {
+	AdID             int      `json:"adId"`
+	Shipping         bool     `json:"shipping"`
+	DefaultShipping  bool     `json:"defaultShipping"`
+	Meetup           bool     `json:"meetup"`
+	DefaultMeetup    bool     `json:"defaultMeetup"`
+	ShippingProducts []string `json:"shippingProducts"`
+}
+
+// DeliverySections contains the delivery page sections
+type DeliverySections struct {
+	Shipping ShippingSection `json:"shipping"`
+}
+
+// ShippingSection contains shipping configuration and saved address
+type ShippingSection struct {
+	Address SavedAddress `json:"address"`
+}
+
+// SavedAddress represents the user's saved shipping address from Tori
+type SavedAddress struct {
+	Name        string `json:"name"`
+	Address     string `json:"address"`
+	PostalCode  string `json:"postalCode"`
+	City        string `json:"city"`
+	PhoneNumber string `json:"phoneNumber"`
+	MobilePhone string `json:"mobilePhone"`
+	Email       string `json:"email"`
+}
+
+// ShippingInfo represents the detailed shipping information for Tori Diili
+type ShippingInfo struct {
+	Address         string   `json:"address"`
+	City            string   `json:"city"`
+	DeliveryPointID int      `json:"deliveryPointId"`
+	FlatNo          int      `json:"flatNo"`
+	FloorNo         int      `json:"floorNo"`
+	FloorType       string   `json:"floorType"`
+	HouseType       string   `json:"houseType"`
+	Name            string   `json:"name"`
+	PhoneNumber     string   `json:"phoneNumber"`
+	PostalCode      string   `json:"postalCode"`
+	Products        []string `json:"products"`
+	SaveAddress     bool     `json:"saveAddress"`
+	Size            string   `json:"size"`
+	StreetName      string   `json:"streetName"`
+	StreetNo        string   `json:"streetNo"`
+}
+
 // DeliveryOptions represents delivery settings for the ad
 type DeliveryOptions struct {
-	BuyNow             bool   `json:"buyNow"`
-	Client             string `json:"client"`
-	Meetup             bool   `json:"meetup"`
-	SellerPaysShipping bool   `json:"sellerPaysShipping"`
-	Shipping           bool   `json:"shipping"`
+	BuyNow             bool          `json:"buyNow"`
+	Client             string        `json:"client"`
+	Meetup             bool          `json:"meetup"`
+	SellerPaysShipping bool          `json:"sellerPaysShipping"`
+	Shipping           bool          `json:"shipping"`
+	ShippingInfo       *ShippingInfo `json:"shippingInfo,omitempty"`
 }
 
 // SetDeliveryOptions sets delivery options for the ad
@@ -434,6 +491,17 @@ func (c *AdinputClient) SetDeliveryOptions(ctx context.Context, adID string, opt
 		return fmt.Errorf("set delivery options: %w", err)
 	}
 	return nil
+}
+
+// GetDeliveryPage fetches the delivery configuration page including the user's saved address
+func (c *AdinputClient) GetDeliveryPage(ctx context.Context, adID string) (*DeliveryPageResponse, error) {
+	path := fmt.Sprintf("/ui/addelivery?adId=%s&editMode=false", adID)
+	var result DeliveryPageResponse
+	err := c.doJSON(ctx, "GET", c.baseURL+path, ServiceTjtAPI, nil, &result, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get delivery page: %w", err)
+	}
+	return &result, nil
 }
 
 // OrderResponse is the response from publishing an ad
