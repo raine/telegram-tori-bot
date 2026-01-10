@@ -21,6 +21,7 @@ var botCommands = []Command{
 	{Name: "poistakuvat", Description: "Poista ilmoituksen kuvat"},
 	{Name: "osasto", Description: "Vaihda osastoa"},
 	{Name: "malli", Description: "Näytä/aseta kuvauspohja"},
+	{Name: "luomalli", Description: "Luo kuvauspohja tekoälyllä"},
 	{Name: "poistamalli", Description: "Poista kuvauspohja"},
 	{Name: "postinumero", Description: "Näytä/vaihda postinumero"},
 	{Name: "ilmoitukset", Description: "Hallitse Tori-ilmoituksia"},

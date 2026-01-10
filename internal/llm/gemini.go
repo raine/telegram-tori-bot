@@ -127,6 +127,31 @@ Esimerkki: {"keywords": ["satulatuoli", "työtuoli", "tuolit"]}
 
 Vastaa VAIN JSON-objektilla, ei muuta tekstiä.`
 
+const templateGenerationPrompt = `Generate a Go text/template string based on the user's description for a marketplace listing footer.
+
+Available variables in the template context:
+- .shipping (boolean): true if shipping is possible
+- .giveaway (boolean): true if the item is being given away for free
+- .price (integer): price in euros (0 if giveaway)
+
+Supported Go template syntax:
+- {{if .shipping}}...{{end}}
+- {{if not .shipping}}...{{end}}
+- {{if .giveaway}}...{{end}}
+- {{.price}} (prints the price)
+
+User description: %q
+
+Rules:
+1. Return ONLY the template string. No markdown code blocks, no JSON, no explanations.
+2. Ensure the template logic matches the user's description.
+3. If the user asks for specific text, include it exactly.
+4. If the user doesn't mention specific conditions, output the text unconditionally.
+5. Do not include any surrounding quotes or backticks.
+
+Example input: "Add text 'No shipping' if shipping is not selected"
+Example output: {{if not .shipping}}No shipping{{end}}`
+
 const hierarchicalCategoryPrompt = `Select the most appropriate category for this item from the list below.
 
 Item Title: %s
@@ -759,4 +784,47 @@ func (g *GeminiAnalyzer) GeneratePriceSearchQuery(ctx context.Context, title, de
 	}
 
 	return query, nil
+}
+
+// GenerateTemplate generates a Go text/template string based on a user description.
+func (g *GeminiAnalyzer) GenerateTemplate(ctx context.Context, description string) (string, error) {
+	prompt := fmt.Sprintf(templateGenerationPrompt, description)
+
+	result, err := g.client.Models.GenerateContent(ctx, geminiLiteModel, []*genai.Content{
+		genai.NewContentFromParts([]*genai.Part{genai.NewPartFromText(prompt)}, genai.RoleUser),
+	}, nil)
+	if err != nil {
+		return "", fmt.Errorf("gemini template generation failed: %w", err)
+	}
+
+	if len(result.Candidates) == 0 || len(result.Candidates[0].Content.Parts) == 0 {
+		return "", fmt.Errorf("empty response from gemini")
+	}
+
+	text := strings.TrimSpace(result.Text())
+
+	// Strip markdown code blocks if present
+	text = strings.TrimPrefix(text, "```text")
+	text = strings.TrimPrefix(text, "```go")
+	text = strings.TrimPrefix(text, "```")
+	text = strings.TrimSuffix(text, "```")
+	text = strings.TrimSpace(text)
+
+	// Log usage
+	if result.UsageMetadata != nil {
+		cost := calculateGeminiCost(
+			int64(result.UsageMetadata.PromptTokenCount),
+			int64(result.UsageMetadata.CandidatesTokenCount),
+			geminiLiteInputPricePerMillion,
+			geminiLiteOutputPricePerMillion,
+		)
+		log.Info().
+			Str("model", geminiLiteModel).
+			Int("inputTokens", int(result.UsageMetadata.PromptTokenCount)).
+			Int("outputTokens", int(result.UsageMetadata.CandidatesTokenCount)).
+			Float64("costUSD", cost).
+			Msg("template generation llm call")
+	}
+
+	return text, nil
 }

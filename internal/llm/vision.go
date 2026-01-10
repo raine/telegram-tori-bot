@@ -37,3 +37,9 @@ type EditIntentParser interface {
 	// ParseEditIntent parses a natural language edit command and returns the intended changes.
 	ParseEditIntent(ctx context.Context, message string, draft *CurrentDraftInfo) (*EditIntent, error)
 }
+
+// TemplateGenerator can generate Go text/templates from natural language descriptions.
+type TemplateGenerator interface {
+	// GenerateTemplate generates a Go text/template string based on a user description.
+	GenerateTemplate(ctx context.Context, description string) (string, error)
+}

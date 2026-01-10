@@ -287,6 +287,8 @@ func (b *Bot) handleCommand(ctx context.Context, session *UserSession, message *
 		b.handleOsastoCommand(session)
 	case "/malli":
 		b.handleTemplateCommand(session, message.Text)
+	case "/luomalli":
+		b.handleCreateTemplateCommand(ctx, session, argsStr)
 	case "/poistamalli":
 		b.handleDeleteTemplate(session)
 	case "/postinumero":
@@ -393,6 +395,51 @@ func (b *Bot) handleDeleteTemplate(session *UserSession) {
 		return
 	}
 	session.reply(MsgTemplateDeleted)
+}
+
+// handleCreateTemplateCommand handles /luomalli command - generate template with LLM.
+func (b *Bot) handleCreateTemplateCommand(ctx context.Context, session *UserSession, args string) {
+	if b.sessionStore == nil {
+		session.reply(MsgTemplateNotAvailable)
+		return
+	}
+
+	if args == "" {
+		session.reply(MsgCreateTemplateUsage)
+		return
+	}
+
+	// Get Gemini analyzer
+	gemini := llm.GetGeminiAnalyzer(b.visionAnalyzer)
+	if gemini == nil {
+		session.reply(MsgTemplateGenNotAvail)
+		return
+	}
+
+	session.reply(MsgGeneratingTemplate)
+
+	// Generate template
+	tmpl, err := gemini.GenerateTemplate(ctx, args)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to generate template")
+		session.reply(MsgUnexpectedErr, "mallin luonti epäonnistui")
+		return
+	}
+
+	// Validate template syntax before saving
+	if _, err := template.New("validator").Parse(tmpl); err != nil {
+		log.Warn().Err(err).Str("template", tmpl).Msg("llm generated invalid template syntax")
+		session.reply(MsgTemplateGenInvalid)
+		return
+	}
+
+	// Save template
+	if err := b.sessionStore.SetTemplate(session.userId, tmpl); err != nil {
+		session.replyWithError(err)
+		return
+	}
+
+	session.reply(fmt.Sprintf(MsgTemplateGenerated, escapeMarkdown(tmpl)))
 }
 
 // handlePostalCodeCommand handles /postinumero command - view or change postal code.

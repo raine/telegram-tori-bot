@@ -82,6 +82,13 @@ const (
 	MsgTemplateCurrentFmt   = "*Nykyinen malli:*\n`%s`\n\nPoista malli: /poistamalli"
 	MsgTemplateSaved        = "✅ Malli tallennettu."
 	MsgTemplateDeleted      = "🗑 Malli poistettu."
+
+	// LLM template generation
+	MsgCreateTemplateUsage = "Käyttö: `/luomalli <kuvaus>`\nEsim: `/luomalli Kerro että vain nouto, paitsi jos postitus on valittu`"
+	MsgGeneratingTemplate  = "Luodaan mallia..."
+	MsgTemplateGenerated   = "✅ Malli luotu ja tallennettu:\n`%s`"
+	MsgTemplateGenNotAvail = "Mallin luonti ei ole käytettävissä"
+	MsgTemplateGenInvalid  = "Virhe: tekoäly loi virheellisen mallin rakenteen. Yritä uudelleen toisella kuvauksella."
 )
 
 // =============================================================================
