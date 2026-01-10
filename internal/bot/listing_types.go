@@ -236,6 +236,7 @@ func buildFinalPayload(
 		Title:       draft.Title,
 		Description: draft.GetFullDescription(),
 		TradeType:   draft.TradeType,
+		Condition:   draft.CollectedAttrs["condition"], // Set condition directly (reserved key, not via Extra)
 		Location: []map[string]string{
 			{"country": "FI", "postal-code": postalCode},
 		},
@@ -244,9 +245,11 @@ func buildFinalPayload(
 		Extra:      make(map[string]any),
 	}
 
-	// Add collected attributes
+	// Add collected attributes (except condition which is set directly above)
 	for k, v := range draft.CollectedAttrs {
-		payload.Extra[k] = v
+		if k != "condition" {
+			payload.Extra[k] = v
+		}
 	}
 
 	// Add price if selling (not for giveaways)
