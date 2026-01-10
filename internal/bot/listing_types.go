@@ -245,6 +245,9 @@ func buildFinalPayload(
 		Extra:      make(map[string]any),
 	}
 
+	// Add price_tip to match iOS app behavior
+	payload.Extra["price_tip"] = map[string]any{}
+
 	// Add collected attributes (except condition which is set directly above)
 	for k, v := range draft.CollectedAttrs {
 		if k != "condition" {
