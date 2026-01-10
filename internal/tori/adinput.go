@@ -91,6 +91,12 @@ func (c *AdinputClient) setCommonHeaders(req *http.Request, service string, body
 	req.Header.Set("x-nmp-app-brand", "Tori")
 	req.Header.Set("x-nmp-device", androidDevice)
 	req.Header.Set("x-finn-apps-adinput-version-name", adinputVersion)
+
+	// CMP consent headers
+	req.Header.Set("cmp-analytics", "1")
+	req.Header.Set("cmp-personalisation", "1")
+	req.Header.Set("cmp-marketing", "1")
+	req.Header.Set("cmp-advertising", "1")
 }
 
 // requestOptions contains optional settings for doJSON
