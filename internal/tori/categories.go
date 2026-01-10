@@ -81,7 +81,7 @@ func (s *CategoryService) UpdateFromModel(model *AdModel) {
 	var categoryNodes []ModelNode
 	found := false
 	for _, section := range model.Sections {
-		for _, widget := range section.Content.Widgets {
+		for _, widget := range section.Content {
 			if widget.ID == "category" {
 				categoryNodes = widget.Nodes
 				found = true

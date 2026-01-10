@@ -12,64 +12,62 @@ func TestUpdateFromModel_ParsesRealAPIStructure(t *testing.T) {
 	model := &AdModel{
 		Sections: []ModelSection{
 			{
-				Content: ModelContent{
-					Widgets: []ModelWidget{
-						{
-							ID: "some-other-widget",
-							// Not the category widget
-						},
-						{
-							ID: "category",
-							Nodes: []ModelNode{
-								{
-									ID:          "78",
-									Label:       "Koti ja sisustus",
-									Persistable: false,
-									Children: []ModelNode{
-										{
-											ID:          "7756",
-											Label:       "Sohvat ja lepotuolit",
-											Persistable: true,
-										},
-										{
-											ID:          "5196",
-											Label:       "Pöydät ja tuolit",
-											Persistable: true,
-										},
-										{
-											ID:          "5197",
-											Label:       "Huonekalut",
-											Persistable: false,
-											Children: []ModelNode{
-												{
-													ID:          "5198",
-													Label:       "Kaapit",
-													Persistable: true,
-												},
-												{
-													ID:          "5199",
-													Label:       "Hyllyt",
-													Persistable: true,
-												},
+				Content: []ModelWidget{
+					{
+						ID: "some-other-widget",
+						// Not the category widget
+					},
+					{
+						ID: "category",
+						Nodes: []ModelNode{
+							{
+								ID:          "78",
+								Label:       "Koti ja sisustus",
+								Persistable: false,
+								Children: []ModelNode{
+									{
+										ID:          "7756",
+										Label:       "Sohvat ja lepotuolit",
+										Persistable: true,
+									},
+									{
+										ID:          "5196",
+										Label:       "Pöydät ja tuolit",
+										Persistable: true,
+									},
+									{
+										ID:          "5197",
+										Label:       "Huonekalut",
+										Persistable: false,
+										Children: []ModelNode{
+											{
+												ID:          "5198",
+												Label:       "Kaapit",
+												Persistable: true,
+											},
+											{
+												ID:          "5199",
+												Label:       "Hyllyt",
+												Persistable: true,
 											},
 										},
 									},
 								},
-								{
-									ID:          "93",
-									Label:       "Elektroniikka",
-									Persistable: false,
-									Children: []ModelNode{
-										{
-											ID:          "3020",
-											Label:       "Puhelimet",
-											Persistable: true,
-										},
-										{
-											ID:          "3021",
-											Label:       "Tietokoneet",
-											Persistable: true,
-										},
+							},
+							{
+								ID:          "93",
+								Label:       "Elektroniikka",
+								Persistable: false,
+								Children: []ModelNode{
+									{
+										ID:          "3020",
+										Label:       "Puhelimet",
+										Persistable: true,
+									},
+									{
+										ID:          "3021",
+										Label:       "Tietokoneet",
+										Persistable: true,
 									},
 								},
 							},
@@ -124,26 +122,24 @@ func TestUpdateFromModel_BuildsCorrectPaths(t *testing.T) {
 	model := &AdModel{
 		Sections: []ModelSection{
 			{
-				Content: ModelContent{
-					Widgets: []ModelWidget{
-						{
-							ID: "category",
-							Nodes: []ModelNode{
-								{
-									ID:          "78",
-									Label:       "Koti ja sisustus",
-									Persistable: false,
-									Children: []ModelNode{
-										{
-											ID:          "5197",
-											Label:       "Huonekalut",
-											Persistable: false,
-											Children: []ModelNode{
-												{
-													ID:          "5198",
-													Label:       "Kaapit",
-													Persistable: true,
-												},
+				Content: []ModelWidget{
+					{
+						ID: "category",
+						Nodes: []ModelNode{
+							{
+								ID:          "78",
+								Label:       "Koti ja sisustus",
+								Persistable: false,
+								Children: []ModelNode{
+									{
+										ID:          "5197",
+										Label:       "Huonekalut",
+										Persistable: false,
+										Children: []ModelNode{
+											{
+												ID:          "5198",
+												Label:       "Kaapit",
+												Persistable: true,
 											},
 										},
 									},
@@ -199,33 +195,31 @@ func TestUpdateFromModel_BuildsCategoryTree(t *testing.T) {
 	model := &AdModel{
 		Sections: []ModelSection{
 			{
-				Content: ModelContent{
-					Widgets: []ModelWidget{
-						{
-							ID: "category",
-							Nodes: []ModelNode{
-								{
-									ID:          "78",
-									Label:       "Koti ja sisustus",
-									Persistable: false,
-									Children: []ModelNode{
-										{
-											ID:          "7756",
-											Label:       "Sohvat",
-											Persistable: true,
-										},
+				Content: []ModelWidget{
+					{
+						ID: "category",
+						Nodes: []ModelNode{
+							{
+								ID:          "78",
+								Label:       "Koti ja sisustus",
+								Persistable: false,
+								Children: []ModelNode{
+									{
+										ID:          "7756",
+										Label:       "Sohvat",
+										Persistable: true,
 									},
 								},
-								{
-									ID:          "93",
-									Label:       "Elektroniikka",
-									Persistable: false,
-									Children: []ModelNode{
-										{
-											ID:          "3020",
-											Label:       "Puhelimet",
-											Persistable: true,
-										},
+							},
+							{
+								ID:          "93",
+								Label:       "Elektroniikka",
+								Persistable: false,
+								Children: []ModelNode{
+									{
+										ID:          "3020",
+										Label:       "Puhelimet",
+										Persistable: true,
 									},
 								},
 							},
@@ -284,11 +278,9 @@ func TestUpdateFromModel_HandlesMissingCategoryWidget(t *testing.T) {
 	model := &AdModel{
 		Sections: []ModelSection{
 			{
-				Content: ModelContent{
-					Widgets: []ModelWidget{
-						{
-							ID: "some-other-widget",
-						},
+				Content: []ModelWidget{
+					{
+						ID: "some-other-widget",
 					},
 				},
 			},
@@ -308,12 +300,10 @@ func TestUpdateFromModel_HandlesEmptyCategories(t *testing.T) {
 	model := &AdModel{
 		Sections: []ModelSection{
 			{
-				Content: ModelContent{
-					Widgets: []ModelWidget{
-						{
-							ID:    "category",
-							Nodes: []ModelNode{},
-						},
+				Content: []ModelWidget{
+					{
+						ID:    "category",
+						Nodes: []ModelNode{},
 					},
 				},
 			},
@@ -339,13 +329,11 @@ func TestIsInitialized(t *testing.T) {
 	model := &AdModel{
 		Sections: []ModelSection{
 			{
-				Content: ModelContent{
-					Widgets: []ModelWidget{
-						{
-							ID: "category",
-							Nodes: []ModelNode{
-								{ID: "1", Label: "Test", Persistable: true},
-							},
+				Content: []ModelWidget{
+					{
+						ID: "category",
+						Nodes: []ModelNode{
+							{ID: "1", Label: "Test", Persistable: true},
 						},
 					},
 				},
@@ -365,26 +353,24 @@ func TestSearchCategories_WorksWithDynamicData(t *testing.T) {
 	model := &AdModel{
 		Sections: []ModelSection{
 			{
-				Content: ModelContent{
-					Widgets: []ModelWidget{
-						{
-							ID: "category",
-							Nodes: []ModelNode{
-								{
-									ID:          "78",
-									Label:       "Koti ja sisustus",
-									Persistable: false,
-									Children: []ModelNode{
-										{
-											ID:          "7756",
-											Label:       "Sohvat ja lepotuolit",
-											Persistable: true,
-										},
-										{
-											ID:          "5196",
-											Label:       "Pöydät ja tuolit",
-											Persistable: true,
-										},
+				Content: []ModelWidget{
+					{
+						ID: "category",
+						Nodes: []ModelNode{
+							{
+								ID:          "78",
+								Label:       "Koti ja sisustus",
+								Persistable: false,
+								Children: []ModelNode{
+									{
+										ID:          "7756",
+										Label:       "Sohvat ja lepotuolit",
+										Persistable: true,
+									},
+									{
+										ID:          "5196",
+										Label:       "Pöydät ja tuolit",
+										Persistable: true,
 									},
 								},
 							},

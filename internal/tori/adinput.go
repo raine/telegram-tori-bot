@@ -179,12 +179,7 @@ type AdModel struct {
 
 // ModelSection represents a section in the ad model
 type ModelSection struct {
-	Content ModelContent `json:"content"`
-}
-
-// ModelContent represents the content of a model section
-type ModelContent struct {
-	Widgets []ModelWidget `json:"widgets"`
+	Content []ModelWidget `json:"content"`
 }
 
 // ModelWidget represents a widget in the model (e.g., category selector)
