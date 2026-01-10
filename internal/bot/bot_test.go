@@ -560,9 +560,11 @@ func TestHandlePriceInput_Giveaway(t *testing.T) {
 		return strings.Contains(msg.Text, "Hinta: *Annetaan*") && hasRemoveKeyboard
 	})).Return(tgbotapi.Message{}, nil).Once()
 
-	// Expect shipping question after giveaway selection
+	// Giveaways skip shipping and go directly to summary
 	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
-		return strings.Contains(msg.Text, "Onko postitus mahdollinen?")
+		return strings.Contains(msg.Text, "Ilmoitus valmis:") &&
+			strings.Contains(msg.Text, "🎁 Annetaan") &&
+			strings.Contains(msg.Text, "Postitus:* Ei")
 	})).Return(tgbotapi.Message{}, nil).Once()
 
 	listingHandler.HandlePriceInput(context.Background(), session, "🎁 Annetaan")
@@ -575,8 +577,11 @@ func TestHandlePriceInput_Giveaway(t *testing.T) {
 	if session.draft.CurrentDraft.TradeType != TradeTypeGive {
 		t.Errorf("expected trade_type=TradeTypeGive, got %s", session.draft.CurrentDraft.TradeType)
 	}
-	if session.draft.CurrentDraft.State != AdFlowStateAwaitingShipping {
-		t.Errorf("expected state AwaitingShipping, got %v", session.draft.CurrentDraft.State)
+	if session.draft.CurrentDraft.State != AdFlowStateReadyToPublish {
+		t.Errorf("expected state ReadyToPublish, got %v", session.draft.CurrentDraft.State)
+	}
+	if session.draft.CurrentDraft.ShippingPossible != false {
+		t.Errorf("expected ShippingPossible=false for giveaway")
 	}
 }
 

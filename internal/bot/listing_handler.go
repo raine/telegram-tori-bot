@@ -727,20 +727,13 @@ func (h *ListingHandler) handleGiveawaySelection(ctx context.Context, session *U
 		}
 	}
 
-	session.draft.CurrentDraft.State = AdFlowStateAwaitingShipping
+	// Giveaways are always no-shipping (meetup only)
+	session.draft.CurrentDraft.ShippingPossible = false
 
 	// Remove reply keyboard and confirm giveaway
 	session.replyAndRemoveCustomKeyboard(MsgPriceGiveaway)
 
-	// Ask about shipping (meetup possible even for giveaways)
-	msg := tgbotapi.NewMessage(session.userId, MsgShippingQuestion)
-	msg.ReplyMarkup = tgbotapi.NewInlineKeyboardMarkup(
-		tgbotapi.NewInlineKeyboardRow(
-			tgbotapi.NewInlineKeyboardButtonData(BtnYes, "shipping:yes"),
-			tgbotapi.NewInlineKeyboardButtonData(BtnNo, "shipping:no"),
-		),
-	)
-	session.replyWithMessage(msg)
+	h.continueToPostalCodeOrSummary(session)
 }
 
 // HandleShippingSelection handles the shipping yes/no callback.
