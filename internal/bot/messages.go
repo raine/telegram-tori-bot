@@ -78,7 +78,7 @@ const (
 
 const (
 	MsgTemplateNotAvailable = "Mallit eivät ole käytettävissä"
-	MsgTemplateNotSet       = "Ei tallennettua mallia.\n\nAseta malli: `/malli <teksti>`\n\nEsim: `/malli Nouto Kannelmäestä{{#if shipping}} tai postitus{{/end}}. Mobilepay/käteinen.`"
+	MsgTemplateNotSet       = "Ei tallennettua mallia.\n\nAseta malli: `/malli <teksti>`\n\nMuuttujat: `{{.shipping}}`, `{{.giveaway}}`, `{{.price}}`\n\nEsim: `/malli {{if not .shipping}}Vain nouto Kannelmäestä. {{end}}Mobilepay/käteinen.`"
 	MsgTemplateCurrentFmt   = "*Nykyinen malli:*\n`%s`\n\nPoista malli: /poistamalli"
 	MsgTemplateSaved        = "✅ Malli tallennettu."
 	MsgTemplateDeleted      = "🗑 Malli poistettu."

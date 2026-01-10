@@ -50,10 +50,17 @@ sellainen tekemällä ensin Tori Diili -ilmoitus virallisessa Tori-sovelluksessa
 ### Kuvausmallit
 
 Tallenna kuvausmalli komennolla `/malli`, joka lisätään kaikkiin ilmoituksiisi.
-Tukee ehdollista tekstiä postitukselle:
+Tukee ehdollista tekstiä Go:n
+[text/template](https://pkg.go.dev/text/template)-syntaksilla.
+
+Muuttujat:
+
+- `{{.shipping}}` - postitus mahdollinen (true/false)
+- `{{.giveaway}}` - annetaan ilmaiseksi (true/false)
+- `{{.price}}` - hinta euroina (0 jos annetaan)
 
 ```
-/malli Nouto Kannelmäestä{{#if shipping}} tai postitus{{/end}}. Mobilepay/käteinen.
+/malli Nouto Kannelmäestä{{if .shipping}} tai postitus{{end}}. Mobilepay/käteinen.
 ```
 
 ### Ilmoitusten hallinta

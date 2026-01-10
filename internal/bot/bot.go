@@ -1,11 +1,13 @@
 package bot
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
+	"text/template"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/raine/telegram-tori-bot/internal/llm"
@@ -626,20 +628,33 @@ func (b *Bot) handleReselectCallback(ctx context.Context, session *UserSession, 
 
 // --- Template expansion ---
 
-// templateRegex matches {{#if shipping}}...{{/end}} blocks (case-insensitive, flexible whitespace)
-var templateRegex = regexp.MustCompile(`(?si)\{\{\s*#if\s+shipping\s*\}\}(.*?)\{\{\s*/end\s*\}\}`)
+// TemplateData holds variables available in user templates.
+type TemplateData struct {
+	Shipping bool // Whether shipping is enabled
+	Giveaway bool // Whether it's a giveaway (free item)
+	Price    int  // Price in euros (0 for giveaways)
+}
 
-// expandTemplate expands template conditionals based on shipping flag.
-func expandTemplate(content string, shipping bool) string {
-	return templateRegex.ReplaceAllStringFunc(content, func(match string) string {
-		if shipping {
-			submatch := templateRegex.FindStringSubmatch(match)
-			if len(submatch) > 1 {
-				return submatch[1]
-			}
-		}
-		return ""
+// expandTemplate expands template conditionals using Go text/template syntax.
+// Available variables: {{.shipping}}, {{.giveaway}}, {{.price}}
+func expandTemplate(content string, data TemplateData) string {
+	tmpl, err := template.New("").Parse(content)
+	if err != nil {
+		log.Error().Err(err).Str("content", content).Msg("failed to parse template")
+		return content
+	}
+
+	var buf bytes.Buffer
+	err = tmpl.Execute(&buf, map[string]interface{}{
+		"shipping": data.Shipping,
+		"giveaway": data.Giveaway,
+		"price":    data.Price,
 	})
+	if err != nil {
+		log.Error().Err(err).Str("content", content).Msg("failed to execute template")
+		return content
+	}
+	return buf.String()
 }
 
 // --- Price parsing ---

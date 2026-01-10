@@ -764,7 +764,11 @@ func (h *ListingHandler) HandleShippingSelection(ctx context.Context, session *U
 	if h.sessionStore != nil {
 		tmpl, err := h.sessionStore.GetTemplate(session.userId)
 		if err == nil && tmpl != nil {
-			expanded := expandTemplate(tmpl.Content, isYes)
+			expanded := expandTemplate(tmpl.Content, TemplateData{
+				Shipping: isYes,
+				Giveaway: session.draft.CurrentDraft.TradeType == TradeTypeGive,
+				Price:    session.draft.CurrentDraft.Price,
+			})
 			// Always update template state (may be empty if no content for this shipping option)
 			session.draft.CurrentDraft.TemplateContent = strings.TrimSpace(expanded)
 
