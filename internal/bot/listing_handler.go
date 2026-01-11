@@ -1736,6 +1736,10 @@ func (h *ListingHandler) updateAndPublishAd(
 		return fmt.Errorf("failed to publish ad: %w", err)
 	}
 
+	if err := client.TrackAdConfirmation(ctx); err != nil {
+		log.Warn().Err(err).Msg("failed to track ad confirmation")
+	}
+
 	return nil
 }
 

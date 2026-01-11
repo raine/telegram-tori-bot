@@ -32,6 +32,9 @@ type AdService interface {
 	// PublishAd publishes the ad with the free package.
 	PublishAd(ctx context.Context, adID string) (*OrderResponse, error)
 
+	// TrackAdConfirmation calls the ad confirmation tracking endpoint.
+	TrackAdConfirmation(ctx context.Context) error
+
 	// DeleteAd deletes a draft ad.
 	DeleteAd(ctx context.Context, adID string) error
 

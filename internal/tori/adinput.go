@@ -563,6 +563,33 @@ func (c *AdinputClient) PublishAd(ctx context.Context, adID string) (*OrderRespo
 	return &result, nil
 }
 
+// TrackAdConfirmation calls the ad confirmation tracking endpoint.
+func (c *AdinputClient) TrackAdConfirmation(ctx context.Context) error {
+	reqURL := c.baseURL + "/tracking/adconfirmation"
+
+	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
+	if err != nil {
+		return err
+	}
+
+	c.setCommonHeaders(req, ServiceAdinput, nil)
+	req.Header.Set("Content-Length", "0")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	// Accept any 2xx status as success
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("tracking request failed: %d - %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
+}
+
 // AdState represents the state of an ad
 type AdState struct {
 	Label   string `json:"label"`

@@ -19,6 +19,7 @@ type MockAdService struct {
 	SetDeliveryOptionsFunc     func(ctx context.Context, adID string, opts DeliveryOptions) error
 	GetDeliveryPageFunc        func(ctx context.Context, adID string) (*DeliveryPageResponse, error)
 	PublishAdFunc              func(ctx context.Context, adID string) (*OrderResponse, error)
+	TrackAdConfirmationFunc    func(ctx context.Context) error
 	DeleteAdFunc               func(ctx context.Context, adID string) error
 	GetAdSummariesFunc         func(ctx context.Context, limit, offset int, facet string) (*AdSummariesResult, error)
 	DisposeAdFunc              func(ctx context.Context, adID string) error
@@ -189,6 +190,18 @@ func (m *MockAdService) PublishAd(ctx context.Context, adID string) (*OrderRespo
 		OrderID:     12345,
 		IsCompleted: true,
 	}, nil
+}
+
+func (m *MockAdService) TrackAdConfirmation(ctx context.Context) error {
+	m.mu.Lock()
+	m.Calls = append(m.Calls, MockCall{Method: "TrackAdConfirmation"})
+	fn := m.TrackAdConfirmationFunc
+	m.mu.Unlock()
+
+	if fn != nil {
+		return fn(ctx)
+	}
+	return nil
 }
 
 func (m *MockAdService) DeleteAd(ctx context.Context, adID string) error {
