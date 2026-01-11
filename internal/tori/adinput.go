@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
 
@@ -42,6 +43,7 @@ type AdinputClient struct {
 	bearerToken    string
 	installationID string
 	baseURL        string
+	abTestDeviceID string // UUID for A/B testing, persistent per client instance
 }
 
 // NewAdinputClient creates a new client for the adinput APIs.
@@ -52,6 +54,7 @@ func NewAdinputClient(bearerToken, installationID string) *AdinputClient {
 		bearerToken:    bearerToken,
 		installationID: installationID,
 		baseURL:        GatewayBaseURL,
+		abTestDeviceID: uuid.New().String(),
 	}
 }
 
@@ -63,6 +66,7 @@ func NewAdinputClientWithBaseURL(bearerToken, installationID, baseURL string) *A
 		bearerToken:    bearerToken,
 		installationID: installationID,
 		baseURL:        baseURL,
+		abTestDeviceID: uuid.New().String(),
 	}
 }
 
@@ -99,6 +103,9 @@ func (c *AdinputClient) setCommonHeaders(req *http.Request, service string, body
 	req.Header.Set("cmp-personalisation", "1")
 	req.Header.Set("cmp-marketing", "1")
 	req.Header.Set("cmp-advertising", "1")
+
+	// A/B testing header - uses a persistent UUID per client instance (matches mobile app behavior)
+	req.Header.Set("Ab-Test-Device-Id", c.abTestDeviceID)
 }
 
 // requestOptions contains optional settings for doJSON
