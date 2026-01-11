@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/raine/telegram-tori-bot/internal/tori"
 )
 
@@ -48,8 +49,10 @@ func main() {
 	}
 	fmt.Printf("Image loaded: %d bytes\n\n", len(imageData))
 
-	// Create client
-	client := tori.NewAdinputClient(bearerToken)
+	// Create client with a random installation ID for CLI usage
+	// In the bot, this ID is persisted per user; for CLI it's generated fresh
+	installationID := uuid.New().String()
+	client := tori.NewAdinputClient(bearerToken, installationID)
 
 	// Step 1: Create draft
 	fmt.Println("Creating draft ad...")

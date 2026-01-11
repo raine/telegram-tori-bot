@@ -166,8 +166,7 @@ func (h *BulkHandler) createDraftFromPhoto(ctx context.Context, session *UserSes
 	h.scheduleStatusUpdate(session)
 
 	// Capture the client before spawning goroutine to avoid race
-	session.initAdInputClient()
-	client := session.draft.AdInputClient
+	client := session.GetAdInputClient()
 
 	// Start analysis in background with copied data
 	analysisCtx, cancel := context.WithCancel(context.Background())

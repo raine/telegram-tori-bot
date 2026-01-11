@@ -44,22 +44,24 @@ type AdinputClient struct {
 	baseURL        string
 }
 
-// NewAdinputClient creates a new client for the adinput APIs
-func NewAdinputClient(bearerToken string) *AdinputClient {
+// NewAdinputClient creates a new client for the adinput APIs.
+// The installationID should be a unique UUID per user, persisted across sessions.
+func NewAdinputClient(bearerToken, installationID string) *AdinputClient {
 	return &AdinputClient{
 		httpClient:     &http.Client{},
 		bearerToken:    bearerToken,
-		installationID: "cliTool001",
+		installationID: installationID,
 		baseURL:        GatewayBaseURL,
 	}
 }
 
-// NewAdinputClientWithBaseURL creates a client with a custom base URL (for testing)
-func NewAdinputClientWithBaseURL(bearerToken, baseURL string) *AdinputClient {
+// NewAdinputClientWithBaseURL creates a client with a custom base URL (for testing).
+// The installationID should be a unique UUID per user, persisted across sessions.
+func NewAdinputClientWithBaseURL(bearerToken, installationID, baseURL string) *AdinputClient {
 	return &AdinputClient{
 		httpClient:     &http.Client{},
 		bearerToken:    bearerToken,
-		installationID: "cliTool001",
+		installationID: installationID,
 		baseURL:        baseURL,
 	}
 }

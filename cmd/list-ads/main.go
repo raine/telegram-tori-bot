@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 
+	"github.com/google/uuid"
 	"github.com/raine/telegram-tori-bot/config"
 	"github.com/raine/telegram-tori-bot/internal/storage"
 	"github.com/raine/telegram-tori-bot/internal/tori"
@@ -91,8 +92,22 @@ func main() {
 
 	fmt.Printf("User: %d (Tori User ID: %s)\n\n", session.TelegramID, session.ToriUserID)
 
+	// Get or create installation ID for the user
+	installationID, err := store.GetInstallationID(userID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting installation ID: %v\n", err)
+		os.Exit(1)
+	}
+	if installationID == "" {
+		installationID = uuid.New().String()
+		if err := store.SetInstallationID(userID, installationID); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving installation ID: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	// Use shared client logic from tori package
-	client := tori.NewAdinputClient(session.Tokens.BearerToken)
+	client := tori.NewAdinputClient(session.Tokens.BearerToken, installationID)
 	result, err := client.GetAdSummaries(context.Background(), limit, offset, facet)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error fetching ads: %v\n", err)

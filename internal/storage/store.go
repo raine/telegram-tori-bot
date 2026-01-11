@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/raine/telegram-tori-bot/internal/tori/auth"
+	"github.com/rs/zerolog/log"
 	_ "modernc.org/sqlite"
 )
 
@@ -58,6 +60,10 @@ type SessionStore interface {
 	// Postal code methods
 	SetPostalCode(telegramID int64, postalCode string) error
 	GetPostalCode(telegramID int64) (string, error)
+
+	// Installation ID methods (for Tori API finn-app-installation-id header)
+	GetInstallationID(telegramID int64) (string, error)
+	SetInstallationID(telegramID int64, installationID string) error
 
 	// Vision cache methods
 	GetVisionCache(imageHash string) (*VisionCacheEntry, error)
@@ -136,12 +142,21 @@ func (s *SQLiteStore) init() error {
 	userSettingsQuery := `
 	CREATE TABLE IF NOT EXISTS user_settings (
 		telegram_id INTEGER PRIMARY KEY,
-		postal_code TEXT
+		postal_code TEXT,
+		installation_id TEXT
 	);
 	`
 	_, err = s.db.Exec(userSettingsQuery)
 	if err != nil {
 		return fmt.Errorf("failed to create user_settings table: %w", err)
+	}
+
+	// Migration: add installation_id column if it doesn't exist (for existing databases)
+	if _, err := s.db.Exec("ALTER TABLE user_settings ADD COLUMN installation_id TEXT"); err != nil {
+		// "duplicate column name" error is expected if column already exists
+		if !strings.Contains(err.Error(), "duplicate column name") {
+			log.Warn().Err(err).Msg("failed to add installation_id column (migration)")
+		}
 	}
 
 	visionCacheQuery := `
@@ -430,6 +445,46 @@ func (s *SQLiteStore) GetPostalCode(telegramID int64) (string, error) {
 	}
 
 	return postalCode.String, nil
+}
+
+// GetInstallationID retrieves the installation ID for a user.
+// Returns empty string if not set.
+func (s *SQLiteStore) GetInstallationID(telegramID int64) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var installationID sql.NullString
+	err := s.db.QueryRow(
+		"SELECT installation_id FROM user_settings WHERE telegram_id = ?",
+		telegramID,
+	).Scan(&installationID)
+
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("failed to query installation id: %w", err)
+	}
+
+	return installationID.String, nil
+}
+
+// SetInstallationID sets the installation ID for a user.
+func (s *SQLiteStore) SetInstallationID(telegramID int64, installationID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	query := `
+	INSERT INTO user_settings (telegram_id, installation_id)
+	VALUES (?, ?)
+	ON CONFLICT(telegram_id) DO UPDATE SET
+		installation_id = excluded.installation_id;
+	`
+	_, err := s.db.Exec(query, telegramID, installationID)
+	if err != nil {
+		return fmt.Errorf("failed to set installation id: %w", err)
+	}
+	return nil
 }
 
 // GetVisionCache retrieves a cached vision analysis result by image hash.

@@ -18,6 +18,7 @@ func (bs *BotState) newUserSession(userId int64) (*UserSession, error) {
 	session := UserSession{
 		userId:   userId,
 		sender:   bs.bot.tg,
+		store:    bs.bot.sessionStore,
 		authFlow: NewAuthFlow(),
 		inbox:    make(chan SessionMessage, 10), // Buffered to avoid blocking
 		ctx:      ctx,

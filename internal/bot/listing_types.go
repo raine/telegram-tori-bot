@@ -6,7 +6,10 @@ import (
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/google/uuid"
+	"github.com/raine/telegram-tori-bot/internal/storage"
 	"github.com/raine/telegram-tori-bot/internal/tori"
+	"github.com/rs/zerolog/log"
 )
 
 // AdFlowState tracks where we are in the ad creation flow
@@ -135,11 +138,39 @@ type UploadedImage struct {
 	Height    int
 }
 
-// initAdInputClient initializes the AdinputClient for the session if not already done
+// initAdInputClient initializes the AdinputClient for the session if not already done.
+// It retrieves or generates a unique installation ID per user for the finn-app-installation-id header.
+// NOTE: This method must be called with s.mu held (use GetAdInputClient() for thread-safe access).
 func (s *UserSession) initAdInputClient() {
 	if s.draft.AdInputClient == nil && s.auth.BearerToken != "" {
-		s.draft.AdInputClient = tori.NewAdinputClient(s.auth.BearerToken)
+		installationID := getOrCreateInstallationID(s.store, s.userId)
+		s.draft.AdInputClient = tori.NewAdinputClient(s.auth.BearerToken, installationID)
 	}
+}
+
+// getOrCreateInstallationID retrieves the installation ID for a user from storage,
+// or generates and stores a new UUID if none exists.
+func getOrCreateInstallationID(store storage.SessionStore, telegramID int64) string {
+	if store == nil {
+		// Fallback to generating a new UUID each time if no store
+		return uuid.New().String()
+	}
+
+	installationID, err := store.GetInstallationID(telegramID)
+	if err != nil {
+		log.Error().Err(err).Int64("telegramID", telegramID).Msg("failed to get installation ID")
+		return uuid.New().String()
+	}
+
+	if installationID == "" {
+		// Generate and store a new UUID
+		installationID = uuid.New().String()
+		if err := store.SetInstallationID(telegramID, installationID); err != nil {
+			log.Error().Err(err).Int64("telegramID", telegramID).Msg("failed to save installation ID")
+		}
+	}
+
+	return installationID
 }
 
 // Common errors
@@ -216,10 +247,10 @@ func buildFinalPayload(
 
 	for i, img := range images {
 		imageArr[i] = map[string]string{
-			"uri":         img.ImagePath,
-			"width":       strconv.Itoa(img.Width),
-			"height":      strconv.Itoa(img.Height),
-			"description": "",
+			"uri":    img.ImagePath,
+			"width":  strconv.Itoa(img.Width),
+			"height": strconv.Itoa(img.Height),
+			"type":   "image/jpg",
 		}
 		multiImageArr[i] = map[string]any{
 			"path":        img.ImagePath,

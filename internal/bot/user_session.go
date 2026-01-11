@@ -10,6 +10,7 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/rs/zerolog/log"
 
+	"github.com/raine/telegram-tori-bot/internal/storage"
 	"github.com/raine/telegram-tori-bot/internal/tori"
 )
 
@@ -214,7 +215,8 @@ type MessageHandler interface {
 type UserSession struct {
 	userId int64
 	sender MessageSender
-	mu     sync.Mutex // For thread-safe accessors and TryRefreshTokens
+	store  storage.SessionStore // For per-user settings like installation ID
+	mu     sync.Mutex           // For thread-safe accessors and TryRefreshTokens
 
 	// Worker channel for sequential message processing
 	inbox   chan SessionMessage

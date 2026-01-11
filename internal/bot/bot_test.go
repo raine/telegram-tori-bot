@@ -102,6 +102,14 @@ func (m *mockSessionStore) GetAllowedUsers() ([]storage.AllowedUser, error) {
 	return nil, nil
 }
 
+func (m *mockSessionStore) GetInstallationID(telegramID int64) (string, error) {
+	return "", nil // Return empty, will trigger UUID generation
+}
+
+func (m *mockSessionStore) SetInstallationID(telegramID int64, installationID string) error {
+	return nil
+}
+
 const testAdminID int64 = 1 // Default admin ID for tests
 
 func setup(t *testing.T) (int64, *botApiMock, *Bot, *UserSession) {
@@ -312,7 +320,7 @@ func setupAdInputSession(t *testing.T, ts *httptest.Server) (*httptest.Server, i
 	}
 
 	// Initialize adinput client with test server URL
-	session.draft.AdInputClient = tori.NewAdinputClientWithBaseURL("test-token", ts.URL)
+	session.draft.AdInputClient = tori.NewAdinputClientWithBaseURL("test-token", "test-installation-id", ts.URL)
 	session.draft.DraftID = "draft-123"
 	session.draft.Etag = "test-etag"
 

@@ -322,8 +322,7 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 	defer cancelTyping()
 	go session.startTypingLoop(typingCtx)
 
-	session.initAdInputClient()
-	client := session.draft.AdInputClient
+	client := session.GetAdInputClient()
 
 	if client == nil {
 		session.draft.IsCreatingDraft = false
