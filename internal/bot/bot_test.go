@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/raine/telegram-tori-bot/internal/llm"
@@ -1420,6 +1421,7 @@ func TestPublishWithToriDiiliShipping_SetsCorrectDeliveryOptions(t *testing.T) {
 	tg := new(botApiMock)
 
 	var capturedDeliveryOpts tori.DeliveryOptions
+	publishDone := make(chan struct{})
 
 	// Create mock ad service that captures delivery options
 	mockService := &tori.MockAdService{
@@ -1431,6 +1433,7 @@ func TestPublishWithToriDiiliShipping_SetsCorrectDeliveryOptions(t *testing.T) {
 			return nil
 		},
 		PublishAdFunc: func(ctx context.Context, adID string) (*tori.OrderResponse, error) {
+			defer close(publishDone) // Signal when publish is called
 			return &tori.OrderResponse{OrderID: 123, IsCompleted: true}, nil
 		},
 	}
@@ -1483,6 +1486,14 @@ func TestPublishWithToriDiiliShipping_SetsCorrectDeliveryOptions(t *testing.T) {
 		Return(&tgbotapi.APIResponse{Ok: true}, nil).Maybe()
 
 	listingHandler.HandleSendListing(context.Background(), session)
+
+	// Wait for background publish to complete (with timeout)
+	select {
+	case <-publishDone:
+		// Background publish completed
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout waiting for background publish to complete")
+	}
 
 	// Verify SetDeliveryOptions was called with correct shipping info
 	if !mockService.WasCalled("SetDeliveryOptions") {

@@ -170,6 +170,9 @@ func (b *Bot) HandleSessionMessage(ctx context.Context, session *UserSession, ms
 		b.bulkHandler.HandleBulkDraftError(session, msg.BulkDraftError)
 	case "bulk_status_update":
 		b.bulkHandler.HandleStatusUpdate(session)
+	// Background publish message types
+	case "publish_complete":
+		b.listingHandler.HandlePublishComplete(session, msg.PublishResult)
 	}
 }
 

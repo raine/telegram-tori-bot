@@ -33,6 +33,17 @@ type SessionMessage struct {
 	// Bulk mode message data
 	BulkAnalysisResult *BulkAnalysisResult // For bulk_analysis_complete messages
 	BulkDraftError     *BulkDraftError     // For bulk_draft_error messages
+
+	// Background publish data
+	PublishResult *PublishResult // For publish_complete messages
+}
+
+// PublishResult contains the result of a background publish operation.
+type PublishResult struct {
+	Title   string // Title of the published listing
+	Price   int    // Price of the listing
+	DraftID string // Tori draft ID
+	Error   error  // Error if publish failed
 }
 
 // isLoggedIn returns true if the user has a valid bearer token (internal, no lock)

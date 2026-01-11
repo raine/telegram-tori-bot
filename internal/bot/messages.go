@@ -188,6 +188,7 @@ const (
 const (
 	MsgSummaryHeader  = "*Ilmoitus valmis:*"
 	MsgSendingListing = "Lähetetään ilmoitusta..."
+	MsgPublishingSoon = "✅ Ilmoitus julkaistaan kohta..."
 )
 
 // Button labels for summary

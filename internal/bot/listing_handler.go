@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"sort"
 	"strconv"
 	"strings"
@@ -933,6 +934,7 @@ func (h *ListingHandler) HandlePublishCallback(ctx context.Context, session *Use
 }
 
 // HandleSendListing sends the listing using the adinput API.
+// Publishing happens in a background goroutine so the user gets immediate feedback.
 // Called from session worker - no locking needed.
 func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSession) {
 	if session.draft.CurrentDraft == nil || len(session.photoCol.Photos) == 0 {
@@ -958,7 +960,7 @@ func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSes
 		return
 	}
 
-	// Copy data needed for network ops
+	// Copy data needed for background goroutine (can't access session from goroutine)
 	draftID := session.draft.DraftID
 	etag := session.draft.Etag
 	draftCopy := *session.draft.CurrentDraft
@@ -967,9 +969,7 @@ func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSes
 	client := session.draft.AdInputClient
 	userId := session.userId
 
-	session.reply(MsgSendingListing)
-
-	// Get postal code from storage
+	// Get postal code from storage (need this before starting background task)
 	var postalCode string
 	if h.sessionStore != nil {
 		var err error
@@ -985,33 +985,82 @@ func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSes
 		return
 	}
 
-	// Set category on draft (network I/O)
-	newEtag, err := h.setCategoryOnDraft(ctx, client, draftID, etag, draftCopy.CategoryID)
+	// Immediately respond and reset session
+	session.replyAndRemoveCustomKeyboard(MsgPublishingSoon)
+	session.reset()
+
+	// Start background publishing with delays
+	go h.publishInBackground(session, client, draftID, etag, &draftCopy, images, postalCode)
+}
+
+// publishInBackground performs the publish API calls with delays.
+// This runs in a separate goroutine and sends results back through the session worker channel.
+func (h *ListingHandler) publishInBackground(
+	session *UserSession,
+	client tori.AdService,
+	draftID string,
+	etag string,
+	draft *AdInputDraft,
+	images []UploadedImage,
+	postalCode string,
+) {
+	// Use a fresh context since the original request context may be cancelled
+	ctx := context.Background()
+
+	result := &PublishResult{
+		Title:   draft.Title,
+		Price:   draft.Price,
+		DraftID: draftID,
+	}
+
+	// Set category on draft
+	newEtag, err := h.setCategoryOnDraft(ctx, client, draftID, etag, draft.CategoryID)
 	if err != nil {
-		session.replyWithError(err)
+		result.Error = err
+		session.Send(SessionMessage{
+			Type:          "publish_complete",
+			Ctx:           ctx,
+			PublishResult: result,
+		})
 		return
 	}
 	etag = newEtag
 
-	// Update and publish (network I/O)
-	if err := h.updateAndPublishAd(ctx, client, draftID, etag, &draftCopy, images, postalCode); err != nil {
-		session.replyWithError(err)
+	// Update and publish with delays
+	err = h.updateAndPublishAdWithDelays(ctx, client, draftID, etag, draft, images, postalCode)
+	if err != nil {
+		result.Error = err
+	}
+
+	// Send result back through session worker channel
+	session.Send(SessionMessage{
+		Type:          "publish_complete",
+		Ctx:           ctx,
+		PublishResult: result,
+	})
+}
+
+// HandlePublishComplete handles the completion of a background publish operation.
+// Called from session worker - no locking needed.
+func (h *ListingHandler) HandlePublishComplete(session *UserSession, result *PublishResult) {
+	if result == nil {
 		return
 	}
 
-	// Check if draft was cancelled during publish - if so, the listing was still published
-	// successfully on Tori's side, so just log it and clean up
-	if session.draft.CurrentDraft == nil {
-		log.Info().
-			Int64("userId", session.userId).
-			Str("title", draftCopy.Title).
-			Msg("draft cancelled during publish but listing was published successfully")
-		session.replyAndRemoveCustomKeyboard(MsgListingSent)
+	if result.Error != nil {
+		log.Error().
+			Err(result.Error).
+			Str("title", result.Title).
+			Str("draftID", result.DraftID).
+			Msg("background publish failed")
+		session.replyWithError(result.Error)
 		return
 	}
-	session.replyAndRemoveCustomKeyboard(MsgListingSent)
-	log.Info().Str("title", draftCopy.Title).Int("price", draftCopy.Price).Msg("listing published")
-	session.reset()
+
+	log.Info().
+		Str("title", result.Title).
+		Int("price", result.Price).
+		Msg("listing published in background")
 }
 
 // HandleTitleDescriptionReply handles replies to title/description messages for editing.
@@ -1739,6 +1788,106 @@ func (h *ListingHandler) updateAndPublishAd(
 	if err := client.TrackAdConfirmation(ctx); err != nil {
 		log.Warn().Err(err).Msg("failed to track ad confirmation")
 	}
+
+	return nil
+}
+
+// updateAndPublishAdWithDelays updates the ad with all fields and publishes it with delays.
+// Delays are added between API calls.
+// Total delay is approximately 5-7 seconds.
+func (h *ListingHandler) updateAndPublishAdWithDelays(
+	ctx context.Context,
+	client tori.AdService,
+	draftID string,
+	etag string,
+	draft *AdInputDraft,
+	images []UploadedImage,
+	postalCode string,
+) error {
+	payload := buildFinalPayload(draft, images, postalCode)
+
+	// Update the ad
+	_, err := client.UpdateAd(ctx, draftID, etag, payload)
+	if err != nil {
+		return fmt.Errorf("failed to update ad: %w", err)
+	}
+
+	// Delay 2-3 seconds after UpdateAd (randomized)
+	delay1 := time.Duration(2000+rand.Intn(1000)) * time.Millisecond
+	log.Debug().Dur("delay", delay1).Msg("sleeping after UpdateAd")
+	time.Sleep(delay1)
+
+	// Build delivery options
+	deliveryOpts := tori.DeliveryOptions{
+		Client:             "ANDROID",
+		Meetup:             true, // Always allow meetup as fallback
+		SellerPaysShipping: false,
+		Shipping:           draft.ShippingPossible && draft.SavedShippingAddress != nil,
+		BuyNow:             draft.ShippingPossible && draft.SavedShippingAddress != nil, // BuyNow required for ToriDiili
+	}
+
+	// Add shipping info if Tori Diili shipping is enabled
+	if draft.ShippingPossible && draft.SavedShippingAddress != nil {
+		// Determine products based on package size
+		products := []string{ProductMatkahuoltoShop}
+		if draft.PackageSize == PackageSizeSmall {
+			products = append(products, ProductKotipaketti)
+		} else {
+			products = append(products, ProductPostipaketti)
+		}
+
+		// Get phone number (prefer mobilePhone, fall back to phoneNumber)
+		phone := draft.SavedShippingAddress.MobilePhone
+		if phone == "" {
+			phone = draft.SavedShippingAddress.PhoneNumber
+		}
+
+		deliveryOpts.ShippingInfo = &tori.ShippingInfo{
+			Name:        draft.SavedShippingAddress.Name,
+			Address:     draft.SavedShippingAddress.Address,
+			City:        draft.SavedShippingAddress.City,
+			PostalCode:  draft.SavedShippingAddress.PostalCode, // Use sender's address postal code, not ad location
+			PhoneNumber: phone,
+			Products:    products,
+			Size:        draft.PackageSize,
+			SaveAddress: true,
+			// Zero defaults for optional fields
+			DeliveryPointID: 0,
+			FlatNo:          0,
+			FloorNo:         0,
+			FloorType:       "",
+			HouseType:       "",
+			StreetName:      "",
+			StreetNo:        "",
+		}
+
+		log.Info().
+			Str("size", draft.PackageSize).
+			Strs("products", products).
+			Str("name", draft.SavedShippingAddress.Name).
+			Msg("publishing with Tori Diili shipping")
+	}
+
+	err = client.SetDeliveryOptions(ctx, draftID, deliveryOpts)
+	if err != nil {
+		return fmt.Errorf("failed to set delivery options: %w", err)
+	}
+
+	// Delay 1-2 seconds after SetDeliveryOptions (randomized)
+	delay2 := time.Duration(1000+rand.Intn(1000)) * time.Millisecond
+	log.Debug().Dur("delay", delay2).Msg("sleeping after SetDeliveryOptions")
+	time.Sleep(delay2)
+
+	// Publish
+	_, err = client.PublishAd(ctx, draftID)
+	if err != nil {
+		return fmt.Errorf("failed to publish ad: %w", err)
+	}
+
+	// Delay 1 second after PublishAd before sending success message
+	delay3 := 1 * time.Second
+	log.Debug().Dur("delay", delay3).Msg("sleeping after PublishAd")
+	time.Sleep(delay3)
 
 	return nil
 }
