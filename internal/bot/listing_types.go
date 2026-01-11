@@ -216,10 +216,10 @@ func buildFinalPayload(
 
 	for i, img := range images {
 		imageArr[i] = map[string]string{
-			"uri":    img.ImagePath,
-			"width":  strconv.Itoa(img.Width),
-			"height": strconv.Itoa(img.Height),
-			"type":   "image/jpg",
+			"uri":         img.ImagePath,
+			"width":       strconv.Itoa(img.Width),
+			"height":      strconv.Itoa(img.Height),
+			"description": "",
 		}
 		multiImageArr[i] = map[string]any{
 			"path":        img.ImagePath,
