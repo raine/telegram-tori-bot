@@ -17,6 +17,10 @@ type AdService interface {
 	// PatchItem updates item data (used to set image, category, etc.).
 	PatchItem(ctx context.Context, adID, etag string, data map[string]any) (*PatchItemResponse, error)
 
+	// PatchItemFields patches all item fields to the /items endpoint.
+	// This is required for the review system to see complete item data.
+	PatchItemFields(ctx context.Context, adID, etag string, fields ItemFields) (*PatchItemResponse, error)
+
 	// GetAttributes gets category-specific attributes for the current category.
 	GetAttributes(ctx context.Context, adID string) (*AttributesResponse, error)
 

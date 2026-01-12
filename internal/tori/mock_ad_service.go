@@ -14,6 +14,7 @@ type MockAdService struct {
 	UploadImageFunc            func(ctx context.Context, adID string, imageData []byte) (*UploadImageResponse, error)
 	GetCategoryPredictionsFunc func(ctx context.Context, adID string) ([]CategoryPrediction, error)
 	PatchItemFunc              func(ctx context.Context, adID, etag string, data map[string]any) (*PatchItemResponse, error)
+	PatchItemFieldsFunc        func(ctx context.Context, adID, etag string, fields ItemFields) (*PatchItemResponse, error)
 	GetAttributesFunc          func(ctx context.Context, adID string) (*AttributesResponse, error)
 	UpdateAdFunc               func(ctx context.Context, adID, etag string, payload AdUpdatePayload) (*UpdateAdResponse, error)
 	SetDeliveryOptionsFunc     func(ctx context.Context, adID string, opts DeliveryOptions) error
@@ -93,6 +94,21 @@ func (m *MockAdService) PatchItem(ctx context.Context, adID, etag string, data m
 
 	if fn != nil {
 		return fn(ctx, adID, etag, data)
+	}
+	return &PatchItemResponse{
+		ID:   1,
+		ETag: "mock-etag-v2",
+	}, nil
+}
+
+func (m *MockAdService) PatchItemFields(ctx context.Context, adID, etag string, fields ItemFields) (*PatchItemResponse, error) {
+	m.mu.Lock()
+	m.Calls = append(m.Calls, MockCall{Method: "PatchItemFields", Args: []any{adID, etag, fields}})
+	fn := m.PatchItemFieldsFunc
+	m.mu.Unlock()
+
+	if fn != nil {
+		return fn(ctx, adID, etag, fields)
 	}
 	return &PatchItemResponse{
 		ID:   1,

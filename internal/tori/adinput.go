@@ -317,6 +317,17 @@ func (c *AdinputClient) GetCategoryPredictions(ctx context.Context, adID string)
 	return result.Prediction.Categories, nil
 }
 
+// ItemFields contains fields to patch to /items endpoint.
+// Note: postalcode is intentionally omitted - iOS also doesn't patch it to /items
+// and listings still pass review.
+type ItemFields struct {
+	Title       string
+	Description string
+	Condition   int            // 0 means not set
+	Price       int            // 0 means not set (giveaway)
+	Attributes  map[string]any // category-specific attributes (e.g., computeracc_type)
+}
+
 // PatchItemResponse is the response from patching an item
 type PatchItemResponse struct {
 	ID   int    `json:"id"`
@@ -331,6 +342,33 @@ func (c *AdinputClient) PatchItem(ctx context.Context, adID, etag string, data m
 		return nil, fmt.Errorf("patch item: %w", err)
 	}
 	return &result, nil
+}
+
+// PatchItemFields patches all item fields to the /items endpoint.
+// This is required for the review system to see complete item data.
+// Note: postalcode is NOT required - iOS also leaves it unset in /items.
+func (c *AdinputClient) PatchItemFields(ctx context.Context, adID, etag string, fields ItemFields) (*PatchItemResponse, error) {
+	data := make(map[string]any)
+
+	if fields.Title != "" {
+		data["title"] = fields.Title
+	}
+	if fields.Description != "" {
+		data["description"] = fields.Description
+	}
+	if fields.Condition != 0 {
+		data["condition"] = fields.Condition
+	}
+	if fields.Price > 0 {
+		// Note: /items uses object format, not array
+		data["price"] = map[string]any{"price_amount": fields.Price}
+	}
+	// Add category-specific attributes (already converted to proper types)
+	for k, v := range fields.Attributes {
+		data[k] = v
+	}
+
+	return c.PatchItem(ctx, adID, etag, data)
 }
 
 // AttributeOption represents an option for a select attribute
