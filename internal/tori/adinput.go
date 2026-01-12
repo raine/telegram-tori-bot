@@ -21,11 +21,12 @@ const (
 	GatewayBaseURL = "https://apps-gw-poc.svc.tori.fi"
 
 	// Service names for gateway routing
-	ServiceAdinput      = "APPS-ADINPUT"
-	ServiceItemCreation = "RC-ITEM-CREATION-FLOW-API"
-	ServiceTjtAPI       = "TJT-API"
-	ServiceAdAction     = "AD-ACTION"
-	ServiceAdSummaries  = "AD-SUMMARIES"
+	ServiceAdinput         = "APPS-ADINPUT"
+	ServiceItemCreation    = "RC-ITEM-CREATION-FLOW-API"
+	ServiceTjtAPI          = "TJT-API"
+	ServiceAdAction        = "AD-ACTION"
+	ServiceAdSummaries     = "AD-SUMMARIES"
+	ServiceBillingTracking = "BILLING-TRACKING-SERVICE"
 
 	// Android app version strings - update these when the API requires newer versions
 	// Format: ToriApp_And/{version} (Linux; U; Android {os}; {locale}; {device} Build/{build}) ToriNativeApp(UA spoofed for tracking) ToriApp_And
@@ -602,15 +603,19 @@ func (c *AdinputClient) PublishAd(ctx context.Context, adID string) (*OrderRespo
 }
 
 // TrackAdConfirmation calls the ad confirmation tracking endpoint.
-func (c *AdinputClient) TrackAdConfirmation(ctx context.Context) error {
-	reqURL := c.baseURL + "/tracking/adconfirmation"
+func (c *AdinputClient) TrackAdConfirmation(ctx context.Context, adID string, orderID int) error {
+	params := url.Values{}
+	params.Set("adId", adID)
+	params.Set("orderId", strconv.Itoa(orderID))
+
+	reqURL := c.baseURL + "/tracking/adconfirmation?" + params.Encode()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
 	if err != nil {
 		return err
 	}
 
-	c.setCommonHeaders(req, ServiceAdinput, nil)
+	c.setCommonHeaders(req, ServiceBillingTracking, nil)
 	req.Header.Set("Content-Length", "0")
 
 	resp, err := c.httpClient.Do(req)

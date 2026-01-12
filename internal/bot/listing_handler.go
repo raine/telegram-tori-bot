@@ -1811,12 +1811,12 @@ func (h *ListingHandler) updateAndPublishAd(
 	}
 
 	// Publish
-	_, err = client.PublishAd(ctx, draftID)
+	orderResp, err := client.PublishAd(ctx, draftID)
 	if err != nil {
 		return fmt.Errorf("failed to publish ad: %w", err)
 	}
 
-	if err := client.TrackAdConfirmation(ctx); err != nil {
+	if err := client.TrackAdConfirmation(ctx, draftID, orderResp.OrderID); err != nil {
 		log.Warn().Err(err).Msg("failed to track ad confirmation")
 	}
 
