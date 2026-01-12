@@ -649,8 +649,25 @@ func (m *ListingManager) startRepublish(ctx context.Context, session *UserSessio
 		}
 	}
 
-	// Update the draft
-	updateResp, err := client.UpdateAd(ctx, draft.ID, etag, payload)
+	// Patch all fields to /items (required for review system)
+	fields := buildItemFieldsFromValues(values)
+	_, err = client.PatchItemFields(ctx, draft.ID, etag, fields)
+	if err != nil {
+		log.Error().Err(err).Str("draftID", draft.ID).Msg("failed to patch item fields for republish")
+		session.reply(MsgRepublishUpdateError, err.Error())
+		return
+	}
+
+	// Get fresh ETag from adinput service (iOS does this before update)
+	adWithModel, err := client.GetAdWithModel(ctx, draft.ID)
+	if err != nil {
+		log.Error().Err(err).Str("draftID", draft.ID).Msg("failed to get fresh etag for republish")
+		session.reply(MsgRepublishUpdateError, err.Error())
+		return
+	}
+
+	// Update the draft (with fresh etag)
+	updateResp, err := client.UpdateAd(ctx, draft.ID, adWithModel.Ad.ETag, payload)
 	if err != nil {
 		log.Error().Err(err).Str("draftID", draft.ID).Msg("failed to update draft for republish")
 		session.reply(MsgRepublishUpdateError, err.Error())
