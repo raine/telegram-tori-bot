@@ -39,6 +39,9 @@ type AdService interface {
 	// TrackAdConfirmation calls the ad confirmation tracking endpoint.
 	TrackAdConfirmation(ctx context.Context, adID string, orderID int) error
 
+	// GetOrderConfirmation fetches order confirmation after publishing.
+	GetOrderConfirmation(ctx context.Context, orderID int, adID string) error
+
 	// DeleteAd deletes a draft ad.
 	DeleteAd(ctx context.Context, adID string) error
 

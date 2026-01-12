@@ -27,6 +27,7 @@ const (
 	ServiceAdAction        = "AD-ACTION"
 	ServiceAdSummaries     = "AD-SUMMARIES"
 	ServiceBillingTracking = "BILLING-TRACKING-SERVICE"
+	ServiceOrderPayment    = "ORDER-PAYMENT-SERVER"
 
 	// Android app version strings - update these when the API requires newer versions
 	// Format: ToriApp_And/{version} (Linux; U; Android {os}; {locale}; {device} Build/{build}) ToriNativeApp(UA spoofed for tracking) ToriApp_And
@@ -631,6 +632,13 @@ func (c *AdinputClient) TrackAdConfirmation(ctx context.Context, adID string, or
 	}
 
 	return nil
+}
+
+// GetOrderConfirmation fetches order confirmation after publishing.
+// iOS calls this before tracking.
+func (c *AdinputClient) GetOrderConfirmation(ctx context.Context, orderID int, adID string) error {
+	path := fmt.Sprintf("/orders/%d/confirmation/%s", orderID, adID)
+	return c.doJSON(ctx, "GET", c.baseURL+path, ServiceOrderPayment, nil, nil, nil)
 }
 
 // AdState represents the state of an ad
