@@ -1026,6 +1026,37 @@ func (h *ListingHandler) publishInBackground(
 	}
 	etag = newEtag
 
+	// Patch all fields to /items (required for review system)
+	fields := buildItemFields(
+		draft.Title,
+		draft.GetFullDescription(),
+		draft.Price,
+		draft.CollectedAttrs,
+	)
+	_, err = client.PatchItemFields(ctx, draftID, etag, fields)
+	if err != nil {
+		result.Error = fmt.Errorf("failed to patch item fields: %w", err)
+		session.Send(SessionMessage{
+			Type:          "publish_complete",
+			Ctx:           ctx,
+			PublishResult: result,
+		})
+		return
+	}
+
+	// Get fresh ETag from adinput service (iOS does this before update)
+	adWithModel, err := client.GetAdWithModel(ctx, draftID)
+	if err != nil {
+		result.Error = fmt.Errorf("failed to get fresh etag: %w", err)
+		session.Send(SessionMessage{
+			Type:          "publish_complete",
+			Ctx:           ctx,
+			PublishResult: result,
+		})
+		return
+	}
+	etag = adWithModel.Ad.ETag
+
 	// Update and publish with delays
 	err = h.updateAndPublishAdWithDelays(ctx, client, draftID, etag, draft, images, postalCode)
 	if err != nil {
