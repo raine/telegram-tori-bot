@@ -641,6 +641,16 @@ func (c *AdinputClient) GetOrderConfirmation(ctx context.Context, orderID int, a
 	return c.doJSON(ctx, "GET", c.baseURL+path, ServiceOrderPayment, nil, nil, nil)
 }
 
+// GetProductContext fetches the product context before publishing.
+// iOS calls this before order/choices - may prime publish state.
+func (c *AdinputClient) GetProductContext(ctx context.Context, adID string, adRevision string) error {
+	params := url.Values{}
+	params.Set("adRevision", adRevision)
+
+	path := fmt.Sprintf("/adinput/product/recommerce/%s/productcontext?%s", adID, params.Encode())
+	return c.doJSON(ctx, "GET", AdinputBaseURL+path, ServiceAdinput, nil, nil, nil)
+}
+
 // AdState represents the state of an ad
 type AdState struct {
 	Label   string `json:"label"`

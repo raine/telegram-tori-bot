@@ -22,6 +22,7 @@ type MockAdService struct {
 	PublishAdFunc              func(ctx context.Context, adID string) (*OrderResponse, error)
 	TrackAdConfirmationFunc    func(ctx context.Context, adID string, orderID int) error
 	GetOrderConfirmationFunc   func(ctx context.Context, orderID int, adID string) error
+	GetProductContextFunc      func(ctx context.Context, adID string, adRevision string) error
 	DeleteAdFunc               func(ctx context.Context, adID string) error
 	GetAdSummariesFunc         func(ctx context.Context, limit, offset int, facet string) (*AdSummariesResult, error)
 	DisposeAdFunc              func(ctx context.Context, adID string) error
@@ -229,6 +230,18 @@ func (m *MockAdService) GetOrderConfirmation(ctx context.Context, orderID int, a
 
 	if fn != nil {
 		return fn(ctx, orderID, adID)
+	}
+	return nil
+}
+
+func (m *MockAdService) GetProductContext(ctx context.Context, adID string, adRevision string) error {
+	m.mu.Lock()
+	m.Calls = append(m.Calls, MockCall{Method: "GetProductContext", Args: []any{adID, adRevision}})
+	fn := m.GetProductContextFunc
+	m.mu.Unlock()
+
+	if fn != nil {
+		return fn(ctx, adID, adRevision)
 	}
 	return nil
 }

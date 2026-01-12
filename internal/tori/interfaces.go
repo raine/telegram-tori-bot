@@ -42,6 +42,9 @@ type AdService interface {
 	// GetOrderConfirmation fetches order confirmation after publishing.
 	GetOrderConfirmation(ctx context.Context, orderID int, adID string) error
 
+	// GetProductContext fetches the product context before publishing.
+	GetProductContext(ctx context.Context, adID string, adRevision string) error
+
 	// DeleteAd deletes a draft ad.
 	DeleteAd(ctx context.Context, adID string) error
 
