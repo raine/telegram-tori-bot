@@ -1280,8 +1280,26 @@ func (h *BulkHandler) doPublishDraft(ctx context.Context, session *UserSession, 
 
 	payload := buildFinalPayload(adDraft, draft.Images, postalCode)
 
-	// Update the ad
-	_, err := client.UpdateAd(ctx, draft.DraftID, draft.ETag, payload)
+	// Patch all fields to /items (required for review system)
+	fields := buildItemFields(
+		draft.Title,
+		draft.Description,
+		draft.Price,
+		draft.CollectedAttrs,
+	)
+	_, err := client.PatchItemFields(ctx, draft.DraftID, draft.ETag, fields)
+	if err != nil {
+		return fmt.Errorf("failed to patch item fields: %w", err)
+	}
+
+	// Get fresh ETag from adinput service (iOS does this before update)
+	adWithModel, err := client.GetAdWithModel(ctx, draft.DraftID)
+	if err != nil {
+		return fmt.Errorf("failed to get fresh etag: %w", err)
+	}
+
+	// Update the ad (use fresh etag)
+	_, err = client.UpdateAd(ctx, draft.DraftID, adWithModel.Ad.ETag, payload)
 	if err != nil {
 		return fmt.Errorf("failed to update ad: %w", err)
 	}
