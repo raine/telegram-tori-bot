@@ -1837,11 +1837,12 @@ func (h *ListingHandler) updateAndPublishAdWithDelays(
 ) error {
 	payload := buildFinalPayload(draft, images, postalCode)
 
-	// Update the ad
-	_, err := client.UpdateAd(ctx, draftID, etag, payload)
+	// Update the ad and capture new ETag
+	updateResp, err := client.UpdateAd(ctx, draftID, etag, payload)
 	if err != nil {
 		return fmt.Errorf("failed to update ad: %w", err)
 	}
+	etag = updateResp.ETag
 
 	// Delay 2-3 seconds after UpdateAd (randomized)
 	delay1 := time.Duration(2000+rand.Intn(1000)) * time.Millisecond
