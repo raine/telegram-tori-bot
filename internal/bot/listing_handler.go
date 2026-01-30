@@ -3,7 +3,6 @@ package bot
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"sort"
 	"strconv"
 	"strings"
@@ -1044,7 +1043,7 @@ func (h *ListingHandler) publishInBackground(
 		return
 	}
 
-	// Get fresh ETag from adinput service (iOS does this before update)
+	// Get fresh ETag from adinput service
 	adWithModel, err := client.GetAdWithModel(ctx, draftID)
 	if err != nil {
 		result.Error = fmt.Errorf("failed to get fresh etag: %w", err)
@@ -1057,8 +1056,8 @@ func (h *ListingHandler) publishInBackground(
 	}
 	etag = adWithModel.Ad.ETag
 
-	// Update and publish with delays
-	err = h.updateAndPublishAdWithDelays(ctx, client, draftID, etag, draft, images, postalCode)
+	// Update and publish
+	err = h.updateAndPublishAd(ctx, client, draftID, etag, draft, images, postalCode)
 	if err != nil {
 		result.Error = err
 	}
@@ -1748,97 +1747,6 @@ func (h *ListingHandler) updateAndPublishAd(
 ) error {
 	payload := buildFinalPayload(draft, images, postalCode)
 
-	// Update the ad
-	_, err := client.UpdateAd(ctx, draftID, etag, payload)
-	if err != nil {
-		return fmt.Errorf("failed to update ad: %w", err)
-	}
-
-	// Build delivery options
-	// iOS sets meetup:false when shipping is enabled, never both
-	shippingEnabled := draft.ShippingPossible && draft.SavedShippingAddress != nil
-	deliveryOpts := tori.DeliveryOptions{
-		Client:             "ANDROID",
-		Meetup:             !shippingEnabled, // iOS: meetup and shipping are mutually exclusive
-		SellerPaysShipping: false,
-		Shipping:           shippingEnabled,
-		BuyNow:             shippingEnabled, // BuyNow required for ToriDiili
-	}
-
-	// Add shipping info if Tori Diili shipping is enabled
-	if draft.ShippingPossible && draft.SavedShippingAddress != nil {
-		// Determine products based on package size
-		products := []string{ProductMatkahuoltoShop}
-		if draft.PackageSize == PackageSizeSmall {
-			products = append(products, ProductKotipaketti)
-		} else {
-			products = append(products, ProductPostipaketti)
-		}
-
-		// Get phone number (prefer mobilePhone, fall back to phoneNumber)
-		phone := draft.SavedShippingAddress.MobilePhone
-		if phone == "" {
-			phone = draft.SavedShippingAddress.PhoneNumber
-		}
-
-		deliveryOpts.ShippingInfo = &tori.ShippingInfo{
-			Name:        draft.SavedShippingAddress.Name,
-			Address:     draft.SavedShippingAddress.Address,
-			City:        draft.SavedShippingAddress.City,
-			PostalCode:  draft.SavedShippingAddress.PostalCode, // Use sender's address postal code, not ad location
-			PhoneNumber: phone,
-			Products:    products,
-			Size:        draft.PackageSize,
-			SaveAddress: true,
-			// Zero defaults for optional fields
-			DeliveryPointID: 0,
-			FlatNo:          0,
-			FloorNo:         0,
-			FloorType:       "",
-			HouseType:       "",
-			StreetName:      "",
-			StreetNo:        "",
-		}
-
-		log.Info().
-			Str("size", draft.PackageSize).
-			Strs("products", products).
-			Str("name", draft.SavedShippingAddress.Name).
-			Msg("publishing with Tori Diili shipping")
-	}
-
-	err = client.SetDeliveryOptions(ctx, draftID, deliveryOpts)
-	if err != nil {
-		return fmt.Errorf("failed to set delivery options: %w", err)
-	}
-
-	// Publish
-	orderResp, err := client.PublishAd(ctx, draftID)
-	if err != nil {
-		return fmt.Errorf("failed to publish ad: %w", err)
-	}
-
-	if err := client.TrackAdConfirmation(ctx, draftID, orderResp.OrderID); err != nil {
-		log.Warn().Err(err).Msg("failed to track ad confirmation")
-	}
-
-	return nil
-}
-
-// updateAndPublishAdWithDelays updates the ad with all fields and publishes it with delays.
-// Delays are added between API calls.
-// Total delay is approximately 5-7 seconds.
-func (h *ListingHandler) updateAndPublishAdWithDelays(
-	ctx context.Context,
-	client tori.AdService,
-	draftID string,
-	etag string,
-	draft *AdInputDraft,
-	images []UploadedImage,
-	postalCode string,
-) error {
-	payload := buildFinalPayload(draft, images, postalCode)
-
 	// Update the ad and capture new ETag
 	updateResp, err := client.UpdateAd(ctx, draftID, etag, payload)
 	if err != nil {
@@ -1846,17 +1754,12 @@ func (h *ListingHandler) updateAndPublishAdWithDelays(
 	}
 	etag = updateResp.ETag
 
-	// Delay 2-3 seconds after UpdateAd (randomized)
-	delay1 := time.Duration(2000+rand.Intn(1000)) * time.Millisecond
-	log.Debug().Dur("delay", delay1).Msg("sleeping after UpdateAd")
-	time.Sleep(delay1)
-
 	// Build delivery options
-	// iOS sets meetup:false when shipping is enabled, never both
+	// Meetup and shipping are mutually exclusive
 	shippingEnabled := draft.ShippingPossible && draft.SavedShippingAddress != nil
 	deliveryOpts := tori.DeliveryOptions{
 		Client:             "ANDROID",
-		Meetup:             !shippingEnabled, // iOS: meetup and shipping are mutually exclusive
+		Meetup:             !shippingEnabled,
 		SellerPaysShipping: false,
 		Shipping:           shippingEnabled,
 		BuyNow:             shippingEnabled, // BuyNow required for ToriDiili
@@ -1909,12 +1812,7 @@ func (h *ListingHandler) updateAndPublishAdWithDelays(
 		return fmt.Errorf("failed to set delivery options: %w", err)
 	}
 
-	// Delay 1-2 seconds after SetDeliveryOptions (randomized)
-	delay2 := time.Duration(1000+rand.Intn(1000)) * time.Millisecond
-	log.Debug().Dur("delay", delay2).Msg("sleeping after SetDeliveryOptions")
-	time.Sleep(delay2)
-
-	// Get product context before publishing (iOS does this)
+	// Get product context before publishing
 	if err := client.GetProductContext(ctx, draftID, etag); err != nil {
 		log.Warn().Err(err).Msg("failed to get product context")
 	}
@@ -1925,20 +1823,15 @@ func (h *ListingHandler) updateAndPublishAdWithDelays(
 		return fmt.Errorf("failed to publish ad: %w", err)
 	}
 
-	// Get order confirmation (iOS does this - likely triggers review completion)
+	// Get order confirmation
 	if err := client.GetOrderConfirmation(ctx, orderResp.OrderID, draftID); err != nil {
 		log.Warn().Err(err).Msg("failed to get order confirmation")
 	}
 
-	// Track ad confirmation (iOS does this)
+	// Track ad confirmation
 	if err := client.TrackAdConfirmation(ctx, draftID, orderResp.OrderID); err != nil {
 		log.Warn().Err(err).Msg("failed to track ad confirmation")
 	}
-
-	// Delay 1 second after PublishAd before sending success message
-	delay3 := 1 * time.Second
-	log.Debug().Dur("delay", delay3).Msg("sleeping after PublishAd")
-	time.Sleep(delay3)
 
 	return nil
 }

@@ -1444,6 +1444,9 @@ func TestPublishWithToriDiiliShipping_SetsCorrectDeliveryOptions(t *testing.T) {
 		postalCode:       "33100", // Ad location in Tampere
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	session := &UserSession{
 		userId: userId,
 		draft: DraftState{
@@ -1475,6 +1478,8 @@ func TestPublishWithToriDiiliShipping_SetsCorrectDeliveryOptions(t *testing.T) {
 			Photos: []tgbotapi.PhotoSize{{FileID: "photo1"}},
 		},
 		sender: tg,
+		inbox:  make(chan SessionMessage, 10),
+		ctx:    ctx,
 	}
 
 	listingHandler := NewListingHandler(tg, nil, nil, store)
