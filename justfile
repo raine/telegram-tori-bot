@@ -26,12 +26,8 @@ build:
 test +FLAGS='./...':
     richgo test {{FLAGS}}
 
-# Run the application
-run *ARGS:
-    go run . "$@"
-
 # Watch and run on changes
-run-w:
+dev:
     fd .go | entr -r go run .
 
 # Watch and test on changes
