@@ -1910,10 +1910,25 @@ func (h *ListingHandler) updateAndPublishAdWithDelays(
 	log.Debug().Dur("delay", delay2).Msg("sleeping after SetDeliveryOptions")
 	time.Sleep(delay2)
 
+	// Get product context before publishing (iOS does this)
+	if err := client.GetProductContext(ctx, draftID, etag); err != nil {
+		log.Warn().Err(err).Msg("failed to get product context")
+	}
+
 	// Publish
-	_, err = client.PublishAd(ctx, draftID)
+	orderResp, err := client.PublishAd(ctx, draftID)
 	if err != nil {
 		return fmt.Errorf("failed to publish ad: %w", err)
+	}
+
+	// Get order confirmation (iOS does this - likely triggers review completion)
+	if err := client.GetOrderConfirmation(ctx, orderResp.OrderID, draftID); err != nil {
+		log.Warn().Err(err).Msg("failed to get order confirmation")
+	}
+
+	// Track ad confirmation (iOS does this)
+	if err := client.TrackAdConfirmation(ctx, draftID, orderResp.OrderID); err != nil {
+		log.Warn().Err(err).Msg("failed to track ad confirmation")
 	}
 
 	// Delay 1 second after PublishAd before sending success message
