@@ -1755,12 +1755,14 @@ func (h *ListingHandler) updateAndPublishAd(
 	}
 
 	// Build delivery options
+	// iOS sets meetup:false when shipping is enabled, never both
+	shippingEnabled := draft.ShippingPossible && draft.SavedShippingAddress != nil
 	deliveryOpts := tori.DeliveryOptions{
 		Client:             "ANDROID",
-		Meetup:             true, // Always allow meetup as fallback
+		Meetup:             !shippingEnabled, // iOS: meetup and shipping are mutually exclusive
 		SellerPaysShipping: false,
-		Shipping:           draft.ShippingPossible && draft.SavedShippingAddress != nil,
-		BuyNow:             draft.ShippingPossible && draft.SavedShippingAddress != nil, // BuyNow required for ToriDiili
+		Shipping:           shippingEnabled,
+		BuyNow:             shippingEnabled, // BuyNow required for ToriDiili
 	}
 
 	// Add shipping info if Tori Diili shipping is enabled
@@ -1850,12 +1852,14 @@ func (h *ListingHandler) updateAndPublishAdWithDelays(
 	time.Sleep(delay1)
 
 	// Build delivery options
+	// iOS sets meetup:false when shipping is enabled, never both
+	shippingEnabled := draft.ShippingPossible && draft.SavedShippingAddress != nil
 	deliveryOpts := tori.DeliveryOptions{
 		Client:             "ANDROID",
-		Meetup:             true, // Always allow meetup as fallback
+		Meetup:             !shippingEnabled, // iOS: meetup and shipping are mutually exclusive
 		SellerPaysShipping: false,
-		Shipping:           draft.ShippingPossible && draft.SavedShippingAddress != nil,
-		BuyNow:             draft.ShippingPossible && draft.SavedShippingAddress != nil, // BuyNow required for ToriDiili
+		Shipping:           shippingEnabled,
+		BuyNow:             shippingEnabled, // BuyNow required for ToriDiili
 	}
 
 	// Add shipping info if Tori Diili shipping is enabled
