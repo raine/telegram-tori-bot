@@ -190,6 +190,9 @@ Esimerkkejä (oletetaan kuvaus on "Toimiva hiiri, pieni naarmu"):
 - "Vaihda merkki" -> {"new_price": null, "new_title": null, "new_description": null, "reset_attributes": ["brand"]}
 - "Poista merkki" -> {"new_price": null, "new_title": null, "new_description": null, "reset_attributes": ["brand"]}
 - "Merkki on väärä" -> {"new_price": null, "new_title": null, "new_description": null, "reset_attributes": ["brand"]}
+- "Vaihda kunto" -> {"new_price": null, "new_title": null, "new_description": null, "reset_attributes": ["condition"]}
+- "Poista kunto" -> {"new_price": null, "new_title": null, "new_description": null, "reset_attributes": ["condition"]}
+- "Kunto on väärä" -> {"new_price": null, "new_title": null, "new_description": null, "reset_attributes": ["condition"]}
 
 Vastaa VAIN JSON-objektilla, ei muuta tekstiä.`
 
