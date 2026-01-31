@@ -593,10 +593,13 @@ func (h *ListingHandler) ProcessCategorySelection(ctx context.Context, session *
 
 // HandleAttributeInput handles user selection of an attribute value.
 // Called from session worker - no locking needed.
-func (h *ListingHandler) HandleAttributeInput(ctx context.Context, session *UserSession, text string) {
+// Returns false if the input was handled as an edit command instead.
+func (h *ListingHandler) HandleAttributeInput(ctx context.Context, session *UserSession, text string) bool {
 	if session.draft.CurrentDraft == nil || session.draft.CurrentDraft.State != AdFlowStateAwaitingAttribute {
-		return
+		return true
 	}
+
+	LogUser(session.userId, "Attribute input: %s", text)
 
 	attrs := session.draft.CurrentDraft.RequiredAttrs
 	idx := session.draft.CurrentDraft.CurrentAttrIndex
@@ -604,7 +607,7 @@ func (h *ListingHandler) HandleAttributeInput(ctx context.Context, session *User
 	if idx >= len(attrs) {
 		// Shouldn't happen, but handle gracefully
 		h.proceedAfterAttributes(ctx, session)
-		return
+		return true
 	}
 
 	currentAttr := attrs[idx]
@@ -622,16 +625,23 @@ func (h *ListingHandler) HandleAttributeInput(ctx context.Context, session *User
 		} else {
 			h.proceedAfterAttributes(ctx, session)
 		}
-		return
+		return true
 	}
 
 	// Find the selected option by label
 	opt := tori.FindOptionByLabel(&currentAttr, text)
 	if opt == nil {
-		// Invalid selection, prompt again
+		// Input doesn't match any attribute option - try parsing as edit command
+		// This allows commands like "poista merkki" during attribute selection
+		if h.HandleEditCommand(ctx, session, text) {
+			return true
+		}
+
+		// Not an edit command either - invalid selection, prompt again
+		LogBot(session.userId, "Invalid attribute input, re-prompting for: %s", currentAttr.Label)
 		session.reply(MsgSelectAttributeRetry, SkipButtonLabel, strings.ToLower(currentAttr.Label))
 		h.promptForAttribute(session, currentAttr)
-		return
+		return true
 	}
 
 	// Store the selected value
@@ -647,6 +657,7 @@ func (h *ListingHandler) HandleAttributeInput(ctx context.Context, session *User
 	} else {
 		h.proceedAfterAttributes(ctx, session)
 	}
+	return true
 }
 
 // HandlePriceInput handles price input when awaiting price.
