@@ -1580,6 +1580,7 @@ func (h *ListingHandler) applyUserTemplate(session *UserSession) {
 
 // promptForAttribute shows a keyboard to select an attribute value.
 func (h *ListingHandler) promptForAttribute(session *UserSession, attr tori.Attribute) {
+	LogBot(session.userId, "Prompting for attribute: %s", attr.Label)
 	msg := tgbotapi.NewMessage(session.userId, fmt.Sprintf(MsgSelectAttribute, strings.ToLower(attr.Label)))
 	msg.ParseMode = tgbotapi.ModeMarkdown
 	msg.ReplyMarkup = makeAttributeKeyboard(attr)
@@ -2112,6 +2113,13 @@ func (h *ListingHandler) handleAttributeReset(ctx context.Context, session *User
 	session.draft.CurrentDraft.RequiredAttrs = attrsToReset
 	session.draft.CurrentDraft.CurrentAttrIndex = 0
 	session.draft.CurrentDraft.State = AdFlowStateAwaitingAttribute
+
+	// Log attribute reset
+	var attrLabels []string
+	for _, attr := range attrsToReset {
+		attrLabels = append(attrLabels, attr.Label)
+	}
+	LogState(session.userId, "Attribute reset triggered for: %s", strings.Join(attrLabels, ", "))
 
 	// Inform user and show the first attribute keyboard
 	firstAttr := attrsToReset[0]
