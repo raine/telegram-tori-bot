@@ -9,3 +9,6 @@ files:
     - sessions.db
     - .claude/settings.local.json
     - stuff
+
+pre_merge:
+  - just check
