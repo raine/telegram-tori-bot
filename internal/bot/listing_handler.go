@@ -232,15 +232,18 @@ func (h *ListingHandler) HandleDraftExpired(ctx context.Context, session *UserSe
 		Int64("userId", session.userId).
 		Str("draftID", session.draft.DraftID).
 		Msg("draft expired due to inactivity")
+	LogState(session.userId, "Draft expired due to inactivity (10 min timeout)")
 
 	// Delete draft from Tori API
 	session.deleteCurrentDraft(ctx)
+	LogAPI(session.userId, "Deleted expired draft")
 
 	// Reset session state
 	session.reset()
 
 	// Notify user
 	session.replyAndRemoveCustomKeyboard(MsgDraftExpired)
+	LogBot(session.userId, "Notified user of draft expiration")
 }
 
 // startDraftExpirationTimer starts or resets the draft expiration timer.
@@ -308,6 +311,10 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 		return
 	}
 
+	// Start new listing log
+	StartListingLog(session.userId)
+	LogUser(session.userId, "Sent %d photo(s)", len(photos))
+
 	// Mark that we're creating a draft
 	session.draft.IsCreatingDraft = true
 	if len(photos) > 1 {
@@ -344,9 +351,20 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 	result, err := h.draftService.CreateDraftFromPhotos(ctx, client, photoInputs)
 	if err != nil {
 		session.draft.IsCreatingDraft = false
+		LogError(session.userId, "Draft creation failed: %v", err)
 		session.replyWithError(err)
 		return
 	}
+
+	// Log vision analysis result
+	LogLLM(session.userId, "Vision analysis result:")
+	LogLLM(session.userId, "  Title: %s", result.Title)
+	LogLLM(session.userId, "  Description: %s", result.Description)
+	LogLLM(session.userId, "  Category predictions: %d", len(result.CategoryPredictions))
+	for i, cat := range result.CategoryPredictions {
+		LogLLM(session.userId, "    [%d] %s (ID: %d)", i+1, tori.GetCategoryPath(cat), cat.ID)
+	}
+	LogAPI(session.userId, "Draft created: ID=%s", result.DraftID)
 
 	// Update session state
 	session.draft.IsCreatingDraft = false
@@ -388,14 +406,18 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 		// Update session's category predictions if fallback found new categories
 		if selectionResult.UsedFallback && len(selectionResult.UpdatedPredictions) > 0 {
 			session.draft.CurrentDraft.CategoryPredictions = selectionResult.UpdatedPredictions
+			LogLLM(session.userId, "Category fallback used, updated predictions")
 		}
 
 		if selectionResult.SelectedID > 0 {
+			LogLLM(session.userId, "Auto-selected category ID: %d", selectionResult.SelectedID)
 			h.ProcessCategorySelection(ctx, session, selectionResult.SelectedID)
 			return
 		}
 
 		// Fall back to manual selection (use updated predictions if available)
+		LogState(session.userId, "Awaiting manual category selection")
+		LogBot(session.userId, "Showing category selection keyboard")
 		categoriesToShow := selectionResult.UpdatedPredictions
 		msg := tgbotapi.NewMessage(session.userId, MsgSelectCategory)
 		msg.ParseMode = tgbotapi.ModeMarkdown
@@ -404,6 +426,7 @@ func (h *ListingHandler) processPhotoBatch(ctx context.Context, session *UserSes
 	} else {
 		// No categories predicted, use default
 		session.draft.CurrentDraft.CategoryID = 76 // "Muu" category
+		LogInternal(session.userId, "No category predictions, using default (Muu)")
 		session.reply(MsgNoCategoryPredictions)
 		h.promptForPrice(ctx, session)
 	}
@@ -460,6 +483,8 @@ func (h *ListingHandler) HandleCategorySelection(ctx context.Context, session *U
 		return
 	}
 
+	LogCallback(session.userId, "Category button pressed: cat:%s", categoryIDStr)
+
 	if session.draft.CurrentDraft == nil || session.draft.CurrentDraft.State != AdFlowStateAwaitingCategory {
 		session.reply(MsgNoActiveListing)
 		return
@@ -502,8 +527,10 @@ func (h *ListingHandler) ProcessCategorySelection(ctx context.Context, session *
 
 	session.draft.CurrentDraft.CategoryID = categoryID
 	log.Info().Int("categoryId", categoryID).Str("label", categoryLabel).Msg("category selected")
+	LogState(session.userId, "Category selected: %s (ID: %d)", categoryPath, categoryID)
 
 	session.reply(fmt.Sprintf("Osasto: *%s*", categoryPath))
+	LogBot(session.userId, "Osasto: %s", categoryPath)
 
 	// Get client and draft info for network calls
 	client := session.draft.AdInputClient
@@ -585,6 +612,7 @@ func (h *ListingHandler) HandleAttributeInput(ctx context.Context, session *User
 	// Handle skip button - don't add anything to CollectedAttrs for this attribute
 	if text == SkipButtonLabel {
 		log.Info().Str("attr", currentAttr.Name).Msg("attribute skipped")
+		LogUser(session.userId, "Skipped attribute: %s", currentAttr.Label)
 
 		// Move to next attribute or price input
 		session.draft.CurrentDraft.CurrentAttrIndex++
@@ -609,6 +637,7 @@ func (h *ListingHandler) HandleAttributeInput(ctx context.Context, session *User
 	// Store the selected value
 	session.draft.CurrentDraft.CollectedAttrs[currentAttr.Name] = strconv.Itoa(opt.ID)
 	log.Info().Str("attr", currentAttr.Name).Str("label", text).Int("optionId", opt.ID).Msg("attribute selected")
+	LogUser(session.userId, "Selected %s: %s", currentAttr.Label, text)
 
 	// Move to next attribute or price input
 	session.draft.CurrentDraft.CurrentAttrIndex++
@@ -623,8 +652,11 @@ func (h *ListingHandler) HandleAttributeInput(ctx context.Context, session *User
 // HandlePriceInput handles price input when awaiting price.
 // Called from session worker - no locking needed.
 func (h *ListingHandler) HandlePriceInput(ctx context.Context, session *UserSession, text string) {
+	LogUser(session.userId, "Price input: %s", text)
+
 	// Check for giveaway selection
 	if strings.Contains(text, "Annetaan") || strings.Contains(text, "🎁") {
+		LogState(session.userId, "Giveaway selected")
 		h.handleGiveawaySelection(ctx, session)
 		return
 	}
@@ -639,9 +671,11 @@ func (h *ListingHandler) HandlePriceInput(ctx context.Context, session *UserSess
 	session.draft.CurrentDraft.Price = price
 	session.draft.CurrentDraft.TradeType = TradeTypeSell
 	session.draft.CurrentDraft.State = AdFlowStateAwaitingShipping
+	LogState(session.userId, "Price set: %d€", price)
 
 	// Remove reply keyboard and confirm price
 	session.replyAndRemoveCustomKeyboard(MsgPriceConfirmed, price)
+	LogBot(session.userId, "Asking about shipping")
 
 	// Ask about shipping
 	msg := tgbotapi.NewMessage(session.userId, MsgShippingQuestion)
@@ -661,9 +695,11 @@ func (h *ListingHandler) HandlePostalCodeInput(session *UserSession, text string
 		return
 	}
 
+	LogUser(session.userId, "Postal code input: %s", text)
 	postalCode := strings.TrimSpace(text)
 	if !isValidPostalCode(postalCode) {
 		session.reply(MsgPostalCodeInvalid)
+		LogBot(session.userId, "Invalid postal code")
 		return
 	}
 
@@ -671,11 +707,13 @@ func (h *ListingHandler) HandlePostalCodeInput(session *UserSession, text string
 	if h.sessionStore != nil {
 		if err := h.sessionStore.SetPostalCode(session.userId, postalCode); err != nil {
 			log.Error().Err(err).Msg("failed to save postal code")
+			LogError(session.userId, "Failed to save postal code: %v", err)
 			session.replyWithError(err)
 			return
 		}
 	}
 
+	LogState(session.userId, "Postal code set: %s", postalCode)
 	session.reply(MsgPostalCodeUpdated, postalCode)
 	h.showAdSummary(session)
 }
@@ -742,6 +780,7 @@ func (h *ListingHandler) handleGiveawaySelection(ctx context.Context, session *U
 // Called from session worker - no locking needed.
 func (h *ListingHandler) HandleShippingSelection(ctx context.Context, session *UserSession, query *tgbotapi.CallbackQuery) {
 	isYes := strings.HasSuffix(query.Data, ":yes")
+	LogCallback(session.userId, "Shipping selection: %s", query.Data)
 
 	if session.draft.CurrentDraft == nil || session.draft.CurrentDraft.State != AdFlowStateAwaitingShipping {
 		return
@@ -751,6 +790,7 @@ func (h *ListingHandler) HandleShippingSelection(ctx context.Context, session *U
 	h.touchDraftActivity(session)
 
 	session.draft.CurrentDraft.ShippingPossible = isYes
+	LogState(session.userId, "Shipping enabled: %v", isYes)
 
 	// Remove the inline keyboard
 	if query.Message != nil {
@@ -860,6 +900,7 @@ func (h *ListingHandler) HandlePackageSizeSelection(ctx context.Context, session
 	session.draft.CurrentDraft.PackageSize = size
 
 	log.Info().Str("size", size).Msg("package size selected")
+	LogCallback(session.userId, "Package size selected: %s", size)
 
 	// Remove the inline keyboard
 	if query.Message != nil {
@@ -984,12 +1025,21 @@ func (h *ListingHandler) HandleSendListing(ctx context.Context, session *UserSes
 		return
 	}
 
+	// Log final listing summary before publish
+	LogState(userId, "Publishing listing:")
+	LogState(userId, "  Title: %s", draftCopy.Title)
+	LogState(userId, "  Price: %d€", draftCopy.Price)
+	LogState(userId, "  Category: %d", draftCopy.CategoryID)
+	LogState(userId, "  Shipping: %v", draftCopy.ShippingPossible)
+	LogState(userId, "  Photos: %d", len(images))
+	LogAPI(userId, "Starting background publish for draft %s", draftID)
+
 	// Immediately respond and reset session
 	session.replyAndRemoveCustomKeyboard(MsgPublishingSoon)
 	session.reset()
 
 	// Start background publishing with delays
-	go h.publishInBackground(session, client, draftID, etag, &draftCopy, images, postalCode)
+	go h.publishInBackground(session, client, draftID, etag, &draftCopy, images, postalCode, userId)
 }
 
 // publishInBackground performs the publish API calls with delays.
@@ -1002,6 +1052,7 @@ func (h *ListingHandler) publishInBackground(
 	draft *AdInputDraft,
 	images []UploadedImage,
 	postalCode string,
+	userID int64,
 ) {
 	// Use a fresh context since the original request context may be cancelled
 	ctx := context.Background()
@@ -1013,8 +1064,10 @@ func (h *ListingHandler) publishInBackground(
 	}
 
 	// Set category on draft
+	LogAPI(userID, "Setting category on draft")
 	newEtag, err := h.setCategoryOnDraft(ctx, client, draftID, etag, draft.CategoryID)
 	if err != nil {
+		LogError(userID, "Failed to set category: %v", err)
 		result.Error = err
 		session.Send(SessionMessage{
 			Type:          "publish_complete",
@@ -1026,6 +1079,7 @@ func (h *ListingHandler) publishInBackground(
 	etag = newEtag
 
 	// Patch all fields to /items (required for review system)
+	LogAPI(userID, "Patching item fields")
 	fields := buildItemFields(
 		draft.Title,
 		draft.GetFullDescription(),
@@ -1034,6 +1088,7 @@ func (h *ListingHandler) publishInBackground(
 	)
 	_, err = client.PatchItemFields(ctx, draftID, etag, fields)
 	if err != nil {
+		LogError(userID, "Failed to patch item fields: %v", err)
 		result.Error = fmt.Errorf("failed to patch item fields: %w", err)
 		session.Send(SessionMessage{
 			Type:          "publish_complete",
@@ -1044,8 +1099,10 @@ func (h *ListingHandler) publishInBackground(
 	}
 
 	// Get fresh ETag from adinput service
+	LogAPI(userID, "Getting fresh ETag")
 	adWithModel, err := client.GetAdWithModel(ctx, draftID)
 	if err != nil {
+		LogError(userID, "Failed to get fresh etag: %v", err)
 		result.Error = fmt.Errorf("failed to get fresh etag: %w", err)
 		session.Send(SessionMessage{
 			Type:          "publish_complete",
@@ -1057,9 +1114,13 @@ func (h *ListingHandler) publishInBackground(
 	etag = adWithModel.Ad.ETag
 
 	// Update and publish
+	LogAPI(userID, "Publishing ad")
 	err = h.updateAndPublishAd(ctx, client, draftID, etag, draft, images, postalCode)
 	if err != nil {
+		LogError(userID, "Publish failed: %v", err)
 		result.Error = err
+	} else {
+		LogAPI(userID, "Publish successful!")
 	}
 
 	// Send result back through session worker channel
@@ -1319,10 +1380,12 @@ func (h *ListingHandler) tryAutoSelectAttributes(ctx context.Context, session *U
 	selectedMap, err := gemini.SelectAttributes(ctx, title, description, autoSelectableAttrs)
 	if err != nil {
 		log.Warn().Err(err).Msg("LLM attribute selection failed, falling back to manual")
+		LogError(session.userId, "LLM attribute selection failed: %v", err)
 		return attrs
 	}
 
 	if len(selectedMap) == 0 {
+		LogLLM(session.userId, "LLM attribute selection: no auto-selections made")
 		return attrs
 	}
 
@@ -1350,6 +1413,7 @@ func (h *ListingHandler) tryAutoSelectAttributes(ctx context.Context, session *U
 			session.draft.CurrentDraft.CollectedAttrs[attr.Name] = strconv.Itoa(selectedID)
 			autoSelectedInfo = append(autoSelectedInfo, fmt.Sprintf("%s: *%s*", attr.Label, selectedLabel))
 			log.Info().Str("attr", attr.Name).Str("label", selectedLabel).Int("optionId", selectedID).Msg("attribute auto-selected")
+			LogLLM(session.userId, "Auto-selected %s: %s", attr.Label, selectedLabel)
 		} else {
 			// Keep for manual input
 			remainingAttrs = append(remainingAttrs, attr)
@@ -1362,6 +1426,7 @@ func (h *ListingHandler) tryAutoSelectAttributes(ctx context.Context, session *U
 	// Inform user what was auto-selected
 	if len(autoSelectedInfo) > 0 {
 		session.reply(fmt.Sprintf("%s", strings.Join(autoSelectedInfo, "\n")))
+		LogBot(session.userId, "Showing auto-selected attributes")
 	}
 
 	return remainingAttrs
@@ -1514,6 +1579,7 @@ func (h *ListingHandler) promptForAttribute(session *UserSession, attr tori.Attr
 // Called from session worker - no locking needed.
 func (h *ListingHandler) promptForPrice(ctx context.Context, session *UserSession) {
 	session.draft.CurrentDraft.State = AdFlowStateAwaitingPrice
+	LogState(session.userId, "Awaiting price input")
 	title := session.draft.CurrentDraft.Title
 	description := session.draft.CurrentDraft.Description
 
@@ -1525,6 +1591,7 @@ func (h *ListingHandler) promptForPrice(ctx context.Context, session *UserSessio
 			log.Warn().Err(err).Str("title", title).Msg("failed to generate price search query, using title")
 		} else if generatedQuery != "" {
 			searchQuery = generatedQuery
+			LogLLM(session.userId, "Generated price search query: %s", searchQuery)
 		}
 	}
 
@@ -1600,6 +1667,7 @@ func (h *ListingHandler) promptForPrice(ctx context.Context, session *UserSessio
 		recommendedPrice = medianPrice
 		recommendationMsg = fmt.Sprintf("\n\n💡 *Hinta-arvio* (%d ilmoitusta):\nKeskihinta: *%d€* (vaihteluväli %d–%d€)",
 			len(prices), medianPrice, minPrice, maxPrice)
+		LogInternal(session.userId, "Price search: %d results, median=%d€ (range %d-%d€)", len(prices), medianPrice, minPrice, maxPrice)
 
 		log.Info().
 			Str("title", title).
@@ -1850,6 +1918,8 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 		return false
 	}
 
+	LogUser(session.userId, "Text input (possible edit): %s", message)
+
 	draftInfo := &llm.CurrentDraftInfo{
 		Title:       session.draft.CurrentDraft.Title,
 		Description: session.draft.CurrentDraft.Description,
@@ -1866,6 +1936,7 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 	intent, err := h.editIntentParser.ParseEditIntent(ctx, message, draftInfo)
 	if err != nil {
 		log.Warn().Err(err).Str("message", message).Msg("failed to parse edit intent")
+		LogError(session.userId, "Failed to parse edit intent: %v", err)
 		// Show error to user and return true to prevent falling through to "send image" prompt
 		session.reply(MsgEditTempError)
 		return true
@@ -1874,6 +1945,7 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 	// Check if any changes were requested
 	if intent.NewPrice == nil && intent.NewTitle == nil && intent.NewDescription == nil {
 		log.Debug().Str("message", message).Msg("no edit intent detected in message")
+		LogLLM(session.userId, "No edit intent detected in message")
 		return false
 	}
 
@@ -1884,12 +1956,16 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 
 	var changes []string
 
+	LogLLM(session.userId, "Edit intent parsed: price=%v, title=%v, desc=%v",
+		intent.NewPrice != nil, intent.NewTitle != nil, intent.NewDescription != nil)
+
 	// Apply price change
 	if intent.NewPrice != nil {
 		oldPrice := session.draft.CurrentDraft.Price
 		session.draft.CurrentDraft.Price = *intent.NewPrice
 		changes = append(changes, fmt.Sprintf("Hinta: %d€ → %d€", oldPrice, *intent.NewPrice))
 		log.Info().Int("oldPrice", oldPrice).Int("newPrice", *intent.NewPrice).Msg("price updated via edit command")
+		LogState(session.userId, "Price changed: %d€ → %d€", oldPrice, *intent.NewPrice)
 	}
 
 	// Apply title change
@@ -1909,6 +1985,7 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 			h.tg.Request(editMsg)
 		}
 		log.Info().Str("oldTitle", oldTitle).Str("newTitle", *intent.NewTitle).Msg("title updated via edit command")
+		LogState(session.userId, "Title changed: %s → %s", oldTitle, *intent.NewTitle)
 	}
 
 	// Apply description change

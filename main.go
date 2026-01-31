@@ -114,6 +114,11 @@ func main() {
 	defer sessionStore.Close()
 	log.Info().Str("dbPath", dbPath).Msg("session store initialized")
 
+	// Initialize listing log (writes to listing.log in current directory)
+	if err := bot.InitListingLog("."); err != nil {
+		log.Warn().Err(err).Msg("failed to initialize listing log")
+	}
+
 	// Create context that cancels on SIGINT or SIGTERM
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
