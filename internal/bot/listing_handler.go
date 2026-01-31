@@ -1920,16 +1920,28 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 
 	LogUser(session.userId, "Text input (possible edit): %s", message)
 
+	// Build draft info with available attributes for the LLM
 	draftInfo := &llm.CurrentDraftInfo{
 		Title:       session.draft.CurrentDraft.Title,
 		Description: session.draft.CurrentDraft.Description,
 		Price:       session.draft.CurrentDraft.Price,
 	}
 
+	// Add available attributes from the category
+	if session.draft.AdAttributes != nil {
+		for _, attr := range session.draft.AdAttributes.Attributes {
+			draftInfo.Attributes = append(draftInfo.Attributes, llm.AttributeInfo{
+				Label: attr.Label,
+				Name:  attr.Name,
+			})
+		}
+	}
+
 	log.Debug().
 		Str("message", message).
 		Str("title", draftInfo.Title).
 		Int("price", draftInfo.Price).
+		Int("attrCount", len(draftInfo.Attributes)).
 		Msg("parsing edit intent")
 
 	// Parse edit intent (network I/O)
@@ -1943,7 +1955,7 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 	}
 
 	// Check if any changes were requested
-	if intent.NewPrice == nil && intent.NewTitle == nil && intent.NewDescription == nil {
+	if intent.NewPrice == nil && intent.NewTitle == nil && intent.NewDescription == nil && len(intent.ResetAttributes) == 0 {
 		log.Debug().Str("message", message).Msg("no edit intent detected in message")
 		LogLLM(session.userId, "No edit intent detected in message")
 		return false
@@ -2006,6 +2018,15 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 		log.Info().Str("newDescription", *intent.NewDescription).Msg("description updated via edit command")
 	}
 
+	// Handle attribute resets - trigger re-selection UI
+	if len(intent.ResetAttributes) > 0 {
+		if h.handleAttributeReset(ctx, session, intent.ResetAttributes) {
+			// Attribute reset started, UI will be shown
+			return true
+		}
+		// If no valid attributes found to reset, continue with other changes
+	}
+
 	// Send confirmation message
 	if len(changes) == 1 {
 		session.reply(MsgChangesConfirm, changes[0])
@@ -2017,6 +2038,74 @@ func (h *ListingHandler) HandleEditCommand(ctx context.Context, session *UserSes
 	if len(changes) > 0 && session.draft.CurrentDraft.State == AdFlowStateReadyToPublish {
 		h.showAdSummary(session)
 	}
+
+	return true
+}
+
+// handleAttributeReset processes attribute reset requests from natural language commands.
+// It finds the requested attributes, preserves current state, and triggers re-selection UI.
+// Returns true if attribute re-selection was started.
+func (h *ListingHandler) handleAttributeReset(ctx context.Context, session *UserSession, attrNames []string) bool {
+	if session.draft.AdAttributes == nil {
+		log.Debug().Msg("no attributes available for reset")
+		return false
+	}
+
+	// Find matching attributes from the available attributes
+	var attrsToReset []tori.Attribute
+	for _, targetName := range attrNames {
+		targetLower := strings.ToLower(targetName)
+		for _, attr := range session.draft.AdAttributes.Attributes {
+			if strings.ToLower(attr.Name) == targetLower {
+				attrsToReset = append(attrsToReset, attr)
+				log.Info().Str("attr", attr.Name).Str("label", attr.Label).Msg("attribute marked for reset")
+				break
+			}
+		}
+	}
+
+	if len(attrsToReset) == 0 {
+		log.Debug().Strs("requested", attrNames).Msg("no matching attributes found for reset")
+		return false
+	}
+
+	// Create PreservedValues with current state, excluding the attributes to reset
+	preserved := &PreservedValues{
+		Price:            session.draft.CurrentDraft.Price,
+		TradeType:        session.draft.CurrentDraft.TradeType,
+		ShippingPossible: session.draft.CurrentDraft.ShippingPossible,
+		ShippingSet:      session.draft.CurrentDraft.State >= AdFlowStateAwaitingShipping,
+		CollectedAttrs:   make(map[string]string),
+	}
+
+	// Copy all collected attributes except the ones being reset
+	resetSet := make(map[string]bool)
+	for _, attr := range attrsToReset {
+		resetSet[attr.Name] = true
+	}
+	for k, v := range session.draft.CurrentDraft.CollectedAttrs {
+		if !resetSet[k] {
+			preserved.CollectedAttrs[k] = v
+		}
+	}
+
+	// Store preserved values
+	session.draft.CurrentDraft.PreservedValues = preserved
+
+	// Clear the attributes being reset from CollectedAttrs
+	for _, attr := range attrsToReset {
+		delete(session.draft.CurrentDraft.CollectedAttrs, attr.Name)
+	}
+
+	// Set up attribute selection state
+	session.draft.CurrentDraft.RequiredAttrs = attrsToReset
+	session.draft.CurrentDraft.CurrentAttrIndex = 0
+	session.draft.CurrentDraft.State = AdFlowStateAwaitingAttribute
+
+	// Inform user and show the first attribute keyboard
+	firstAttr := attrsToReset[0]
+	session.reply(MsgReselectAttribute, strings.ToLower(firstAttr.Label))
+	h.promptForAttribute(session, firstAttr)
 
 	return true
 }

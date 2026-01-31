@@ -210,6 +210,7 @@ const (
 	MsgTitleChange        = "Otsikko: %s"
 	MsgDescriptionChange  = "Kuvaus päivitetty"
 	MsgEditTempError      = "Muokkauskomennon käsittely epäonnistui väliaikaisesti. Yritä uudelleen."
+	MsgReselectAttribute  = "Selvä, valitaan %s uudelleen."
 )
 
 // =============================================================================

@@ -1546,3 +1546,143 @@ func TestPublishWithToriDiiliShipping_SetsCorrectDeliveryOptions(t *testing.T) {
 		t.Error("expected MATKAHUOLTO_SHOP in products")
 	}
 }
+
+// =============================================================================
+// Attribute Reset via Edit Command Tests
+// =============================================================================
+
+func TestHandleAttributeReset_TriggersReselection(t *testing.T) {
+	ts := makeAdInputTestServer(t)
+	defer ts.Close()
+	_, _, tg, _, session := setupAdInputSession(t, ts)
+
+	listingHandler := NewListingHandler(tg, nil, nil, nil)
+
+	// Set up session with draft that has brand attribute selected
+	session.draft.AdAttributes = &tori.AttributesResponse{
+		Attributes: []tori.Attribute{
+			{
+				Name:  "brand",
+				Label: "Merkki",
+				Type:  "SELECT",
+				Options: []tori.AttributeOption{
+					{ID: 1, Label: "Muumi"},
+					{ID: 2, Label: "Nokia"},
+					{ID: 3, Label: "Apple"},
+				},
+			},
+			{
+				Name:  "condition",
+				Label: "Kunto",
+				Type:  "SELECT",
+				Options: []tori.AttributeOption{
+					{ID: 10, Label: "Uusi"},
+					{ID: 11, Label: "Hyvä"},
+				},
+			},
+		},
+	}
+	session.draft.CurrentDraft = &AdInputDraft{
+		State:            AdFlowStateReadyToPublish,
+		Title:            "Test Item",
+		Description:      "Test description",
+		Price:            50,
+		TradeType:        TradeTypeSell,
+		ShippingPossible: true,
+		CollectedAttrs: map[string]string{
+			"brand":     "1",  // Muumi
+			"condition": "11", // Hyvä
+		},
+	}
+
+	// Expect reselection message
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		return strings.Contains(msg.Text, "valitaan merkki uudelleen")
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	// Expect attribute keyboard
+	tg.On("Send", mock.MatchedBy(func(msg tgbotapi.MessageConfig) bool {
+		return strings.Contains(msg.Text, "Valitse merkki") && msg.ReplyMarkup != nil
+	})).Return(tgbotapi.Message{}, nil).Once()
+
+	// Call handleAttributeReset directly
+	result := listingHandler.handleAttributeReset(context.Background(), session, []string{"brand"})
+
+	tg.AssertExpectations(t)
+
+	// Should return true (attribute reset started)
+	if !result {
+		t.Error("expected handleAttributeReset to return true")
+	}
+
+	// Verify state changed
+	if session.draft.CurrentDraft.State != AdFlowStateAwaitingAttribute {
+		t.Errorf("expected state AwaitingAttribute, got %v", session.draft.CurrentDraft.State)
+	}
+
+	// Verify brand was removed from CollectedAttrs
+	if _, ok := session.draft.CurrentDraft.CollectedAttrs["brand"]; ok {
+		t.Error("expected brand to be removed from CollectedAttrs")
+	}
+
+	// Verify condition is still in CollectedAttrs
+	if session.draft.CurrentDraft.CollectedAttrs["condition"] != "11" {
+		t.Errorf("expected condition to remain '11', got %s", session.draft.CurrentDraft.CollectedAttrs["condition"])
+	}
+
+	// Verify PreservedValues were set correctly
+	if session.draft.CurrentDraft.PreservedValues == nil {
+		t.Fatal("expected PreservedValues to be set")
+	}
+	if session.draft.CurrentDraft.PreservedValues.Price != 50 {
+		t.Errorf("expected preserved Price 50, got %d", session.draft.CurrentDraft.PreservedValues.Price)
+	}
+	if session.draft.CurrentDraft.PreservedValues.CollectedAttrs["condition"] != "11" {
+		t.Errorf("expected preserved condition '11', got %s", session.draft.CurrentDraft.PreservedValues.CollectedAttrs["condition"])
+	}
+	// Brand should NOT be in preserved attrs (it's being reset)
+	if _, ok := session.draft.CurrentDraft.PreservedValues.CollectedAttrs["brand"]; ok {
+		t.Error("expected brand to NOT be in PreservedValues.CollectedAttrs")
+	}
+}
+
+func TestHandleAttributeReset_UnknownAttribute(t *testing.T) {
+	ts := makeAdInputTestServer(t)
+	defer ts.Close()
+	_, _, tg, _, session := setupAdInputSession(t, ts)
+
+	listingHandler := NewListingHandler(tg, nil, nil, nil)
+
+	// Set up session with draft that has brand attribute
+	session.draft.AdAttributes = &tori.AttributesResponse{
+		Attributes: []tori.Attribute{
+			{
+				Name:  "brand",
+				Label: "Merkki",
+				Type:  "SELECT",
+				Options: []tori.AttributeOption{
+					{ID: 1, Label: "Muumi"},
+				},
+			},
+		},
+	}
+	session.draft.CurrentDraft = &AdInputDraft{
+		State:          AdFlowStateReadyToPublish,
+		CollectedAttrs: map[string]string{"brand": "1"},
+	}
+
+	// No messages expected for unknown attribute
+	result := listingHandler.handleAttributeReset(context.Background(), session, []string{"unknown_attr"})
+
+	tg.AssertExpectations(t)
+
+	// Should return false (no valid attribute to reset)
+	if result {
+		t.Error("expected handleAttributeReset to return false for unknown attribute")
+	}
+
+	// State should remain unchanged
+	if session.draft.CurrentDraft.State != AdFlowStateReadyToPublish {
+		t.Errorf("expected state to remain ReadyToPublish, got %v", session.draft.CurrentDraft.State)
+	}
+}

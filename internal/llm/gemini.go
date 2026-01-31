@@ -172,20 +172,24 @@ Nykyinen ilmoitus:
 - Otsikko: %s
 - Kuvaus: %s
 - Hinta: %d€
-
+%s
 Käyttäjän viesti: "%s"
 
-Analysoi käyttäjän viesti ja päättele mitä muutoksia hän haluaa tehdä. Palauta JSON-objekti seuraavilla kentillä (käytä null jos kenttää ei muuteta):
+Analysoi käyttäjän viesti ja päättele mitä muutoksia hän haluaa tehdä. Palauta JSON-objekti seuraavilla kentillä (käytä null tai tyhjä lista jos ei muuteta):
 
 - new_price: uusi hinta kokonaislukuna (ilman €-merkkiä), null jos ei muuteta
 - new_title: uusi otsikko kokonaisuudessaan, null jos ei muuteta
 - new_description: uusi kuvaus kokonaisuudessaan (jos käyttäjä haluaa lisätä, poistaa tai muuttaa kuvausta, palauta koko muokattu kuvaus), null jos ei muuteta
+- reset_attributes: lista attribuuttien nimistä jotka käyttäjä haluaa vaihtaa tai poistaa, tyhjä lista [] jos ei muuteta
 
 Esimerkkejä (oletetaan kuvaus on "Toimiva hiiri, pieni naarmu"):
-- "Vaihda hinnaksi 40e" -> {"new_price": 40, "new_title": null, "new_description": null}
-- "Lisää että koirataloudesta" -> {"new_price": null, "new_title": null, "new_description": "Toimiva hiiri, pieni naarmu. Koirataloudesta."}
-- "Poista maininta naarmusta" -> {"new_price": null, "new_title": null, "new_description": "Toimiva hiiri."}
-- "Muuta otsikoksi Nintendo Switch" -> {"new_price": null, "new_title": "Nintendo Switch", "new_description": null}
+- "Vaihda hinnaksi 40e" -> {"new_price": 40, "new_title": null, "new_description": null, "reset_attributes": []}
+- "Lisää että koirataloudesta" -> {"new_price": null, "new_title": null, "new_description": "Toimiva hiiri, pieni naarmu. Koirataloudesta.", "reset_attributes": []}
+- "Poista maininta naarmusta" -> {"new_price": null, "new_title": null, "new_description": "Toimiva hiiri.", "reset_attributes": []}
+- "Muuta otsikoksi Nintendo Switch" -> {"new_price": null, "new_title": "Nintendo Switch", "new_description": null, "reset_attributes": []}
+- "Vaihda merkki" -> {"new_price": null, "new_title": null, "new_description": null, "reset_attributes": ["brand"]}
+- "Poista merkki" -> {"new_price": null, "new_title": null, "new_description": null, "reset_attributes": ["brand"]}
+- "Merkki on väärä" -> {"new_price": null, "new_title": null, "new_description": null, "reset_attributes": ["brand"]}
 
 Vastaa VAIN JSON-objektilla, ei muuta tekstiä.`
 
@@ -623,9 +627,10 @@ func (g *GeminiAnalyzer) RewriteDescriptionForGiveaway(ctx context.Context, desc
 
 // EditIntent represents the parsed intent from a natural language edit command.
 type EditIntent struct {
-	NewPrice       *int    `json:"new_price"`
-	NewTitle       *string `json:"new_title"`
-	NewDescription *string `json:"new_description"`
+	NewPrice        *int     `json:"new_price"`
+	NewTitle        *string  `json:"new_title"`
+	NewDescription  *string  `json:"new_description"`
+	ResetAttributes []string `json:"reset_attributes"` // Attribute names to reset/reselect (e.g., ["brand"])
 }
 
 // CurrentDraftInfo contains the current draft state for the LLM to make edit decisions.
@@ -633,11 +638,28 @@ type CurrentDraftInfo struct {
 	Title       string
 	Description string
 	Price       int
+	Attributes  []AttributeInfo // Available attributes that can be reset
+}
+
+// AttributeInfo provides context about an editable attribute.
+type AttributeInfo struct {
+	Label string // User-visible label (e.g., "Merkki")
+	Name  string // Internal name (e.g., "brand")
 }
 
 // ParseEditIntent parses a natural language edit command and returns the intended changes.
 func (g *GeminiAnalyzer) ParseEditIntent(ctx context.Context, message string, draft *CurrentDraftInfo) (*EditIntent, error) {
-	prompt := fmt.Sprintf(editIntentPrompt, draft.Title, draft.Description, draft.Price, message)
+	// Build attributes context for the prompt
+	var attrsContext string
+	if len(draft.Attributes) > 0 {
+		var attrLines []string
+		for _, attr := range draft.Attributes {
+			attrLines = append(attrLines, fmt.Sprintf("  - %s (nimi: %s)", attr.Label, attr.Name))
+		}
+		attrsContext = fmt.Sprintf("- Muokattavat attribuutit:\n%s\n", strings.Join(attrLines, "\n"))
+	}
+
+	prompt := fmt.Sprintf(editIntentPrompt, draft.Title, draft.Description, draft.Price, attrsContext, message)
 
 	result, err := g.client.Models.GenerateContent(ctx, geminiLiteModel, []*genai.Content{
 		genai.NewContentFromParts([]*genai.Part{genai.NewPartFromText(prompt)}, genai.RoleUser),
